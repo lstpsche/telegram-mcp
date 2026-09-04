@@ -1,3 +1,3 @@
-// Package cli will own interactive, human-only authentication, policy,
-// lifecycle, and audit workflows.
+// Package cli owns direct-terminal, human-only authentication prompts. Policy
+// and audit workflows are added in later phases.
 package cli

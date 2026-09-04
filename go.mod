@@ -3,14 +3,21 @@ module github.com/lstpsche/telegram-mcp
 go 1.27.1
 
 require (
+	github.com/awnumar/memguard v0.23.0
+	github.com/gotd/contrib v0.25.0
 	github.com/gotd/td v0.161.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
+	golang.org/x/term v0.45.0
+	golang.org/x/time v0.15.0
 	modernc.org/sqlite v1.58.0
+	rsc.io/qr v0.2.0
 )
 
 require (
 	github.com/andybalholm/brotli v1.2.1 // indirect
+	github.com/awnumar/memcall v0.4.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
@@ -50,13 +57,10 @@ require (
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	modernc.org/libc v1.75.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	rsc.io/qr v0.2.0 // indirect
 )

@@ -1,6 +1,7 @@
 # Version 1 contracts
 
-Phase 0 fixes transport-independent contracts. No MCP tool is registered yet.
+Phase 0 fixed the transport-independent contracts. Phase 1 adds account/runtime
+ownership but still registers no MCP tool.
 
 ## Typed references
 
@@ -78,4 +79,3 @@ cancellation, and a sanitized internal fallback.
 - Cursors and media handles will be opaque, signed, expiring,
   operation/query/authorization-epoch/policy-revision-bound, content-free, and
   reauthorized on every use. They never grant authority by themselves.
-

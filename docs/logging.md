@@ -24,3 +24,5 @@ Do not expose the underlying `slog.Logger` or add generic `message`, `error`, or
 real operational question requires it. `tg-context-mcp` diagnostics always go
 to stderr; stdout is reserved for MCP frames.
 
+Phase 1 gotd clients use the upstream no-op logger. Command failures collapse
+upstream errors to fixed local categories before anything reaches stderr.

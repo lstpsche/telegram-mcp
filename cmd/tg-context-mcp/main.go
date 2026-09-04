@@ -19,11 +19,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		fmt.Fprintln(stdout, "usage: tg-context-mcp --version")
-		fmt.Fprintln(stdout, "Phase 0 scaffold: no MCP transport or tools are enabled.")
+		fmt.Fprintln(stdout, "Phase 1 runtime: no MCP transport or tools are enabled.")
 		return 0
 	}
 
 	// stdout is reserved for MCP frames, including while the relay is absent.
-	fmt.Fprintln(stderr, "tg-context-mcp: unavailable in Phase 0; no MCP transport is enabled")
+	fmt.Fprintln(stderr, "tg-context-mcp: unavailable in Phase 1; no MCP transport is enabled")
 	return 2
 }

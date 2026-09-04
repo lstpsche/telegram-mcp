@@ -5,14 +5,16 @@ account. It is an unofficial client using Telegram's API. MCP is a narrow,
 read-first adapter to a persistent, policy-enforced daemon; it is not a raw
 Telegram API surface.
 
-Phase 0 establishes contracts and buildable seams only. The repository does
-not yet connect to Telegram, authenticate an account, expose MCP tools, or
-process real message data.
+Phase 1 provides the secure single-account daemon foundation and interactive
+Telegram Test-DC authentication. It stores gotd session bytes and the API hash
+in the native macOS login Keychain, stores metadata only in SQLite, and keeps
+production login absent. It still exposes no MCP tools and processes no message
+content.
 
 ## Safety boundary
 
-- Develop with synthetic data. Test-DC and production login are later,
-  separately authorized milestones.
+- Develop with synthetic data. Test-DC login is available; production login is
+  deliberately not implemented.
 - Telegram content is untrusted data and must never enter instructions, logs,
   errors, schemas, or persistent metadata.
 - Policy and authentication mutations belong to the interactive control plane,
@@ -34,7 +36,40 @@ go version
 go env GO111MODULE GOTOOLCHAIN
 ```
 
-## Phase 0 checks
+## Phase 1 operator flow
+
+Build the two active binaries:
+
+```sh
+go build -o ./tmp/tg-contextctl ./cmd/tg-contextctl
+go build -o ./tmp/tg-contextd ./cmd/tg-contextd
+```
+
+With the daemon stopped, configure only a Telegram Test DC. The API ID and API
+hash are read directly from `/dev/tty`; neither is accepted through argv or the
+environment:
+
+```sh
+./tmp/tg-contextctl configure --test-dc 2
+./tmp/tg-contextctl auth phone
+# or, from a logged-out session:
+./tmp/tg-contextctl auth qr
+./tmp/tg-contextctl status
+```
+
+Start the persistent owner after authentication:
+
+```sh
+./tmp/tg-contextd
+```
+
+Authentication, reconfiguration, and logout take the same exclusive account
+lock as the daemon. Stop the daemon before running those commands. See
+[Test-DC authentication](docs/authentication.md) for the complete flow and
+[Phase 1 acceptance](docs/phase1-acceptance.md) for automated versus manual
+evidence.
+
+## Checks
 
 ```sh
 go build ./cmd/...
@@ -42,6 +77,6 @@ go test ./...
 go vet ./...
 ```
 
-The three product commands intentionally fail closed in Phase 0. They support
-`--help` and `--version`, but have no Telegram or MCP runtime behavior yet.
-
+`tg-context-mcp` remains fail-closed until the MCP transport phase. The daemon
+authenticates and reports process-local readiness only; it has no message read
+path.

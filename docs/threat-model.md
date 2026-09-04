@@ -1,6 +1,6 @@
 # TgContext threat model
 
-- Status: Phase 0 baseline
+- Status: Phase 1 implemented boundary
 - Date: 2026-09-04
 - Scope: local single-account macOS v1 architecture
 
@@ -67,7 +67,7 @@ policy mutation.
 
 Controls: deterministic static read-tool inventory; no control-plane MCP tools;
 strict unknown-field rejection; typed IDs; no `resolve_peer` tool; hard budgets;
-no dynamic write flag. Phase 0 registers no tools at all.
+no dynamic write flag. Phase 1 still registers no tools at all.
 
 ### Mutable alias or confused-deputy authorization
 
@@ -102,20 +102,23 @@ hook second; release bodies only on success; return explicit `read_effect`.
 Threat: credentials appear in argv, environment, stdout, logs, SQLite, crash
 output, or a fallback file; synchronized Keychain items leave the device.
 
-Controls: interactive no-echo input in later phases; native Security.framework
-only; unlocked-login-keychain check; explicit non-synchronizing attribute;
-noninteractive UI failure; no file backend; byte-only relay has no secrets;
-metadata schema contains no secret/content columns.
+Controls: interactive no-echo input comes directly from `/dev/tty`; 2FA uses a
+locked wipe-on-use buffer; native Security.framework only; unlocked-login-
+keychain check; explicit non-synchronizing attribute; noninteractive UI
+failure; no file backend; byte-only relay has no secrets; metadata schema
+contains no secret/content columns.
 
 ### Local socket and process attacks
 
 Threat: a second daemon races account state, a symlink/socket is replaced, or a
 relay silently spawns a new Telegram client.
 
-Controls required in Phase 1/4: account lock before secret access; private
-runtime directory/socket; `lstat` and owner/type validation; same-UID peer check
-where available; length-checked path; no relay fallback; bounded concurrent
-connections; cancellation and EOF tests.
+Controls: account lock before secret prompting or access; private runtime
+directory/socket; `lstat` and owner/type validation; length-checked path;
+same-user stale socket cleanup only after positive `ECONNREFUSED`; fail-closed
+handling of inconclusive dial errors; no relay fallback; cancellation-aware
+probe loop. Peer-
+credential validation and bounded MCP connections remain Phase 4 requirements.
 
 ### Stale or incomplete state represented as live
 
@@ -157,10 +160,18 @@ security control. Test-DC and synthetic/self-authored development does not imply
 permission for production/private data or publication. A dated Phase 6 decision
 is required.
 
-## Phase 0 verification boundary
+## Phase 1 verification boundary
 
-Phase 0 proves compile-time contracts, strict references and envelopes,
-metadata-only migrations, safe log structure, and temporary Keychain
-store/read/update/delete behavior. It does not claim Telegram authentication,
-socket safety, policy enforcement, read acknowledgments, Test-DC acceptance,
-production eligibility, signing across upgrades, or release readiness.
+Automated checks prove lock-and-eligibility-before-prompt ordering,
+second-owner exclusion,
+private directory/file/socket permissions, fail-closed malicious socket paths,
+safe stale-socket replacement, fail-closed inconclusive socket probes,
+Keychain-backed gotd session reconciliation, authorization-epoch
+rotation/invalidation after startup and at runtime, bounded request scheduling,
+sanitized command output, and cancellation cleanup. Live phone/2FA and QR login
+still require a human Test-DC account and are recorded separately when run.
+
+Phase 1 does not claim policy enforcement, message reads, MCP transport, update
+recovery, production eligibility, signing across upgrades, or release
+readiness. Production DC construction is absent even after both Test-DC method
+checks pass.

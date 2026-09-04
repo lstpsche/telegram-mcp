@@ -35,6 +35,11 @@ Runtime directories and sockets will be user-owned and mode `0700`/`0600`.
 Stale socket cleanup must use `lstat`, reject symlinks, non-sockets, and wrong
 owners, and never remove an unresolved path.
 
+In Phase 1, `tg-contextctl` takes that same lock and authenticates directly only
+while the daemon is stopped. This avoids adding a temporary credential-bearing
+control protocol to the Unix socket. The daemon binds the future MCP socket and
+accepts only content-free liveness probes until the MCP transport is built.
+
 ## Consequences
 
 - Multiple MCP clients share one coherent Telegram runtime.
@@ -44,4 +49,3 @@ owners, and never remove an unresolved path.
   sandbox.
 - Direct HTTP remains absent until a concrete client requirement justifies a
   separate transport threat model.
-

@@ -1,3 +1,3 @@
-// Package daemon will own the single-account process lifecycle, account lock,
-// owner-only Unix socket, and MCP connection accept loop.
+// Package daemon owns the single-account process lifecycle, exclusive account
+// lock, and owner-only Unix socket. The MCP connection handler is added later.
 package daemon

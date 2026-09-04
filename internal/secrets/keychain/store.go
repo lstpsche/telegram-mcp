@@ -45,13 +45,15 @@ func (s *Store) Put(ctx context.Context, account string, secret []byte) error {
 }
 
 // Get returns a fresh byte slice. The caller must clear it immediately after
-// use instead of converting it to an immutable string.
+// use and keep any unavoidable immutable conversion at the narrow downstream
+// API boundary.
 func (s *Store) Get(ctx context.Context, account string) ([]byte, error) {
 	if err := validateCall(ctx, s, account); err != nil {
 		return nil, err
 	}
 	secret, err := s.get(account)
 	if err != nil {
+		clear(secret)
 		return nil, err
 	}
 	if len(secret) == 0 || len(secret) > MaximumSecretBytes {

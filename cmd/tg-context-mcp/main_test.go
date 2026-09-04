@@ -17,7 +17,7 @@ func TestUnavailableRelayKeepsStdoutFrameClean(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("relay diagnostic reached stdout: %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "unavailable in Phase 0") {
+	if !strings.Contains(stderr.String(), "unavailable in Phase 1") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }

@@ -26,6 +26,18 @@ fail-closed CLI path. Phase 6 must reevaluate this against the minimum supported
 macOS version and a signed application identity; do not silently replace it
 with an implicit or synchronizing store.
 
+Phase 1 uses one service, `dev.tgcontext.gateway`, with separate fixed account
+names for the gotd session and Telegram API hash. Login codes, phone numbers,
+2FA passwords, and QR login tokens are never stored. Logout deletes the session
+item; application configuration and the API hash remain available for an
+explicit reauthentication.
+
+gotd's client constructor requires the API hash as a Go string and retains it
+for that client's lifetime. TgContext performs this unavoidable immutable copy
+only inside `internal/telegram`; it is never logged, returned, or persisted
+outside Keychain. The temporary byte slice read from Keychain is still cleared
+immediately after construction.
+
 ## Probe
 
 The isolated probe creates one random, non-sensitive account name and random

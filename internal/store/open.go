@@ -81,8 +81,15 @@ func prepareDatabasePath(path string) (string, error) {
 	if !parentInfo.IsDir() || parentInfo.Mode()&os.ModeSymlink != 0 {
 		return "", errors.New("metadata directory must be a real directory")
 	}
-	if parentInfo.Mode().Perm()&0o077 != 0 {
-		return "", errors.New("metadata directory must not grant group or other permissions")
+	var parentStatus unix.Stat_t
+	if err := unix.Lstat(parent, &parentStatus); err != nil {
+		return "", fmt.Errorf("inspect metadata directory owner: %w", err)
+	}
+	if parentStatus.Uid != uint32(os.Geteuid()) {
+		return "", errors.New("metadata directory must be owned by the current user")
+	}
+	if parentInfo.Mode().Perm() != 0o700 {
+		return "", errors.New("metadata directory permissions must be 0700")
 	}
 
 	fileDescriptor, err := unix.Open(
@@ -105,8 +112,11 @@ func prepareDatabasePath(path string) (string, error) {
 	if fileStatus.Mode&unix.S_IFMT != unix.S_IFREG {
 		return "", errors.New("metadata database must be a regular file")
 	}
-	if os.FileMode(fileStatus.Mode).Perm()&0o077 != 0 {
-		return "", errors.New("metadata database must not grant group or other permissions")
+	if fileStatus.Uid != uint32(os.Geteuid()) {
+		return "", errors.New("metadata database must be owned by the current user")
+	}
+	if os.FileMode(fileStatus.Mode).Perm() != 0o600 {
+		return "", errors.New("metadata database permissions must be 0600")
 	}
 	return absolutePath, nil
 }

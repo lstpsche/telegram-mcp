@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -54,19 +55,119 @@ func TestOpenAppliesEmbeddedMigrationsAndSecurityPragmas(t *testing.T) {
 	if err := database.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 1 {
-		t.Fatalf("migration count = %d, want 1", migrationCount)
+	if migrationCount != 2 {
+		t.Fatalf("migration count = %d, want 2", migrationCount)
 	}
 	var tableCount int
 	if err := database.QueryRow(`
         SELECT count(*)
         FROM sqlite_schema
-        WHERE type = 'table' AND name IN ('schema_migrations', 'authorization_state')
+        WHERE type = 'table' AND name IN (
+            'schema_migrations',
+            'authorization_state',
+            'account_config',
+            'authentication_checks'
+        )
     `).Scan(&tableCount); err != nil {
 		t.Fatal(err)
 	}
-	if tableCount != 2 {
-		t.Fatalf("expected both metadata-only tables, got %d", tableCount)
+	if tableCount != 4 {
+		t.Fatalf("expected all metadata-only tables, got %d", tableCount)
+	}
+}
+
+func TestAccountRepositoryRotatesAndInvalidatesAuthorization(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "state", "metadata.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { database.Close() })
+	repository, err := NewRepository(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	configuredAt := fixedMigrationTime()
+	config := AccountConfig{
+		APIID:       12345,
+		Environment: TestEnvironment,
+		TestDC:      2,
+		UpdatedAt:   configuredAt,
+	}
+	if err := repository.SaveConfig(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	loaded, exists, err := repository.Config(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists || loaded.APIID != config.APIID || loaded.TestDC != config.TestDC || !loaded.UpdatedAt.Equal(configuredAt) {
+		t.Fatalf("Config() = %#v, %t", loaded, exists)
+	}
+	phone := AuthMethodPhone
+	if err := repository.RecordAuthorization(ctx, strings.Repeat("x", 43), &phone, 3, configuredAt); !errors.Is(err, ErrInvalidAccountState) {
+		t.Fatalf("RecordAuthorization() with mismatched Test DC error = %v", err)
+	}
+
+	firstEpoch := strings.Repeat("a", 43)
+	if err := repository.RecordAuthorization(ctx, firstEpoch, &phone, 2, configuredAt.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.SaveConfig(ctx, config); !errors.Is(err, ErrAuthorizationExists) {
+		t.Fatalf("SaveConfig() error = %v, want ErrAuthorizationExists", err)
+	}
+
+	qr := AuthMethodQR
+	secondEpoch := strings.Repeat("b", 43)
+	if err := repository.RecordAuthorization(ctx, secondEpoch, &qr, 2, configuredAt.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	authorization, exists, err := repository.Authorization(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists || authorization.Epoch != secondEpoch || !authorization.CreatedAt.Equal(configuredAt.Add(2*time.Minute)) {
+		t.Fatalf("Authorization() = %#v, %t", authorization, exists)
+	}
+	status, err := repository.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Configured || !status.Authorized || !status.PhoneCheck || !status.QRCheck {
+		t.Fatalf("Status() = %#v", status)
+	}
+
+	if err := repository.InvalidateAuthorization(ctx); err != nil {
+		t.Fatal(err)
+	}
+	status, err = repository.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Authorized || !status.PhoneCheck || !status.QRCheck {
+		t.Fatalf("Status() after invalidation = %#v", status)
+	}
+	if err := repository.SaveConfig(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	status, err = repository.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.PhoneCheck || status.QRCheck {
+		t.Fatalf("Status() after reconfiguration retained stale method checks: %#v", status)
+	}
+	if _, err := database.Exec(`
+		INSERT INTO authentication_checks(method, test_dc, authorization_epoch, passed_at)
+		VALUES ('phone', 2, ?, 'invalid')
+	`, strings.Repeat("c", 43)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Status(ctx); !errors.Is(err, ErrInvalidAccountState) {
+		t.Fatalf("Status() with malformed check error = %v", err)
 	}
 }
 
@@ -172,6 +273,42 @@ func TestOpenRejectsSymlinkDatabase(t *testing.T) {
 		database.Close()
 		t.Fatal("Open() accepted a symlink database")
 	}
+}
+
+func TestOpenRejectsUnsafePermissions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("directory", func(t *testing.T) {
+		stateDir := filepath.Join(t.TempDir(), "state")
+		if err := os.Mkdir(stateDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(stateDir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if database, err := Open(context.Background(), filepath.Join(stateDir, "metadata.db")); err == nil {
+			_ = database.Close()
+			t.Fatal("Open() accepted unsafe directory permissions")
+		}
+	})
+
+	t.Run("database", func(t *testing.T) {
+		stateDir := filepath.Join(t.TempDir(), "state")
+		if err := os.Mkdir(stateDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		databasePath := filepath.Join(stateDir, "metadata.db")
+		if err := os.WriteFile(databasePath, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(databasePath, 0o640); err != nil {
+			t.Fatal(err)
+		}
+		if database, err := Open(context.Background(), databasePath); err == nil {
+			_ = database.Close()
+			t.Fatal("Open() accepted unsafe database permissions")
+		}
+	})
 }
 
 func TestLoadMigrationsRejectsMalformedSets(t *testing.T) {

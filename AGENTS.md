@@ -11,8 +11,10 @@
   HTTP listeners, raw MTProto tools, message indexing, embeddings, multi-account
   state, broadcast channels, bot chats, or Secret Chats without a new plan and
   threat review.
-- Production login, real-data use, publication, deployment, and acceptance are
-  separate decisions. Phase 0 uses no Telegram credentials or real content.
+- Test-DC authentication, production login, real-data use, publication,
+  deployment, and acceptance are separate decisions. Phase 1 permits only
+  interactive credentials for disposable Test-DC accounts and no message
+  content; production login remains absent.
 
 ## Trust and data rules
 
@@ -45,6 +47,6 @@
 - Keep migrations forward-only, transactional, checksum-verified, and free of
   message/search/media content columns.
 - Run `gofmt`, `go build ./cmd/...`, `go test ./...`, and `go vet ./...` for
-  Phase 0 changes. Keychain changes additionally require the noninteractive
-  macOS probe documented in `docs/keychain.md`.
-
+  every change. Keychain-adapter changes additionally require the
+  noninteractive macOS probe documented in `docs/keychain.md`; live Test-DC
+  acceptance remains a separate human-run gate.
