@@ -1,3 +1,3 @@
-// Package policy will own default-deny peer, capability, and content-eligibility
-// decisions independently from Telegram transport and MCP presentation.
+// Package policy owns default-deny, epoch-bound text grants and content-free
+// audit records independently from Telegram transport and MCP presentation.
 package policy

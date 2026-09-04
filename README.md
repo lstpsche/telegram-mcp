@@ -7,10 +7,10 @@ context, and searching chats on one user account, initially on macOS.
 
 ## Available now
 
-The MCP server exposes one tool: **`status`**. Agents can connect, discover it,
-and inspect sanitized account state. No Telegram credentials are needed to
-verify this connection. Message reads, search, media, and production login are
-not implemented yet.
+The MCP server exposes **`status`**, **`list_chats`**, **`list_messages`**, and
+**`get_message_context`**. No Telegram credentials are needed to connect and
+inspect status. Text operations require a ready Test-DC account and an explicit
+human grant. Search, media, and production login are not implemented.
 
 The account runtime supports interactive Test-DC phone/2FA and QR
 authentication, native login-Keychain session and credential storage, exclusive
@@ -50,9 +50,9 @@ For MCP clients using JSON configuration, the equivalent stdio registration is:
 
 Ask the agent to call `status`. An unconfigured account reports
 `account_state: reauth_required`, `message_reads: false`, and
-`production_login: false`. Account `ready` does not imply message tools are
-available. Telegram data freshness remains `unavailable` until a read engine
-is implemented.
+`production_login: false`. `message_reads` reports text-engine readiness;
+individual reads still require current grants. Status itself reports Telegram
+freshness as `unavailable` because it does not perform a freshness check.
 
 The relay never starts a daemon automatically. If the daemon is absent, it
 exits with a structured diagnostic on stderr. Its stdout carries only MCP
@@ -82,12 +82,20 @@ See [authentication](docs/authentication.md),
 [Keychain behavior](docs/keychain.md), and
 [verification procedures](docs/account-runtime-verification.md).
 
-## Intended content workflows
+## Authorized text workflows
 
-- Discover authorized chats and retrieve bounded history or message context.
-- Search authorized conversations and follow a result into its context.
-- Inspect unread metadata and retrieve supported media within server limits.
+- Use the human `peers` command to select immutable conversation IDs, then
+  create exact author/range/expiry grants with separate read-prefix authority.
+- Discover granted chats with `list_chats` and retrieve bounded text with
+  `list_messages` or `get_message_context`.
 - Receive explicit freshness, partial-result, and read-receipt information.
+
+See [text access](docs/text-access.md) for grant commands, eligibility
+prerequisites, supported peers, and recovery behavior. Ordinary Saved Messages,
+non-bot users, and basic groups are supported. Supergroups, topics, forwarded,
+quoted, protected, expiring, and media content are excluded. The automated
+workflow uses synthetic fixtures; live Test-DC content acceptance remains a
+separate human check. Search, unread metadata, and media remain future work.
 
 Authentication and access grants belong to the human operator. Sending,
 editing, deleting, and account administration are outside the read-first MCP

@@ -75,7 +75,11 @@ authorization epoch is recorded, and which manual method checks passed. It does
 not claim the daemon is Telegram-ready merely because a socket exists.
 
 The daemon acquires the account lock before opening SQLite, reading Keychain,
-or constructing a gotd client. An unauthorized session, including authorization
+or constructing a gotd client. It requires a recorded authorization epoch before
+opening the text runtime. A surviving Keychain session with missing metadata
+does not manufacture new authority: stop the daemon and run `auth phone` to
+reconcile the session, then restart. An already-authorized session can be reused
+without recording a new method check. An unauthorized session, including authorization
 revoked after startup, invalidates the stale epoch and leaves the daemon in
 `reauth_required`. SIGINT or SIGTERM cancels gotd and the socket loop, removes
 the exact socket node, closes SQLite, and releases the lock.

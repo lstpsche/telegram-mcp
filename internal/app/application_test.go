@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
+	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 	metastore "github.com/lstpsche/telegram-mcp/internal/store"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
@@ -227,6 +229,7 @@ func TestDaemonOwnsLockSocketAndStopsOnCancellation(t *testing.T) {
 	if err := application.Configure(context.Background(), 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
+	recordDaemonAuthorization(t, application, 2)
 	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		return &fakeRuntime{observeStatus: tgaccount.AuthorizationStatus{Authorized: true}}, nil
 	}
@@ -263,6 +266,37 @@ func TestDaemonOwnsLockSocketAndStopsOnCancellation(t *testing.T) {
 	}
 	if err := lock.Release(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDaemonRequiresRecordedEpochBeforeOpeningTextRuntime(t *testing.T) {
+	application, secrets := newTestApplication(t)
+	if err := application.Configure(context.Background(), 2, staticConfiguration(12345)); err != nil {
+		t.Fatal(err)
+	}
+	baseline := secrets.readCount()
+	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+		t.Error("constructed a text runtime without authorization metadata")
+		return nil, errors.New("unexpected account construction")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- application.RunDaemon(ctx) }()
+	waitForLifecycle(t, application, daemon.StateReauthRequired)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if secrets.readCount() != baseline {
+		t.Fatal("daemon opened credentials without recorded authorization")
+	}
+	db, repository, err := application.openRepository(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, exists, err := repository.Authorization(context.Background()); err != nil || exists {
+		t.Fatal("daemon manufactured authorization metadata")
 	}
 }
 
@@ -431,6 +465,7 @@ func TestDaemonSIGTERMHelper(t *testing.T) {
 	if err := application.Configure(context.Background(), 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
+	recordDaemonAuthorization(t, application, 2)
 	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		return &fakeRuntime{observeStatus: tgaccount.AuthorizationStatus{Authorized: true}}, nil
 	}
@@ -533,6 +568,34 @@ type fakeRuntime struct {
 	observeFailure        <-chan struct{}
 	observeError          error
 	logoutError           error
+}
+
+func (f *fakeRuntime) EnableReads(context.Context, *sql.DB, string) error { return nil }
+func (f *fakeRuntime) Ready() bool                                        { return f.observeStatus.Authorized }
+func (f *fakeRuntime) SelfID() model.PeerID {
+	id, _ := model.NewPeerID(model.PeerKindUser, 1)
+	return id
+}
+func (f *fakeRuntime) Chat(context.Context, model.PeerID) (model.Chat, error) {
+	return model.Chat{}, errors.New("fake metadata unavailable")
+}
+func (f *fakeRuntime) History(context.Context, model.HistoryQuery) ([]model.Candidate, error) {
+	return nil, errors.New("fake history unavailable")
+}
+func (f *fakeRuntime) Acknowledge(context.Context, model.PeerID, int32) error {
+	return errors.New("fake acknowledgment unavailable")
+}
+
+func recordDaemonAuthorization(t *testing.T, a *Application, dc int) {
+	t.Helper()
+	db, repository, err := a.openRepository(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := repository.RecordAuthorization(context.Background(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nil, dc, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (f *fakeRuntime) Observe(ctx context.Context, callback func(context.Context, tgaccount.AuthorizationStatus) error) error {
@@ -715,7 +778,7 @@ func (s *cancelAfterCredentialWrite) Put(ctx context.Context, account string, va
 	return nil
 }
 
-func TestUnconfiguredDaemonServesOnlyStatusWithoutReadingSecrets(t *testing.T) {
+func TestUnconfiguredDaemonServesStaticToolsWithoutReadingSecrets(t *testing.T) {
 	application, secrets := newTestApplication(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -752,7 +815,7 @@ func TestUnconfiguredDaemonServesOnlyStatusWithoutReadingSecrets(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 1 || tools.Tools[0].Name != "status" {
+	if err != nil || len(tools.Tools) != 4 {
 		t.Fatalf("tools=%v error=%v", tools, err)
 	}
 	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "status"}); err != nil {

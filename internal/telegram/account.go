@@ -43,12 +43,14 @@ type Mode uint8
 const (
 	ModeNoUpdates Mode = iota + 1
 	ModeQRAuth
+	ModeRead
 )
 
 type Account struct {
 	client   *gotdtelegram.Client
 	waiter   *floodwait.Waiter
 	loggedIn qrlogin.LoggedIn
+	reads    *readRuntime
 }
 
 // NewAccount builds a gotd client pinned to Telegram Test DCs. There is no
@@ -60,7 +62,7 @@ func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (
 	if storage == nil {
 		return nil, errors.New("Telegram session storage is required")
 	}
-	if mode != ModeNoUpdates && mode != ModeQRAuth {
+	if mode != ModeNoUpdates && mode != ModeQRAuth && mode != ModeRead {
 		return nil, errors.New("Telegram account mode is invalid")
 	}
 
@@ -89,8 +91,15 @@ func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (
 		options.NoUpdates = false
 		options.UpdateHandler = dispatcher
 	}
+	var reads *readRuntime
+	if mode == ModeRead {
+		reads = &readRuntime{failed: make(chan struct{})}
+		options.NoUpdates = false
+		options.UpdateHandler = reads
+		options.Middlewares = append(options.Middlewares, readMiddleware{reads})
+	}
 	client := gotdtelegram.NewClient(config.APIID, string(config.APIHash), options)
-	return &Account{client: client, waiter: waiter, loggedIn: loggedIn}, nil
+	return &Account{client: client, waiter: waiter, loggedIn: loggedIn, reads: reads}, nil
 }
 
 type AuthorizationStatus struct {
@@ -108,6 +117,10 @@ func (a *Account) Observe(ctx context.Context, callback func(context.Context, Au
 		status, err := a.client.Auth().Status(runContext)
 		if err != nil {
 			return sanitizeRuntimeError(err)
+		}
+		if a.reads != nil && status.Authorized {
+			callbackError = a.observeReads(runContext, callback)
+			return callbackError
 		}
 		callbackError = callback(runContext, AuthorizationStatus{Authorized: status.Authorized})
 		return callbackError

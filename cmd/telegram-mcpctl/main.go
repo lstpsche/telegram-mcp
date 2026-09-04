@@ -14,6 +14,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/buildinfo"
 	operatorcli "github.com/lstpsche/telegram-mcp/internal/cli"
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
+	"github.com/lstpsche/telegram-mcp/internal/policy"
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 	metastore "github.com/lstpsche/telegram-mcp/internal/store"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
@@ -69,6 +70,8 @@ func runContext(
 		return 1
 	}
 	switch args[0] {
+	case "peers", "grants", "grant", "revoke":
+		return runTextCommand(ctx, args, stdout, stderr, control)
 	case "status":
 		if len(args) != 1 {
 			fmt.Fprintln(stderr, "telegram-mcpctl: status accepts no arguments")
@@ -180,6 +183,10 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcpctl auth {phone|qr}")
 	fmt.Fprintln(writer, "  telegram-mcpctl status")
 	fmt.Fprintln(writer, "  telegram-mcpctl logout")
+	fmt.Fprintln(writer, "  telegram-mcpctl peers")
+	fmt.Fprintln(writer, "  telegram-mcpctl grants")
+	fmt.Fprintln(writer, "  telegram-mcpctl grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible")
+	fmt.Fprintln(writer, "  telegram-mcpctl revoke --peer PEER")
 	fmt.Fprintln(writer, "Authentication is interactive through /dev/tty; production login is disabled.")
 }
 
@@ -200,8 +207,16 @@ func writeControlError(writer io.Writer, err error) {
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		fmt.Fprintln(writer, "telegram-mcpctl: operation cancelled")
+	case errors.Is(err, policy.ErrBusy):
+		fmt.Fprintln(writer, "telegram-mcpctl: text policy is busy; retry after the in-flight content request or grant operation finishes")
+	case errors.Is(err, policy.ErrInvalidGrant):
+		fmt.Fprintln(writer, "telegram-mcpctl: invalid text grant; check IDs, scope, eligibility, and expiry within 30 days")
+	case errors.Is(err, policy.ErrEpochChanged):
+		fmt.Fprintln(writer, "telegram-mcpctl: authorization epoch is unavailable or changed; authenticate and retry")
+	case errors.Is(err, app.ErrTextControlUnsupported):
+		fmt.Fprintln(writer, "telegram-mcpctl: account runtime does not support text access control")
 	case errors.Is(err, daemon.ErrAccountLocked):
-		fmt.Fprintln(writer, "telegram-mcpctl: account runtime is busy; stop the daemon before changing authentication")
+		fmt.Fprintln(writer, "telegram-mcpctl: account runtime is busy; stop the daemon before authentication changes or peer discovery")
 	case errors.Is(err, metastore.ErrAuthorizationExists):
 		fmt.Fprintln(writer, "telegram-mcpctl: log out before changing Test-DC application credentials")
 	case errors.Is(err, app.ErrConfigurationRequired):

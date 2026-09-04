@@ -1,7 +1,7 @@
 # Telegram MCP threat model
 
-- Status: account runtime and content-free MCP implemented; content controls specified
-- Date: 2026-09-04
+- Status: account runtime and authorized text MCP implemented; live acceptance separate
+- Date: 2026-09-05
 - Scope: local single-account macOS v1 architecture
 
 ## Security objectives
@@ -67,7 +67,7 @@ policy mutation.
 
 Controls: deterministic static read-tool inventory; no control-plane MCP tools;
 strict unknown-field rejection; typed IDs; no `resolve_peer` tool; hard budgets;
-no dynamic write flag. The runtime registers only the content-free status tool.
+no dynamic write flag. Only status and the three bounded text tools are registered.
 
 ### Mutable alias or confused-deputy authorization
 
@@ -96,7 +96,11 @@ after a result was already released or without disclosure.
 Controls: distinguish search/unread metadata from body reads; assemble and
 post-authorize first, including permission for the complete dialog read prefix
 and any undisplayed messages it affects; acknowledge through the update-manager
-affected-result hook second; release bodies only on success; return explicit `read_effect`.
+affected-result hook second; wait for the durable checkpoint before body release;
+return explicit `read_effect`. A separate owner-only policy lock serializes
+revocation with the complete operation. Expiry bounds the upstream context and
+is rechecked before and after acknowledgment. Any uncertain effect or required
+audit failure releases no body.
 
 ### Secret disclosure or persistence
 
@@ -174,7 +178,10 @@ rotation/invalidation after startup and at runtime, bounded request scheduling,
 sanitized command output, and cancellation cleanup. Live phone/2FA and QR login
 still require a human Test-DC account and are recorded separately when run.
 
-The account runtime does not provide policy enforcement, message reads, MCP
-content tools, update recovery, production eligibility, signing across upgrades,
-or release readiness. Production DC construction is absent even after both Test-DC method
-checks pass.
+Synthetic tests cover default-deny grants, exact author/range/prefix authority,
+revocation serialization, hostile input and content, mirrored result budgets,
+hooked acknowledgment and durable checkpoint failures, and the stdio text
+workflow. They do not establish live account acceptance, production eligibility,
+signing across upgrades or release readiness. Production DC construction remains
+absent. Channel recovery is unsupported and degrades the text runtime; ordinary
+user/basic-group synchronization is the supported boundary.

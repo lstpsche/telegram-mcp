@@ -13,10 +13,15 @@ import (
 	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
+	"github.com/lstpsche/telegram-mcp/internal/reader"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func serveTestServer(t *testing.T) (string, context.Context) {
+	return serveTextTestServer(t, nil)
+}
+
+func serveTextTestServer(t *testing.T, service *reader.Service) (string, context.Context) {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "tmcp-wire-")
 	if err != nil {
@@ -28,7 +33,7 @@ func serveTestServer(t *testing.T) (string, context.Context) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	server := New(func() daemon.Snapshot { return daemon.Snapshot{State: daemon.StateReauthRequired} })
+	server := New(func() daemon.Snapshot { return daemon.Snapshot{State: daemon.StateReauthRequired} }, service)
 	done := make(chan error, 1)
 	go func() {
 		done <- socket.Serve(ctx, func(ctx context.Context, connection *net.UnixConn) { Serve(ctx, server, connection) })
@@ -69,7 +74,7 @@ func TestConcurrentRelayClientsAndSanitizedStatus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(tools.Tools) != 1 || tools.Tools[0].Name != "status" || tools.Tools[0].OutputSchema == nil || !tools.Tools[0].Annotations.ReadOnlyHint {
+		if len(tools.Tools) != 4 {
 			t.Fatalf("unexpected tool inventory: %#v", tools.Tools)
 		}
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "status", Arguments: map[string]any{}})

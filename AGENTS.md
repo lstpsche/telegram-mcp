@@ -16,8 +16,9 @@
   threat review.
 - Test-DC authentication, production login, real-data use, publication,
   deployment, and acceptance are separate decisions. The current runtime permits
-  only interactive credentials for disposable Test-DC accounts and no message
-  content; production login remains absent.
+  only interactive credentials for disposable Test-DC accounts. Text access
+  requires human eligibility attestation and exact grants; production login
+  remains absent. Automated acceptance uses synthetic local fixtures.
 
 ## Trust and data rules
 
@@ -28,7 +29,7 @@
   through public models, logs, errors, filenames, or MCP.
 - Authority is based on strict, versioned, kinded IDs. Never authorize by
   mutable usernames, titles, links, or Bot API encodings.
-- Policy is default-deny and must eventually run both before a fetch and after
+- Policy is default-deny and must run both before a fetch and after
   normalization. Access hashes and generated Telegram types remain inside
   `internal/telegram`.
 - History/context delivery is state-affecting. Bodies must not be released

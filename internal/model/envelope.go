@@ -227,6 +227,7 @@ const (
 	ErrorResultTooLarge      ErrorCategory = "result_too_large"
 	ErrorMediaTooLarge       ErrorCategory = "media_too_large"
 	ErrorCancelled           ErrorCategory = "cancelled"
+	ErrorReadEffectUncertain ErrorCategory = "read_effect_uncertain"
 	ErrorInternal            ErrorCategory = "internal"
 )
 
@@ -270,6 +271,8 @@ func (category ErrorCategory) message() (string, bool) {
 		return "The media exceeds the server budget", true
 	case ErrorCancelled:
 		return "The operation was cancelled", true
+	case ErrorReadEffectUncertain:
+		return "No content was released; the Telegram read effect may have occurred", true
 	case ErrorInternal:
 		return "Telegram MCP could not complete the operation", true
 	default:

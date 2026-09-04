@@ -10,11 +10,14 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/mcpserver"
+	"github.com/lstpsche/telegram-mcp/internal/policy"
+	"github.com/lstpsche/telegram-mcp/internal/reader"
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 	metastore "github.com/lstpsche/telegram-mcp/internal/store"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
@@ -325,14 +328,46 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 		_ = lifecycle.Transition(daemon.StateFailed)
 		return err
 	}
-	config, account, err := a.account(ctx, repository, tgaccount.ModeNoUpdates)
+	epochState, authorized, err := repository.Authorization(ctx)
 	if err != nil {
-		if errors.Is(err, ErrConfigurationRequired) {
-			_ = lifecycle.Transition(daemon.StateReauthRequired)
-		} else {
+		_ = lifecycle.Transition(daemon.StateFailed)
+		return err
+	}
+	var account accountRuntime
+	var textService *reader.Service
+	if authorized {
+		_, account, err = a.account(ctx, repository, tgaccount.ModeRead)
+		if err != nil && !errors.Is(err, ErrConfigurationRequired) {
 			_ = lifecycle.Transition(daemon.StateFailed)
 			return err
 		}
+		if account != nil {
+			backend, ok := account.(interface {
+				reader.Backend
+				EnableReads(context.Context, *sql.DB, string) error
+			})
+			if !ok {
+				_ = lifecycle.Transition(daemon.StateFailed)
+				return errors.New("account text runtime is unavailable")
+			}
+			if err := backend.EnableReads(ctx, database, epochState.Epoch); err != nil {
+				_ = lifecycle.Transition(daemon.StateFailed)
+				return err
+			}
+			policies, err := policy.New(database, filepath.Join(a.paths.StateDir, "policy.lock"), a.now)
+			if err != nil {
+				_ = lifecycle.Transition(daemon.StateFailed)
+				return err
+			}
+			textService, err = reader.New(backend, policies, a.now)
+			if err != nil {
+				_ = lifecycle.Transition(daemon.StateFailed)
+				return err
+			}
+		}
+	}
+	if account == nil {
+		_ = lifecycle.Transition(daemon.StateReauthRequired)
 	}
 
 	socket, err = daemon.BindSocket(a.paths.Socket)
@@ -340,7 +375,7 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 		_ = lifecycle.Transition(daemon.StateFailed)
 		return err
 	}
-	server := mcpserver.New(lifecycle.Snapshot)
+	server := mcpserver.New(lifecycle.Snapshot, textService)
 	if account == nil {
 		err := socket.Serve(ctx, func(ctx context.Context, conn *net.UnixConn) { mcpserver.Serve(ctx, server, conn) })
 		if ctx.Err() != nil {
@@ -371,16 +406,10 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 				<-observeContext.Done()
 				return observeContext.Err()
 			}
-			if _, exists, err := repository.Authorization(observeContext); err != nil {
+			if current, exists, err := repository.Authorization(observeContext); err != nil {
 				return err
-			} else if !exists {
-				epoch, err := newEpoch(a.random)
-				if err != nil {
-					return err
-				}
-				if err := repository.RecordAuthorization(observeContext, epoch, nil, config.TestDC, a.now().UTC()); err != nil {
-					return err
-				}
+			} else if !exists || current.Epoch != epochState.Epoch {
+				return tgaccount.ErrReauthenticationRequired
 			}
 			if err := lifecycle.Transition(daemon.StateReady); err != nil {
 				return err

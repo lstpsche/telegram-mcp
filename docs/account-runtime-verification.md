@@ -57,6 +57,10 @@ Passing both method checks does not enable production login. Production remains
 a separate, explicit authorization and implementation decision.
 
 MCP consumer acceptance additionally requires registering the built relay in a
-real agent client, discovering only `status`, and verifying truthful unavailable
-message access before login and after a daemon restart. Automated wire tests do
-not substitute for that client acceptance.
+real agent client, discovering the four static tools, and verifying unavailable
+message access before login. After separately establishing eligibility and a
+scoped grant, discover the allowed chat, read history and zero-neighbor context,
+and verify the actual read receipt in another Telegram client. Revoke the grant
+and verify the next call is denied. Restart and verify epoch-bound metadata and
+grants are reused only with the same authorization. Automated synthetic wire
+tests do not substitute for this client acceptance.
