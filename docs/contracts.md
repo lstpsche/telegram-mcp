@@ -1,7 +1,25 @@
 # Version 1 contracts
 
-Phase 0 fixed the transport-independent contracts. Phase 1 adds account/runtime
-ownership but still registers no MCP tool.
+These transport-independent contracts define the intended MCP input and output
+boundary. The daemon registers only the content-free `status` tool.
+
+## Available MCP behavior
+
+The stdio relay forwards bytes to an owner-only Unix socket. The daemon uses
+the pinned MCP SDK for initialization, tool discovery, calls, and cancellation.
+Both endpoints verify the other process's OS user. The server accepts at most
+eight connections, caps each input frame at 64 KiB, and limits each connection
+to 20 incoming frames per second with a burst of four. Idle reads expire after
+one minute and blocked output writes after ten seconds; reconnect after expiry.
+
+`status` accepts an empty object and returns the standard envelope. Its single
+item reports `account_state`, `message_reads: false`, and
+`production_login: false`. `account_state: ready` describes the account
+runtime, not the availability of message tools. Telegram data freshness remains
+`unavailable` because no read engine is exposed. This tool has no Telegram I/O
+or read-receipt side effects. Its input/output schemas and inventory are static;
+text and structured content represent the same result. Invalid input is returned
+as a fixed `invalid_input` tool error without echoing request fields.
 
 ## Typed references
 
@@ -55,6 +73,29 @@ State-affecting effects require the message reference through which the state
 was acknowledged. Future history/context paths must authorize and assemble the
 bounded result, perform the hooked acknowledgment, and only then release
 bodies. Search and unread metadata use distinct semantics.
+
+### Authorization for history side effects
+
+Telegram's `messages.readHistory(max_id)` affects the dialog prefix through
+that ID, not only messages included in the result. The grant must separately
+authorize advancing that peer's read boundary, including undisplayed messages.
+Author/date/message filtering of bodies does not narrow the upstream effect.
+Fail closed if the actual boundary is not authorized. Recheck grant validity
+before acknowledgment and serialize that decision with revocation.
+
+Assemble and serialize the bounded candidate before acknowledgment; release
+it only after the required update-aware acknowledgment succeeds. A disconnect
+after successful acknowledgment does not undo the read effect. A timeout can
+leave the upstream effect uncertain: return no body and disclose uncertainty
+when content-reading tools are implemented. Never claim exactly-once delivery
+or that an error guarantees no upstream side effect.
+
+Content-read methods taking exact message ID lists have distinct semantics;
+do not represent those as permission to advance an entire dialog. Search
+snippets and unread metadata must retain their own non-history behavior.
+
+[Telegram history acknowledgment](https://core.telegram.org/method/messages.readHistory)
+defines the range semantics.
 
 ## Errors
 

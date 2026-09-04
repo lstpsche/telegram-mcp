@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	applicationDirectory = "TgContext"
+	applicationDirectory = "Telegram MCP"
 	databaseFilename     = "metadata.db"
 	lockFilename         = "account.lock"
 	socketFilename       = "gateway.sock"

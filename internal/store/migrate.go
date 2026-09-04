@@ -1,4 +1,4 @@
-// Package store owns TgContext's metadata-only SQLite boundary and migrations.
+// Package store owns Telegram MCP's metadata-only SQLite boundary and migrations.
 package store
 
 import (

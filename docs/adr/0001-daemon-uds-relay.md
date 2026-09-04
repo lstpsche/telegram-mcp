@@ -17,16 +17,16 @@ account administration surface.
 
 ## Decision
 
-One `tg-contextd` process owns one account lock, Telegram authorization,
+One `telegram-mcpd` process owns one account lock, Telegram authorization,
 connection, update state, policy evaluation, metadata database, and native
 Keychain access. It accepts newline-delimited MCP connections over an
 owner-only Unix domain socket.
 
-`tg-context-mcp` is a byte-only bridge between standard MCP stdio and that
+`telegram-mcp` is a byte-only bridge between standard MCP stdio and that
 socket. It owns no Telegram client, credential, policy decision, schema
 translation, or daemon-spawn fallback. Its stdout contains MCP frames only.
 
-`tg-contextctl` is the interactive human control plane for authentication,
+`telegram-mcpctl` is the interactive human control plane for authentication,
 policy, consent, lifecycle, and audit operations. Those operations have no MCP
 equivalent.
 
@@ -35,10 +35,11 @@ Runtime directories and sockets will be user-owned and mode `0700`/`0600`.
 Stale socket cleanup must use `lstat`, reject symlinks, non-sockets, and wrong
 owners, and never remove an unresolved path.
 
-In Phase 1, `tg-contextctl` takes that same lock and authenticates directly only
+`telegram-mcpctl` takes that same lock and authenticates directly only
 while the daemon is stopped. This avoids adding a temporary credential-bearing
-control protocol to the Unix socket. The daemon binds the future MCP socket and
-accepts only content-free liveness probes until the MCP transport is built.
+control protocol to the Unix socket. The daemon serves the content-free MCP status tool. It can start without
+account configuration so an operator can verify client connectivity before
+authentication. Message tools are not registered.
 
 ## Consequences
 

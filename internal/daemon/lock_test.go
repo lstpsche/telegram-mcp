@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const lockHelperEnvironment = "TGCONTEXT_TEST_LOCK_PATH"
+const lockHelperEnvironment = "TELEGRAM_MCP_TEST_LOCK_PATH"
 
 func TestAccountLockIsExclusiveAndReusable(t *testing.T) {
 	t.Parallel()

@@ -1,4 +1,4 @@
-// Package keychain stores TgContext secrets in the current user's unlocked
+// Package keychain stores Telegram MCP secrets in the current user's unlocked
 // macOS login keychain through Security.framework.
 package keychain
 

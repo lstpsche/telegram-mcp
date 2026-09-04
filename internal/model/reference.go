@@ -1,4 +1,4 @@
-// Package model contains TgContext's transport-independent, versioned public
+// Package model contains Telegram MCP's transport-independent, versioned public
 // contracts. It intentionally contains no gotd generated types.
 package model
 

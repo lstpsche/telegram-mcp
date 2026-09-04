@@ -14,7 +14,7 @@ func TestNewRejectsUnsafeServiceNames(t *testing.T) {
 			t.Fatalf("New(%q) accepted unsafe service", service)
 		}
 	}
-	if _, err := New("dev.tgcontext.session"); err != nil {
+	if _, err := New("dev.telegram-mcp.session"); err != nil {
 		t.Fatalf("New(valid) error = %v", err)
 	}
 }
@@ -22,7 +22,7 @@ func TestNewRejectsUnsafeServiceNames(t *testing.T) {
 func TestCancelledContextDoesNotTouchKeychain(t *testing.T) {
 	t.Parallel()
 
-	store, err := New("dev.tgcontext.cancelled-test")
+	store, err := New("dev.telegram-mcp.cancelled-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestCallValidationDoesNotTouchKeychain(t *testing.T) {
 	if err := zero.Put(context.Background(), "session", []byte("value")); err == nil {
 		t.Fatal("zero Store accepted a write")
 	}
-	store, err := New("dev.tgcontext.validation-test")
+	store, err := New("dev.telegram-mcp.validation-test")
 	if err != nil {
 		t.Fatal(err)
 	}

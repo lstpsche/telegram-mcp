@@ -1,5 +1,5 @@
 // Package logging is the only supported structured logging boundary for
-// TgContext runtime packages. Its API accepts fixed events and a closed set of
+// Telegram MCP runtime packages. Its API accepts fixed events and a closed set of
 // metadata fields; it intentionally has no free-form message or error field.
 package logging
 

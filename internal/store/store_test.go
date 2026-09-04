@@ -18,7 +18,7 @@ import (
 func TestOpenAppliesEmbeddedMigrationsAndSecurityPragmas(t *testing.T) {
 	t.Parallel()
 
-	databasePath := filepath.Join(t.TempDir(), "state", "tgcontext.db")
+	databasePath := filepath.Join(t.TempDir(), "state", "telegram-mcp.db")
 	database, err := Open(context.Background(), databasePath)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)

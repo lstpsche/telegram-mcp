@@ -18,7 +18,7 @@ func TestEnvelopeUsesVersionedPrecisionSafeShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope, err := NewEnvelope("req_phase0_1", freshness, []PeerID{peer})
+	envelope, err := NewEnvelope("req_envelope_1", freshness, []PeerID{peer})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,5 +170,31 @@ func TestEnvelopeMarshalEnforcesCodesCursorAndByteBudget(t *testing.T) {
 	envelope.Items = []string{strings.Repeat("x", MaximumTextResultBytes)}
 	if _, err := json.Marshal(envelope); err == nil {
 		t.Fatal("Marshal() accepted a result above the byte budget")
+	}
+}
+
+func TestEnvelopeEmptyAndCopiedResults(t *testing.T) {
+	freshness, err := NewFreshness(FreshnessLive, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, items := range [][]string{nil, {}, {"original"}} {
+		envelope, err := NewEnvelope("req_result", freshness, items)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) > 0 {
+			items[0] = "modified"
+		}
+		encoded, err := json.Marshal(envelope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) == 0 && !strings.Contains(string(encoded), `"items":[]`) {
+			t.Fatalf("empty result is not an array: %s", encoded)
+		}
+		if strings.Contains(string(encoded), "modified") {
+			t.Fatal("constructor retained caller-owned slice")
+		}
 	}
 }

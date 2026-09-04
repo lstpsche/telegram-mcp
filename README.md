@@ -1,73 +1,116 @@
-# TgContext
+# Telegram MCP
 
-TgContext is a macOS-first, local context gateway for one Telegram user
-account. It is an unofficial client using Telegram's API. MCP is a narrow,
-read-first adapter to a persistent, policy-enforced daemon; it is not a raw
-Telegram API surface.
+Telegram MCP connects AI agents to a local Telegram account runtime through
+standard MCP stdio. It is an unofficial client using Telegram's API. The
+product is designed for finding authorized conversations, retrieving message
+context, and searching chats on one user account, initially on macOS.
 
-Phase 1 provides the secure single-account daemon foundation and interactive
-Telegram Test-DC authentication. It stores gotd session bytes and the API hash
-in the native macOS login Keychain, stores metadata only in SQLite, and keeps
-production login absent. It still exposes no MCP tools and processes no message
-content.
+## Available now
 
-## Safety boundary
+The MCP server exposes one tool: **`status`**. Agents can connect, discover it,
+and inspect sanitized account state. No Telegram credentials are needed to
+verify this connection. Message reads, search, media, and production login are
+not implemented yet.
 
-- Develop with synthetic data. Test-DC login is available; production login is
-  deliberately not implemented.
-- Telegram content is untrusted data and must never enter instructions, logs,
-  errors, schemas, or persistent metadata.
-- Policy and authentication mutations belong to the interactive control plane,
-  never the model-facing MCP surface.
-- Message, search, and media content is not persisted by default.
-- A process running as the same macOS user is outside the cryptographic
-  isolation boundary; the daemon/relay/control split is defense in depth.
+The account runtime supports interactive Test-DC phone/2FA and QR
+authentication, native login-Keychain session and credential storage, exclusive
+account ownership, metadata-only SQLite storage, and remote-first logout.
+Real-account authentication and release-binary acceptance remain human checks.
 
-See [the threat model](docs/threat-model.md) and
-[architecture decisions](docs/adr/) before extending the scaffold.
+## Connect an agent
 
-## Toolchain
-
-The repository selects Go 1.27.1 through `go.mod` and `.go-version`. Ensure a
-parent-shell `GO111MODULE=off` override is not set, then verify:
+Use Go 1.27.1, as selected by `go.mod` and `.go-version`. A parent-shell
+`GO111MODULE=off` override must not be set.
 
 ```sh
-go version
-go env GO111MODULE GOTOOLCHAIN
+go build -o ./tmp/telegram-mcp ./cmd/telegram-mcp
+go build -o ./tmp/telegram-mcpd ./cmd/telegram-mcpd
+go build -o ./tmp/telegram-mcpctl ./cmd/telegram-mcpctl
+./tmp/telegram-mcpd
 ```
 
-## Phase 1 operator flow
-
-Build the two active binaries:
+Keep the daemon running. In another terminal, register the relay with Codex
+using the absolute path to the built executable:
 
 ```sh
-go build -o ./tmp/tg-contextctl ./cmd/tg-contextctl
-go build -o ./tmp/tg-contextd ./cmd/tg-contextd
+codex mcp add telegram -- /absolute/path/to/telegram-mcp
 ```
 
-With the daemon stopped, configure only a Telegram Test DC. The API ID and API
-hash are read directly from `/dev/tty`; neither is accepted through argv or the
-environment:
+For MCP clients using JSON configuration, the equivalent stdio registration is:
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "/absolute/path/to/telegram-mcp"
+    }
+  }
+}
+```
+
+Ask the agent to call `status`. An unconfigured account reports
+`account_state: reauth_required`, `message_reads: false`, and
+`production_login: false`. Account `ready` does not imply message tools are
+available. Telegram data freshness remains `unavailable` until a read engine
+is implemented.
+
+The relay never starts a daemon automatically. If the daemon is absent, it
+exits with a structured diagnostic on stderr. Its stdout carries only MCP
+frames during normal operation. Idle connections expire after a minute;
+clients can reconnect by restarting the relay.
+
+## Configure a Test-DC account
+
+Stop the daemon before configuration, authentication, or logout. They share
+its exclusive account lock. Use only disposable Test-DC accounts.
 
 ```sh
-./tmp/tg-contextctl configure --test-dc 2
-./tmp/tg-contextctl auth phone
-# or, from a logged-out session:
-./tmp/tg-contextctl auth qr
-./tmp/tg-contextctl status
+./tmp/telegram-mcpctl configure --test-dc 2
+./tmp/telegram-mcpctl auth phone
+# Alternatively, from a logged-out session:
+./tmp/telegram-mcpctl auth qr
+./tmp/telegram-mcpctl status
+./tmp/telegram-mcpd
 ```
 
-Start the persistent owner after authentication:
+Credentials are read without echo directly from `/dev/tty`, never from argv or
+the environment. API ID, API hash, and Test DC are stored as one atomic Keychain
+bundle. If an interrupted configuration leaves SQLite inconsistent, account
+operations refuse it; stop the daemon and rerun configuration to recover.
 
-```sh
-./tmp/tg-contextd
-```
+See [authentication](docs/authentication.md),
+[Keychain behavior](docs/keychain.md), and
+[verification procedures](docs/account-runtime-verification.md).
 
-Authentication, reconfiguration, and logout take the same exclusive account
-lock as the daemon. Stop the daemon before running those commands. See
-[Test-DC authentication](docs/authentication.md) for the complete flow and
-[Phase 1 acceptance](docs/phase1-acceptance.md) for automated versus manual
-evidence.
+## Intended content workflows
+
+- Discover authorized chats and retrieve bounded history or message context.
+- Search authorized conversations and follow a result into its context.
+- Inspect unread metadata and retrieve supported media within server limits.
+- Receive explicit freshness, partial-result, and read-receipt information.
+
+Authentication and access grants belong to the human operator. Sending,
+editing, deleting, and account administration are outside the read-first MCP
+scope. Content authorization must run before fetching and after normalization.
+History delivery must separately authorize the actual dialog read boundary,
+which can include messages excluded from the returned bodies.
+
+## Data boundary
+
+Telegram content is untrusted result data, never instructions, logs, errors,
+schemas, or persisted message content. Telegram MCP does not retain message,
+search, or media content. A connected client or model provider can retain
+returned results under its own settings. Same-user processes are outside the
+cryptographic isolation boundary.
+
+Telegram's [API terms](https://core.telegram.org/api/terms) and
+[content licensing terms](https://telegram.org/tos/content-licensing) constrain
+the intended use. Production eligibility remains unresolved; local execution
+and an access grant alone do not establish permission. These decisions must
+precede real-data enablement, independently of technical implementation.
+
+See the [architecture decisions](docs/adr/),
+[protocol contracts](docs/contracts.md), and [threat model](docs/threat-model.md).
 
 ## Checks
 
@@ -76,7 +119,3 @@ go build ./cmd/...
 go test ./...
 go vet ./...
 ```
-
-`tg-context-mcp` remains fail-closed until the MCP transport phase. The daemon
-authenticates and reports process-local readiness only; it has no message read
-path.

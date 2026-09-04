@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	KeychainServiceName  = "dev.tgcontext.gateway"
-	SessionSecretAccount = "default.session"
-	APIHashSecretAccount = "default.api-hash"
+	KeychainServiceName      = "dev.telegram-mcp.gateway"
+	SessionSecretAccount     = "default.session"
+	CredentialsSecretAccount = "default.credentials"
 )
 
 type SecretStore interface {

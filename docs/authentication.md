@@ -1,6 +1,6 @@
 # Telegram Test-DC authentication
 
-Phase 1 supports one local Telegram account on Test DC 1, 2, or 3. There is no
+The runtime supports one local Telegram account on Test DC 1, 2, or 3. There is no
 production DC list, flag, environment switch, or hidden fallback.
 
 ## Preconditions
@@ -12,21 +12,24 @@ production DC list, flag, environment switch, or hidden fallback.
 - A real pre-registered Test-DC account may be required. gotd v0.161.0 records
   that automatic provisioning of random `99966XYYYY` users no longer works
   reliably as of 2026.
-- Stop `tg-contextd`. Configuration, authentication, and logout deliberately
+- Stop `telegram-mcpd`. Configuration, authentication, and logout deliberately
   require its exclusive account lock.
 
 ## Configure
 
 ```sh
-tg-contextctl configure --test-dc 2
+telegram-mcpctl configure --test-dc 2
 ```
 
 After acquiring the account lock and confirming no authorization evidence
 exists, the command opens `/dev/tty` itself and prompts, without echo, for the
 API ID and API hash. It does not accept credentials through argv, stdin, or
 environment variables. SQLite receives the API ID, Test-DC number, and
-timestamp only; the API hash goes to the non-synchronizing native
-login-Keychain item.
+timestamp only. The API ID, API hash, and Test DC are stored together as one
+versioned non-synchronizing native login-Keychain item. Before constructing a
+Telegram client, the application checks that the bundle agrees with SQLite.
+An interrupted update cannot mix fields from different configurations; if the
+stores disagree, stop the daemon and rerun configuration.
 
 Changing configuration is refused while either an authorization epoch or a
 Keychain session exists. Log out first so a session cannot be silently deleted
@@ -35,7 +38,7 @@ or rebound to different application credentials or a different DC.
 ## Phone and 2FA
 
 ```sh
-tg-contextctl auth phone
+telegram-mcpctl auth phone
 ```
 
 The phone number, login code, and optional 2FA password are read without echo
@@ -46,7 +49,7 @@ acceptance are intentionally unsupported.
 ## QR
 
 ```sh
-tg-contextctl auth qr
+telegram-mcpctl auth qr
 ```
 
 The QR token is rendered as terminal blocks directly on `/dev/tty`; its raw URI
@@ -63,8 +66,8 @@ forward.
 ## Run and inspect
 
 ```sh
-tg-contextctl status
-tg-contextd
+telegram-mcpctl status
+telegram-mcpd
 ```
 
 Status reports only socket liveness, Test-DC configuration metadata, whether an
@@ -80,13 +83,13 @@ the exact socket node, closes SQLite, and releases the lock.
 ## Logout
 
 ```sh
-tg-contextctl logout
+telegram-mcpctl logout
 ```
 
 When Telegram considers the session authorized, remote `auth.logOut` must
 succeed before local deletion. The returned future-auth token is wiped and
 discarded. The local gotd session is then deleted from Keychain and the current
-authorization epoch is removed atomically from metadata. The API hash remains
+authorization epoch is removed atomically from metadata. The credential bundle remains
 for an explicit future reauthentication.
 
 Primary protocol references:

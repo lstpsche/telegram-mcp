@@ -1,10 +1,10 @@
 // Package buildinfo owns the small amount of immutable build metadata shared
-// by TgContext binaries.
+// by Telegram MCP binaries.
 package buildinfo
 
 import "fmt"
 
-const Product = "TgContext"
+const Product = "Telegram MCP"
 
 // These values may be replaced with -ldflags for release builds.
 var (

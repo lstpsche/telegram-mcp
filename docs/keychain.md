@@ -2,7 +2,7 @@
 
 ## Decision
 
-TgContext uses a small cgo adapter over Security.framework. It stores generic
+Telegram MCP uses a small cgo adapter over Security.framework. It stores generic
 password items in the current user's unlocked login keychain, sets
 `kSecAttrSynchronizable` to false, and restricts searches to that keychain. It
 fails if the default keychain is not `login.keychain`/`login.keychain-db`, if it
@@ -21,19 +21,30 @@ avoids retaining an unnecessary dependency.
 The explicit login-keychain APIs (`SecKeychainCopyDefault`,
 `SecKeychainGetPath`, and `SecKeychainGetStatus`) and the noninteractive
 `kSecUseAuthenticationUIFail` value are deprecated by Apple. They are used here
-because the Phase 0 contract requires a named, unlocked login keychain and a
-fail-closed CLI path. Phase 6 must reevaluate this against the minimum supported
-macOS version and a signed application identity; do not silently replace it
-with an implicit or synchronizing store.
+because the storage contract requires a named, unlocked login keychain and a
+fail-closed CLI path. Release qualification must reevaluate this against the
+minimum supported macOS version and a signed application identity; do not
+silently replace it with an implicit or synchronizing store.
 
-Phase 1 uses one service, `dev.tgcontext.gateway`, with separate fixed account
-names for the gotd session and Telegram API hash. Login codes, phone numbers,
-2FA passwords, and QR login tokens are never stored. Logout deletes the session
-item; application configuration and the API hash remain available for an
+The account runtime uses one service, `dev.telegram-mcp.gateway`, with two
+fixed accounts: `default.session` for gotd sessions and `default.credentials`
+for a versioned bundle containing the API ID, API hash, and Test DC. Keychain
+replaces the credential bundle atomically. SQLite stores only non-secret
+API ID/DC metadata. Before creating a Telegram client, the application verifies
+that the two stores agree and uses the complete Keychain bundle as input.
+
+If a configuration write is interrupted, inconsistent metadata causes account
+operations to fail before any Telegram client is constructed. Stop the daemon
+and run `telegram-mcpctl configure --test-dc N` again to recover. Existing
+sessions and authorization epochs continue to prevent reconfiguration.
+The implementation does not claim that SQLite and Keychain share a transaction.
+
+Login codes, phone numbers, 2FA passwords, and QR tokens are never stored.
+Logout deletes the session item; the credential bundle remains available for
 explicit reauthentication.
 
 gotd's client constructor requires the API hash as a Go string and retains it
-for that client's lifetime. TgContext performs this unavoidable immutable copy
+for that client's lifetime. Telegram MCP performs this unavoidable immutable copy
 only inside `internal/telegram`; it is never logged, returned, or persisted
 outside Keychain. The temporary byte slice read from Keychain is still cleared
 immediately after construction.
@@ -59,7 +70,7 @@ env -i HOME="$HOME" LANG=C PATH=/usr/bin:/bin TMPDIR=/tmp \
 Expected output contains only the static success statement. It never prints an
 item name or secret.
 
-## Phase 0 evidence and signing consequence
+## Native API evidence and signing consequence
 
 On 2026-09-04, Go 1.27.1 produced an unsigned x86_64 Mach-O. After applying an
 ad-hoc signature, `codesign -dvvv` reported `Signature=adhoc` and no team
@@ -70,4 +81,4 @@ direct CoreFoundation and Security.framework linkage.
 This proves the native API behavior for one unchanged development artifact. It
 does not prove stable ACL identity across rebuilds or upgrades. Developer ID
 signing, expected access across an upgraded binary, launchd installation, and
-locked-keychain recovery remain explicit Phase 6 release gates.
+locked-keychain recovery remain explicit release gates.

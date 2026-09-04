@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -19,13 +20,14 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 	metastore "github.com/lstpsche/telegram-mcp/internal/store"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const testAPIHash = "0123456789abcdef0123456789abcdef"
 
 const (
-	signalHelperStateEnvironment   = "TGCONTEXT_TEST_STATE_DIR"
-	signalHelperRuntimeEnvironment = "TGCONTEXT_TEST_RUNTIME_DIR"
+	signalHelperStateEnvironment   = "TELEGRAM_MCP_TEST_STATE_DIR"
+	signalHelperRuntimeEnvironment = "TELEGRAM_MCP_TEST_RUNTIME_DIR"
 )
 
 func TestConfigureAuthenticateRestartAndLogoutState(t *testing.T) {
@@ -36,7 +38,7 @@ func TestConfigureAuthenticateRestartAndLogoutState(t *testing.T) {
 	if err := application.Configure(ctx, 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := secretStore.value(tgaccount.APIHashSecretAccount); !ok {
+	if _, ok := secretStore.value(tgaccount.CredentialsSecretAccount); !ok {
 		t.Fatal("Configure() did not store the API hash")
 	}
 	databaseBytes, err := os.ReadFile(application.paths.Database)
@@ -107,7 +109,7 @@ func TestConfigureAuthenticateRestartAndLogoutState(t *testing.T) {
 	if _, ok := secretStore.value(tgaccount.SessionSecretAccount); ok {
 		t.Fatal("Logout() retained the Telegram session")
 	}
-	if _, ok := secretStore.value(tgaccount.APIHashSecretAccount); !ok {
+	if _, ok := secretStore.value(tgaccount.CredentialsSecretAccount); !ok {
 		t.Fatal("Logout() removed the API hash needed for explicit reauthentication")
 	}
 	status, err = application.Status(ctx)
@@ -138,7 +140,7 @@ func TestConfigureRejectsKeychainSessionWithoutAuthorizationEpoch(t *testing.T) 
 	if session, ok := secretStore.value(tgaccount.SessionSecretAccount); !ok || string(session) != "session material" {
 		t.Fatalf("Configure() changed the existing Keychain session: %q, %t", session, ok)
 	}
-	if _, ok := secretStore.value(tgaccount.APIHashSecretAccount); ok {
+	if _, ok := secretStore.value(tgaccount.CredentialsSecretAccount); ok {
 		t.Fatal("Configure() stored a new API hash despite an existing Keychain session")
 	}
 }
@@ -475,7 +477,7 @@ func staticConfiguration(apiID int) ConfigurationReader {
 
 func shortRuntimeRoot(t *testing.T) string {
 	t.Helper()
-	directory, err := os.MkdirTemp("/tmp", "tgc-app-")
+	directory, err := os.MkdirTemp("/tmp", "tmcp-app-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -631,3 +633,132 @@ func (fakePrompt) Password(context.Context) ([]byte, error) {
 	return []byte("password"), nil
 }
 func (fakePrompt) ShowQRCode(context.Context, string, time.Time) error { return nil }
+
+func TestInterruptedConfigurationCannotConstructMixedAccount(t *testing.T) {
+	for _, cancellation := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cancellation=%t", cancellation), func(t *testing.T) {
+			application, secrets := newTestApplication(t)
+			ctx := context.Background()
+			if err := application.Configure(ctx, 2, staticConfiguration(12345)); err != nil {
+				t.Fatal(err)
+			}
+			database, repository, err := application.openRepository(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer database.Close()
+			writeContext, cancel := context.WithCancel(ctx)
+			defer cancel()
+			if cancellation {
+				application.secrets = &cancelAfterCredentialWrite{fakeSecretStore: secrets, cancel: cancel}
+			} else {
+				if _, err := database.ExecContext(ctx, `CREATE TRIGGER reject_config BEFORE UPDATE ON account_config BEGIN SELECT RAISE(ABORT, 'write rejected'); END`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err = application.Configure(writeContext, 3, staticConfiguration(54321))
+			if err == nil {
+				t.Fatal("expected interrupted configuration")
+			}
+			if cancellation && !errors.Is(err, context.Canceled) {
+				t.Fatalf("error=%v", err)
+			}
+			configuration, exists, err := repository.Config(ctx)
+			if err != nil || !exists || configuration.APIID != 12345 || configuration.TestDC != 2 {
+				t.Fatal("old metadata was not preserved")
+			}
+			stored, err := tgaccount.LoadCredentials(ctx, secrets)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer clear(stored.APIHash)
+			if stored.APIID != 54321 || stored.TestDC != 3 {
+				t.Fatal("Keychain did not atomically retain new credential tuple")
+			}
+			restarted, err := New(application.paths, secrets)
+			if err != nil {
+				t.Fatal(err)
+			}
+			called := false
+			restarted.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+				called = true
+				return &fakeRuntime{}, nil
+			}
+			if _, _, err := restarted.account(ctx, repository, tgaccount.ModeNoUpdates); !errors.Is(err, ErrConfigurationRequired) || called {
+				t.Fatalf("mixed configuration reached runtime: called=%t error=%v", called, err)
+			}
+			if !cancellation {
+				if _, err := database.ExecContext(ctx, "DROP TRIGGER reject_config"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := restarted.Configure(ctx, 3, staticConfiguration(54321)); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := restarted.account(ctx, repository, tgaccount.ModeNoUpdates); err != nil || !called {
+				t.Fatalf("reconfiguration failed to recover: %v", err)
+			}
+		})
+	}
+}
+
+type cancelAfterCredentialWrite struct {
+	*fakeSecretStore
+	cancel context.CancelFunc
+}
+
+func (s *cancelAfterCredentialWrite) Put(ctx context.Context, account string, value []byte) error {
+	if err := s.fakeSecretStore.Put(ctx, account, value); err != nil {
+		return err
+	}
+	s.cancel()
+	return nil
+}
+
+func TestUnconfiguredDaemonServesOnlyStatusWithoutReadingSecrets(t *testing.T) {
+	application, secrets := newTestApplication(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- application.RunDaemon(ctx) }()
+	defer func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("daemon shutdown: %v", err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("daemon did not stop")
+		}
+	}()
+	waitForLifecycle(t, application, daemon.StateReauthRequired)
+	deadline := time.Now().Add(2 * time.Second)
+	var connection *net.UnixConn
+	var err error
+	for time.Now().Before(deadline) {
+		connection, err = daemon.DialSocket(ctx, application.paths.Socket)
+		if err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "account-test", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &mcp.IOTransport{Reader: connection, Writer: connection}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil || len(tools.Tools) != 1 || tools.Tools[0].Name != "status" {
+		t.Fatalf("tools=%v error=%v", tools, err)
+	}
+	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "status"}); err != nil {
+		t.Fatal(err)
+	}
+	if secrets.readCount() != 0 {
+		t.Fatal("unconfigured status read Keychain")
+	}
+}

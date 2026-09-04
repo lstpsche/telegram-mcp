@@ -145,11 +145,7 @@ func NewEnvelope[T any](requestID string, freshness Freshness, items []T) (Envel
 	if len(items) > MaximumPageSize {
 		return Envelope[T]{}, errors.New("result item count exceeds the server maximum")
 	}
-	if items == nil {
-		items = make([]T, 0)
-	} else {
-		items = append([]T(nil), items...)
-	}
+	items = append(make([]T, 0, len(items)), items...)
 	return Envelope[T]{
 		SchemaVersion:    SchemaVersion,
 		RequestID:        requestID,
@@ -212,6 +208,7 @@ func (e Envelope[T]) MarshalJSON() ([]byte, error) {
 type ErrorCategory string
 
 const (
+	ErrorInvalidInput        ErrorCategory = "invalid_input"
 	ErrorNotReady            ErrorCategory = "not_ready"
 	ErrorReauthRequired      ErrorCategory = "reauth_required"
 	ErrorPolicyDenied        ErrorCategory = "policy_denied"
@@ -235,8 +232,10 @@ const (
 
 func (category ErrorCategory) message() (string, bool) {
 	switch category {
+	case ErrorInvalidInput:
+		return "The supplied tool input is invalid", true
 	case ErrorNotReady:
-		return "TgContext is not ready", true
+		return "Telegram MCP is not ready", true
 	case ErrorReauthRequired:
 		return "Telegram authorization must be renewed", true
 	case ErrorPolicyDenied:
@@ -272,7 +271,7 @@ func (category ErrorCategory) message() (string, bool) {
 	case ErrorCancelled:
 		return "The operation was cancelled", true
 	case ErrorInternal:
-		return "TgContext could not complete the operation", true
+		return "Telegram MCP could not complete the operation", true
 	default:
 		return "", false
 	}

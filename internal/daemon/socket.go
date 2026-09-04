@@ -105,30 +105,80 @@ func bindSocket(path string, dial socketDialer) (*Socket, error) {
 	return &Socket{listener: listener, path: path, identity: identity}, nil
 }
 
-// ServeProbes accepts and immediately closes liveness probes. Phase 4 replaces
-// this narrow loop with the bounded MCP connection handler.
-func (s *Socket) ServeProbes(ctx context.Context) error {
-	if s == nil || s.listener == nil {
+// Serve accepts a bounded number of same-user connections. Each handler owns
+// one connection until it returns; cancellation closes all active connections.
+func (s *Socket) Serve(ctx context.Context, handle func(context.Context, *net.UnixConn)) error {
+	if s == nil || s.listener == nil || handle == nil {
 		return errors.New("runtime socket is not initialized")
 	}
+	slots := make(chan struct{}, 8)
+	var handlers sync.WaitGroup
+	serveContext, cancel := context.WithCancel(ctx)
+	defer handlers.Wait()
+	defer cancel()
 	for {
+		if err := serveContext.Err(); err != nil {
+			return err
+		}
 		if err := s.listener.SetDeadline(time.Now().Add(socketProbeTimeout)); err != nil {
-			return fmt.Errorf("set runtime socket deadline: %w", err)
+			return errors.New("set runtime socket deadline")
 		}
 		connection, err := s.listener.AcceptUnix()
 		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
+			if serveContext.Err() != nil {
+				return serveContext.Err()
 			}
 			if networkError, ok := err.(net.Error); ok && networkError.Timeout() {
 				continue
 			}
-			return fmt.Errorf("accept runtime socket probe: %w", err)
+			return errors.New("accept runtime socket connection")
 		}
-		if err := connection.Close(); err != nil {
-			return fmt.Errorf("close runtime socket probe: %w", err)
+		if err := VerifyPeer(connection); err != nil {
+			_ = connection.Close()
+			continue
+		}
+		select {
+		case slots <- struct{}{}:
+			handlers.Add(1)
+			go func() {
+				defer handlers.Done()
+				defer func() { <-slots }()
+				stop := context.AfterFunc(serveContext, func() { _ = connection.Close() })
+				defer stop()
+				defer connection.Close()
+				handle(serveContext, connection)
+			}()
+		default:
+			_ = connection.Close()
 		}
 	}
+}
+
+// DialSocket validates the directory, socket node, and server UID. It never
+// creates state or starts a daemon on behalf of a client.
+func DialSocket(ctx context.Context, path string) (*net.UnixConn, error) {
+	if err := inspectPrivateDirectory(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	identity, err := inspectSocket(path)
+	if err != nil {
+		return nil, err
+	}
+	connection, err := (&net.Dialer{Timeout: socketProbeTimeout}).DialContext(ctx, "unix", path)
+	if err != nil {
+		return nil, err
+	}
+	socket := connection.(*net.UnixConn)
+	current, err := inspectSocket(path)
+	if err != nil || current != identity {
+		_ = socket.Close()
+		return nil, ErrUnsafeSocket
+	}
+	if err := VerifyPeer(socket); err != nil {
+		_ = socket.Close()
+		return nil, err
+	}
+	return socket, nil
 }
 
 // Close closes the listener and removes only the socket node originally bound.

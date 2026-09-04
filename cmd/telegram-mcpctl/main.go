@@ -55,7 +55,7 @@ func runContext(
 	openTerminal terminalFactory,
 ) int {
 	if len(args) == 1 && args[0] == "--version" {
-		fmt.Fprintln(stdout, buildinfo.String("tg-contextctl"))
+		fmt.Fprintln(stdout, buildinfo.String("telegram-mcpctl"))
 		return 0
 	}
 	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h")) {
@@ -71,7 +71,7 @@ func runContext(
 	switch args[0] {
 	case "status":
 		if len(args) != 1 {
-			fmt.Fprintln(stderr, "tg-contextctl: status accepts no arguments")
+			fmt.Fprintln(stderr, "telegram-mcpctl: status accepts no arguments")
 			return 2
 		}
 		status, err := control.Status(ctx)
@@ -83,7 +83,7 @@ func runContext(
 		return 0
 	case "logout":
 		if len(args) != 1 {
-			fmt.Fprintln(stderr, "tg-contextctl: logout accepts no arguments")
+			fmt.Fprintln(stderr, "telegram-mcpctl: logout accepts no arguments")
 			return 2
 		}
 		if err := control.Logout(ctx); err != nil {
@@ -95,7 +95,7 @@ func runContext(
 	case "configure":
 		testDC, ok := parseTestDC(args[1:])
 		if !ok {
-			fmt.Fprintln(stderr, "tg-contextctl: configure requires exactly --test-dc 1, 2, or 3")
+			fmt.Fprintln(stderr, "telegram-mcpctl: configure requires exactly --test-dc 1, 2, or 3")
 			return 2
 		}
 		if err := control.Configure(ctx, testDC, configurationReader(openTerminal)); err != nil {
@@ -106,7 +106,7 @@ func runContext(
 		return 0
 	case "auth":
 		if len(args) != 2 || (args[1] != "phone" && args[1] != "qr") {
-			fmt.Fprintln(stderr, "tg-contextctl: auth requires exactly one method: phone or qr")
+			fmt.Fprintln(stderr, "telegram-mcpctl: auth requires exactly one method: phone or qr")
 			return 2
 		}
 		prompt, err := openTerminal()
@@ -131,7 +131,7 @@ func runContext(
 		}
 		return 0
 	default:
-		fmt.Fprintln(stderr, "tg-contextctl: unknown command")
+		fmt.Fprintln(stderr, "telegram-mcpctl: unknown command")
 		return 2
 	}
 }
@@ -176,11 +176,11 @@ func parseTestDC(args []string) (int, bool) {
 
 func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "usage:")
-	fmt.Fprintln(writer, "  tg-contextctl configure --test-dc {1|2|3}")
-	fmt.Fprintln(writer, "  tg-contextctl auth {phone|qr}")
-	fmt.Fprintln(writer, "  tg-contextctl status")
-	fmt.Fprintln(writer, "  tg-contextctl logout")
-	fmt.Fprintln(writer, "Authentication is interactive through /dev/tty; production login is disabled in Phase 1.")
+	fmt.Fprintln(writer, "  telegram-mcpctl configure --test-dc {1|2|3}")
+	fmt.Fprintln(writer, "  telegram-mcpctl auth {phone|qr}")
+	fmt.Fprintln(writer, "  telegram-mcpctl status")
+	fmt.Fprintln(writer, "  telegram-mcpctl logout")
+	fmt.Fprintln(writer, "Authentication is interactive through /dev/tty; production login is disabled.")
 }
 
 func writeStatus(writer io.Writer, status app.Status) {
@@ -199,26 +199,26 @@ func writeStatus(writer io.Writer, status app.Status) {
 func writeControlError(writer io.Writer, err error) {
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		fmt.Fprintln(writer, "tg-contextctl: operation cancelled")
+		fmt.Fprintln(writer, "telegram-mcpctl: operation cancelled")
 	case errors.Is(err, daemon.ErrAccountLocked):
-		fmt.Fprintln(writer, "tg-contextctl: account runtime is busy; stop the daemon before changing authentication")
+		fmt.Fprintln(writer, "telegram-mcpctl: account runtime is busy; stop the daemon before changing authentication")
 	case errors.Is(err, metastore.ErrAuthorizationExists):
-		fmt.Fprintln(writer, "tg-contextctl: log out before changing Test-DC application credentials")
+		fmt.Fprintln(writer, "telegram-mcpctl: log out before changing Test-DC application credentials")
 	case errors.Is(err, app.ErrConfigurationRequired):
-		fmt.Fprintln(writer, "tg-contextctl: run configure before authentication or logout")
+		fmt.Fprintln(writer, "telegram-mcpctl: run configure before authentication or logout")
 	case errors.Is(err, tgaccount.ErrInvalidConfig):
-		fmt.Fprintln(writer, "tg-contextctl: invalid Test-DC application credentials")
+		fmt.Fprintln(writer, "telegram-mcpctl: invalid Test-DC application credentials")
 	case errors.Is(err, tgaccount.ErrAuthenticationRejected):
-		fmt.Fprintln(writer, "tg-contextctl: Telegram rejected the interactive authentication input")
+		fmt.Fprintln(writer, "telegram-mcpctl: Telegram rejected the interactive authentication input")
 	case errors.Is(err, tgaccount.ErrReauthenticationRequired):
-		fmt.Fprintln(writer, "tg-contextctl: the Telegram session requires reauthentication")
+		fmt.Fprintln(writer, "telegram-mcpctl: the Telegram session requires reauthentication")
 	case errors.Is(err, tgaccount.ErrTelegramUnavailable):
-		fmt.Fprintln(writer, "tg-contextctl: Telegram operation is unavailable; retry later")
+		fmt.Fprintln(writer, "telegram-mcpctl: Telegram operation is unavailable; retry later")
 	case errors.Is(err, keychain.ErrKeychainLocked), errors.Is(err, keychain.ErrWrongKeychain), errors.Is(err, keychain.ErrUnsupported):
-		fmt.Fprintln(writer, "tg-contextctl: the unlocked macOS login keychain is required")
+		fmt.Fprintln(writer, "telegram-mcpctl: the unlocked macOS login keychain is required")
 	case errors.Is(err, daemon.ErrUnsafeSocket), errors.Is(err, daemon.ErrSocketInUse):
-		fmt.Fprintln(writer, "tg-contextctl: runtime socket validation failed closed")
+		fmt.Fprintln(writer, "telegram-mcpctl: runtime socket validation failed closed")
 	default:
-		fmt.Fprintln(writer, "tg-contextctl: operation failed safely; no credential details were emitted")
+		fmt.Fprintln(writer, "telegram-mcpctl: operation failed safely; no credential details were emitted")
 	}
 }

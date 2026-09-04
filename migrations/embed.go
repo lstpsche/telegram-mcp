@@ -1,4 +1,4 @@
-// Package migrations embeds TgContext's forward-only SQLite schema changes.
+// Package migrations embeds Telegram MCP's forward-only SQLite schema changes.
 package migrations
 
 import "embed"

@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
+	"github.com/lstpsche/telegram-mcp/internal/mcpserver"
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 	metastore "github.com/lstpsche/telegram-mcp/internal/store"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
@@ -136,8 +138,8 @@ func (a *Application) Configure(ctx context.Context, testDC int, read Configurat
 	if err := tgaccount.ValidateConfig(tgaccount.Config{APIID: apiID, APIHash: apiHash, TestDC: testDC}); err != nil {
 		return err
 	}
-	if err := a.secrets.Put(ctx, tgaccount.APIHashSecretAccount, apiHash); err != nil {
-		return fmt.Errorf("store Telegram API hash: %w", err)
+	if err := tgaccount.StoreCredentials(ctx, a.secrets, tgaccount.Config{APIID: apiID, APIHash: apiHash, TestDC: testDC}); err != nil {
+		return fmt.Errorf("store Telegram application credentials: %w", err)
 	}
 	return repository.SaveConfig(ctx, metastore.AccountConfig{
 		APIID:       apiID,
@@ -327,15 +329,24 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 	if err != nil {
 		if errors.Is(err, ErrConfigurationRequired) {
 			_ = lifecycle.Transition(daemon.StateReauthRequired)
-			normalStop = true
+		} else {
+			_ = lifecycle.Transition(daemon.StateFailed)
 			return err
 		}
-		_ = lifecycle.Transition(daemon.StateFailed)
-		return err
 	}
 
 	socket, err = daemon.BindSocket(a.paths.Socket)
 	if err != nil {
+		_ = lifecycle.Transition(daemon.StateFailed)
+		return err
+	}
+	server := mcpserver.New(lifecycle.Snapshot)
+	if account == nil {
+		err := socket.Serve(ctx, func(ctx context.Context, conn *net.UnixConn) { mcpserver.Serve(ctx, server, conn) })
+		if ctx.Err() != nil {
+			normalStop = true
+			return nil
+		}
 		_ = lifecycle.Transition(daemon.StateFailed)
 		return err
 	}
@@ -345,7 +356,9 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 	}
 
 	group, groupContext := errgroup.WithContext(ctx)
-	group.Go(func() error { return socket.ServeProbes(groupContext) })
+	group.Go(func() error {
+		return socket.Serve(groupContext, func(ctx context.Context, conn *net.UnixConn) { mcpserver.Serve(ctx, server, conn) })
+	})
 	group.Go(func() error {
 		return account.Observe(groupContext, func(observeContext context.Context, authorization tgaccount.AuthorizationStatus) error {
 			if !authorization.Authorized {
@@ -438,25 +451,24 @@ func (a *Application) account(
 	if !configured || config.Environment != metastore.TestEnvironment {
 		return metastore.AccountConfig{}, nil, ErrConfigurationRequired
 	}
-	apiHash, err := a.secrets.Get(ctx, tgaccount.APIHashSecretAccount)
+	credentials, err := tgaccount.LoadCredentials(ctx, a.secrets)
 	if errors.Is(err, keychain.ErrNotFound) {
-		clear(apiHash)
+		clear(credentials.APIHash)
 		return metastore.AccountConfig{}, nil, ErrConfigurationRequired
 	}
 	if err != nil {
-		clear(apiHash)
+		clear(credentials.APIHash)
 		return metastore.AccountConfig{}, nil, err
 	}
-	defer clear(apiHash)
+	defer clear(credentials.APIHash)
+	if credentials.APIID != config.APIID || credentials.TestDC != config.TestDC {
+		return metastore.AccountConfig{}, nil, ErrConfigurationRequired
+	}
 	sessionStorage, err := tgaccount.NewKeychainSessionStorage(a.secrets)
 	if err != nil {
 		return metastore.AccountConfig{}, nil, err
 	}
-	account, err := a.factory(tgaccount.Config{
-		APIID:   config.APIID,
-		APIHash: apiHash,
-		TestDC:  config.TestDC,
-	}, sessionStorage, mode)
+	account, err := a.factory(credentials, sessionStorage, mode)
 	if err != nil {
 		return metastore.AccountConfig{}, nil, err
 	}

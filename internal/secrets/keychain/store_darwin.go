@@ -16,15 +16,15 @@ package keychain
 #include <string.h>
 #include <unistd.h>
 
-#define TGC_ERR_WRONG_KEYCHAIN ((OSStatus)-98765)
+#define TMCP_ERR_WRONG_KEYCHAIN ((OSStatus)-98765)
 
 typedef struct {
     OSStatus status;
     void *bytes;
     size_t length;
-} tgc_read_result;
+} tmcp_read_result;
 
-static int tgc_is_login_keychain_path(const char *path) {
+static int tmcp_is_login_keychain_path(const char *path) {
 	struct passwd password;
 	struct passwd *result = NULL;
 	char password_buffer[16384];
@@ -41,7 +41,7 @@ static int tgc_is_login_keychain_path(const char *path) {
 	return length > 0 && (size_t)length < sizeof(expected) && strcmp(path, expected) == 0;
 }
 
-static OSStatus tgc_copy_unlocked_login_keychain(SecKeychainRef *result) {
+static OSStatus tmcp_copy_unlocked_login_keychain(SecKeychainRef *result) {
     *result = NULL;
     OSStatus status = SecKeychainCopyDefault(result);
     if (status != errSecSuccess) {
@@ -62,10 +62,10 @@ static OSStatus tgc_copy_unlocked_login_keychain(SecKeychainRef *result) {
         return errSecBufferTooSmall;
     }
     path[path_length] = '\0';
-    if (!tgc_is_login_keychain_path(path)) {
+    if (!tmcp_is_login_keychain_path(path)) {
         CFRelease(*result);
         *result = NULL;
-        return TGC_ERR_WRONG_KEYCHAIN;
+        return TMCP_ERR_WRONG_KEYCHAIN;
     }
 
     SecKeychainStatus keychain_status = 0;
@@ -83,11 +83,11 @@ static OSStatus tgc_copy_unlocked_login_keychain(SecKeychainRef *result) {
     return errSecSuccess;
 }
 
-static CFStringRef tgc_string(const char *value) {
+static CFStringRef tmcp_string(const char *value) {
     return CFStringCreateWithCString(kCFAllocatorDefault, value, kCFStringEncodingUTF8);
 }
 
-static CFMutableDictionaryRef tgc_base_query(
+static CFMutableDictionaryRef tmcp_base_query(
     const char *service,
     const char *account,
     SecKeychainRef keychain,
@@ -103,8 +103,8 @@ static CFMutableDictionaryRef tgc_base_query(
         return NULL;
     }
 
-    CFStringRef service_value = tgc_string(service);
-    CFStringRef account_value = tgc_string(account);
+    CFStringRef service_value = tmcp_string(service);
+    CFStringRef account_value = tmcp_string(account);
     if (service_value == NULL || account_value == NULL) {
         if (service_value != NULL) CFRelease(service_value);
         if (account_value != NULL) CFRelease(account_value);
@@ -140,18 +140,18 @@ static CFMutableDictionaryRef tgc_base_query(
     return query;
 }
 
-static OSStatus tgc_add(const char *service, const char *account, const void *bytes, size_t length) {
+static OSStatus tmcp_add(const char *service, const char *account, const void *bytes, size_t length) {
     SecKeychainRef keychain = NULL;
-    OSStatus status = tgc_copy_unlocked_login_keychain(&keychain);
+    OSStatus status = tmcp_copy_unlocked_login_keychain(&keychain);
     if (status != errSecSuccess) return status;
 
-    CFMutableDictionaryRef item = tgc_base_query(service, account, keychain, 1);
+    CFMutableDictionaryRef item = tmcp_base_query(service, account, keychain, 1);
     if (item == NULL) {
         CFRelease(keychain);
         return errSecAllocate;
     }
     CFDataRef data = CFDataCreate(kCFAllocatorDefault, bytes, (CFIndex)length);
-    CFStringRef label = tgc_string("TgContext local secret");
+    CFStringRef label = tmcp_string("Telegram MCP local secret");
     if (data == NULL || label == NULL) {
         if (data != NULL) CFRelease(data);
         if (label != NULL) CFRelease(label);
@@ -170,12 +170,12 @@ static OSStatus tgc_add(const char *service, const char *account, const void *by
     return status;
 }
 
-static OSStatus tgc_update(const char *service, const char *account, const void *bytes, size_t length) {
+static OSStatus tmcp_update(const char *service, const char *account, const void *bytes, size_t length) {
     SecKeychainRef keychain = NULL;
-    OSStatus status = tgc_copy_unlocked_login_keychain(&keychain);
+    OSStatus status = tmcp_copy_unlocked_login_keychain(&keychain);
     if (status != errSecSuccess) return status;
 
-    CFMutableDictionaryRef query = tgc_base_query(service, account, keychain, 0);
+    CFMutableDictionaryRef query = tmcp_base_query(service, account, keychain, 0);
     CFMutableDictionaryRef changes = CFDictionaryCreateMutable(
         kCFAllocatorDefault,
         0,
@@ -200,21 +200,21 @@ static OSStatus tgc_update(const char *service, const char *account, const void 
     return status;
 }
 
-static OSStatus tgc_put(const char *service, const char *account, const void *bytes, size_t length) {
-    OSStatus status = tgc_add(service, account, bytes, length);
+static OSStatus tmcp_put(const char *service, const char *account, const void *bytes, size_t length) {
+    OSStatus status = tmcp_add(service, account, bytes, length);
     if (status == errSecDuplicateItem) {
-        status = tgc_update(service, account, bytes, length);
+        status = tmcp_update(service, account, bytes, length);
     }
     return status;
 }
 
-static tgc_read_result tgc_read(const char *service, const char *account, size_t maximum_length) {
-    tgc_read_result output = { errSecSuccess, NULL, 0 };
+static tmcp_read_result tmcp_read(const char *service, const char *account, size_t maximum_length) {
+    tmcp_read_result output = { errSecSuccess, NULL, 0 };
     SecKeychainRef keychain = NULL;
-    output.status = tgc_copy_unlocked_login_keychain(&keychain);
+    output.status = tmcp_copy_unlocked_login_keychain(&keychain);
     if (output.status != errSecSuccess) return output;
 
-    CFMutableDictionaryRef query = tgc_base_query(service, account, keychain, 0);
+    CFMutableDictionaryRef query = tmcp_base_query(service, account, keychain, 0);
     if (query == NULL) {
         output.status = errSecAllocate;
         CFRelease(keychain);
@@ -251,12 +251,12 @@ static tgc_read_result tgc_read(const char *service, const char *account, size_t
     return output;
 }
 
-static OSStatus tgc_delete(const char *service, const char *account) {
+static OSStatus tmcp_delete(const char *service, const char *account) {
     SecKeychainRef keychain = NULL;
-    OSStatus status = tgc_copy_unlocked_login_keychain(&keychain);
+    OSStatus status = tmcp_copy_unlocked_login_keychain(&keychain);
     if (status != errSecSuccess) return status;
 
-    CFMutableDictionaryRef query = tgc_base_query(service, account, keychain, 0);
+    CFMutableDictionaryRef query = tmcp_base_query(service, account, keychain, 0);
     if (query == NULL) {
         CFRelease(keychain);
         return errSecAllocate;
@@ -267,16 +267,16 @@ static OSStatus tgc_delete(const char *service, const char *account) {
     return status;
 }
 
-static void tgc_free_secret(void *bytes, size_t length) {
+static void tmcp_free_secret(void *bytes, size_t length) {
     if (bytes == NULL) return;
     volatile unsigned char *cursor = (volatile unsigned char *)bytes;
     while (length-- > 0) *cursor++ = 0;
     free(bytes);
 }
 
-static int32_t tgc_status_not_found(void) { return (int32_t)errSecItemNotFound; }
-static int32_t tgc_status_locked(void) { return (int32_t)errSecInteractionNotAllowed; }
-static int32_t tgc_status_wrong_keychain(void) { return (int32_t)TGC_ERR_WRONG_KEYCHAIN; }
+static int32_t tmcp_status_not_found(void) { return (int32_t)errSecItemNotFound; }
+static int32_t tmcp_status_locked(void) { return (int32_t)errSecInteractionNotAllowed; }
+static int32_t tmcp_status_wrong_keychain(void) { return (int32_t)TMCP_ERR_WRONG_KEYCHAIN; }
 */
 import "C"
 
@@ -290,7 +290,7 @@ func (s *Store) put(account string, secret []byte) error {
 	accountValue := C.CString(account)
 	defer C.free(unsafe.Pointer(serviceValue))
 	defer C.free(unsafe.Pointer(accountValue))
-	status := int32(C.tgc_put(
+	status := int32(C.tmcp_put(
 		serviceValue,
 		accountValue,
 		unsafe.Pointer(unsafe.SliceData(secret)),
@@ -304,14 +304,14 @@ func (s *Store) get(account string) ([]byte, error) {
 	accountValue := C.CString(account)
 	defer C.free(unsafe.Pointer(serviceValue))
 	defer C.free(unsafe.Pointer(accountValue))
-	result := C.tgc_read(serviceValue, accountValue, C.size_t(MaximumSecretBytes))
+	result := C.tmcp_read(serviceValue, accountValue, C.size_t(MaximumSecretBytes))
 	if err := keychainError("read", int32(result.status)); err != nil {
 		if result.bytes != nil {
-			C.tgc_free_secret(result.bytes, result.length)
+			C.tmcp_free_secret(result.bytes, result.length)
 		}
 		return nil, err
 	}
-	defer C.tgc_free_secret(result.bytes, result.length)
+	defer C.tmcp_free_secret(result.bytes, result.length)
 	if result.length == 0 || result.length > C.size_t(MaximumSecretBytes) {
 		return nil, errors.New("stored secret length is outside the allowed range")
 	}
@@ -323,7 +323,7 @@ func (s *Store) delete(account string) error {
 	accountValue := C.CString(account)
 	defer C.free(unsafe.Pointer(serviceValue))
 	defer C.free(unsafe.Pointer(accountValue))
-	status := int32(C.tgc_delete(serviceValue, accountValue))
+	status := int32(C.tmcp_delete(serviceValue, accountValue))
 	return keychainError("delete", status)
 }
 
@@ -333,11 +333,11 @@ func keychainError(operation string, status int32) error {
 	}
 	kind := error(nil)
 	switch status {
-	case int32(C.tgc_status_not_found()):
+	case int32(C.tmcp_status_not_found()):
 		kind = ErrNotFound
-	case int32(C.tgc_status_locked()):
+	case int32(C.tmcp_status_locked()):
 		kind = ErrKeychainLocked
-	case int32(C.tgc_status_wrong_keychain()):
+	case int32(C.tmcp_status_wrong_keychain()):
 		kind = ErrWrongKeychain
 	}
 	return &StatusError{Operation: operation, Status: status, kind: kind}

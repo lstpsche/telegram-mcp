@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/awnumar/memguard v0.23.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/gotd/contrib v0.25.0
 	github.com/gotd/td v0.161.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
@@ -29,7 +30,6 @@ require (
 	github.com/go-faster/jx v1.2.0 // indirect
 	github.com/go-faster/xor v1.0.0 // indirect
 	github.com/go-faster/yaml v0.4.6 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gotd/ige v0.3.0 // indirect
 	github.com/gotd/log v0.1.0 // indirect

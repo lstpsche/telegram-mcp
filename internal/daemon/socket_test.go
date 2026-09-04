@@ -23,7 +23,9 @@ func TestSocketLifecycleAndProbe(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	serveDone := make(chan error, 1)
-	go func() { serveDone <- socket.ServeProbes(ctx) }()
+	go func() {
+		serveDone <- socket.Serve(ctx, func(_ context.Context, connection *net.UnixConn) { _ = connection.Close() })
+	}()
 
 	state, err := ProbeSocket(socketPath)
 	if err != nil {
@@ -40,10 +42,10 @@ func TestSocketLifecycleAndProbe(t *testing.T) {
 	select {
 	case err := <-serveDone:
 		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("ServeProbes() error = %v", err)
+			t.Fatalf("Serve() error = %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("ServeProbes() did not stop after cancellation")
+		t.Fatal("Serve() did not stop after cancellation")
 	}
 	if err := socket.Close(); err != nil {
 		t.Fatal(err)
@@ -201,7 +203,7 @@ func TestProbeSocketRejectsUnsafeRuntimeDirectory(t *testing.T) {
 
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	directory, err := os.MkdirTemp("/tmp", "tgc-")
+	directory, err := os.MkdirTemp("/tmp", "tmcp-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,4 +216,77 @@ func shortTempDir(t *testing.T) string {
 		}
 	})
 	return directory
+}
+
+func TestSocketLimitsConnectionsAndReleasesCapacity(t *testing.T) {
+	socketPath := filepath.Join(shortTempDir(t), "bounded.sock")
+	socket, err := BindSocket(socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer socket.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{}, 16)
+	finished := make(chan struct{}, 16)
+	done := make(chan error, 1)
+	go func() {
+		done <- socket.Serve(ctx, func(_ context.Context, connection *net.UnixConn) {
+			started <- struct{}{}
+			var buffer [1]byte
+			_, _ = connection.Read(buffer[:])
+			finished <- struct{}{}
+		})
+	}()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Error("bounded server did not stop")
+		}
+	}()
+	connections := make([]*net.UnixConn, 0, 8)
+	for range 8 {
+		connection, err := DialSocket(ctx, socketPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer connection.Close()
+		connections = append(connections, connection)
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("permitted connection was not accepted")
+		}
+	}
+	rejected, err := DialSocket(ctx, socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rejected.Close()
+	_ = rejected.SetReadDeadline(time.Now().Add(time.Second))
+	var buffer [1]byte
+	if _, err := rejected.Read(buffer[:]); err == nil {
+		t.Fatal("ninth connection was admitted")
+	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatal("excess connection was not closed")
+	}
+	_ = connections[0].Close()
+	<-finished
+	// Wait for the handler's deferred capacity release before retrying.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		replacement, err := DialSocket(ctx, socketPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-started:
+			_ = replacement.Close()
+			return
+		case <-time.After(10 * time.Millisecond):
+			_ = replacement.Close()
+		}
+	}
+	t.Fatal("closed connection did not release capacity")
 }

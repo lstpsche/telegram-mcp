@@ -21,7 +21,7 @@ func TestLoggerEmitsOnlyFixedEventAndMetadataFields(t *testing.T) {
 		EventProcessStarting,
 		ComponentField(ComponentDaemon),
 		OperationField(OperationMigrate),
-		RequestIDField("req_phase0_1"),
+		RequestIDField("req_logging_1"),
 		FreshnessField(model.FreshnessLive),
 		CountField(2),
 		DurationField(1500*time.Millisecond),
@@ -32,7 +32,7 @@ func TestLoggerEmitsOnlyFixedEventAndMetadataFields(t *testing.T) {
 	for _, expected := range []string{
 		`"msg":"process.starting"`,
 		`"component":"daemon"`,
-		`"request_id":"req_phase0_1"`,
+		`"request_id":"req_logging_1"`,
 		`"duration_ms":1500`,
 	} {
 		if !strings.Contains(line, expected) {

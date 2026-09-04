@@ -1,5 +1,5 @@
 // keychain-probe is an isolated, destructive-to-its-own-temporary-item proof
-// for TgContext's native macOS Keychain adapter. It never prints secret bytes.
+// for Telegram MCP's native macOS Keychain adapter. It never prints secret bytes.
 package main
 
 import (
@@ -17,7 +17,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 )
 
-const probeService = "dev.tgcontext.keychain.probe"
+const probeService = "dev.telegram-mcp.keychain.probe"
 
 func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

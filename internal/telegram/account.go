@@ -52,7 +52,7 @@ type Account struct {
 }
 
 // NewAccount builds a gotd client pinned to Telegram Test DCs. There is no
-// production-DC construction path in Phase 1.
+// production-DC construction path.
 func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (*Account, error) {
 	if err := ValidateConfig(config); err != nil {
 		return nil, err

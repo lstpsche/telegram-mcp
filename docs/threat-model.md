@@ -1,6 +1,6 @@
-# TgContext threat model
+# Telegram MCP threat model
 
-- Status: Phase 1 implemented boundary
+- Status: account runtime and content-free MCP implemented; content controls specified
 - Date: 2026-09-04
 - Scope: local single-account macOS v1 architecture
 
@@ -67,7 +67,7 @@ policy mutation.
 
 Controls: deterministic static read-tool inventory; no control-plane MCP tools;
 strict unknown-field rejection; typed IDs; no `resolve_peer` tool; hard budgets;
-no dynamic write flag. Phase 1 still registers no tools at all.
+no dynamic write flag. The runtime registers only the content-free status tool.
 
 ### Mutable alias or confused-deputy authorization
 
@@ -94,8 +94,9 @@ Threat: history, context, voice, or round-media delivery advances Telegram state
 after a result was already released or without disclosure.
 
 Controls: distinguish search/unread metadata from body reads; assemble and
-post-authorize first; acknowledge through the update-manager affected-result
-hook second; release bodies only on success; return explicit `read_effect`.
+post-authorize first, including permission for the complete dialog read prefix
+and any undisplayed messages it affects; acknowledge through the update-manager
+affected-result hook second; release bodies only on success; return explicit `read_effect`.
 
 ### Secret disclosure or persistence
 
@@ -117,8 +118,9 @@ Controls: account lock before secret prompting or access; private runtime
 directory/socket; `lstat` and owner/type validation; length-checked path;
 same-user stale socket cleanup only after positive `ECONNREFUSED`; fail-closed
 handling of inconclusive dial errors; no relay fallback; cancellation-aware
-probe loop. Peer-
-credential validation and bounded MCP connections remain Phase 4 requirements.
+accept loop. Both socket endpoints check peer credentials; the listener bounds
+concurrent connections and the MCP boundary limits input frames and rate, idle
+reads, and blocked writes.
 
 ### Stale or incomplete state represented as live
 
@@ -145,7 +147,7 @@ changed code identity breaks or broadens Keychain access.
 
 Controls: explicit stable pins and checksums; compile selected gotd/MCP packages;
 direct platform Keychain API; vulnerability checks at release; signed/notarized
-artifacts; upgrade ACL proof. Phase 0 ad-hoc signing proves only one unchanged
+artifacts; upgrade ACL proof. The ad-hoc signing probe proves only one unchanged
 development binary, not release identity.
 
 ## Excluded or deferred risk
@@ -157,10 +159,11 @@ and contract plan.
 
 Telegram's API and content-licensing terms are a release boundary, not a
 security control. Test-DC and synthetic/self-authored development does not imply
-permission for production/private data or publication. A dated Phase 6 decision
-is required.
+permission for production/private data or publication. A dated release decision
+is required. Intended AI-data eligibility must be resolved before enabling
+content workflows; a configured peer grant is not itself proof of eligibility.
 
-## Phase 1 verification boundary
+## Account runtime verification boundary
 
 Automated checks prove lock-and-eligibility-before-prompt ordering,
 second-owner exclusion,
@@ -171,7 +174,7 @@ rotation/invalidation after startup and at runtime, bounded request scheduling,
 sanitized command output, and cancellation cleanup. Live phone/2FA and QR login
 still require a human Test-DC account and are recorded separately when run.
 
-Phase 1 does not claim policy enforcement, message reads, MCP transport, update
-recovery, production eligibility, signing across upgrades, or release
-readiness. Production DC construction is absent even after both Test-DC method
+The account runtime does not provide policy enforcement, message reads, MCP
+content tools, update recovery, production eligibility, signing across upgrades,
+or release readiness. Production DC construction is absent even after both Test-DC method
 checks pass.
