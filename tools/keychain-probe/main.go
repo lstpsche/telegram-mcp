@@ -20,6 +20,11 @@ import (
 const probeService = "dev.telegram-mcp.keychain.probe"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--bin-dir" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		os.Exit(runQualification(ctx, os.Args[1:], os.Stdout, os.Stderr))
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

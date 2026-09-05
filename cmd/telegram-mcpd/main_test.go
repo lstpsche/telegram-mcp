@@ -110,3 +110,12 @@ type failingDaemon struct {
 func (f failingDaemon) RunDaemon(context.Context) error {
 	return f.err
 }
+
+func TestKeychainProbeBypassesDaemon(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runContext(context.Background(), []string{"--keychain-probe", "read", "default.session"}, &stdout, &stderr,
+		func() (daemonApplication, error) { t.Fatal("probe constructed daemon"); return nil, nil })
+	if code != 1 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "invalid_input") || strings.Contains(stdout.String(), "default.session") {
+		t.Fatalf("code=%d output=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}

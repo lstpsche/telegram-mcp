@@ -267,3 +267,13 @@ func (f *fakeTerminal) Close() error {
 	f.closed = true
 	return nil
 }
+
+func TestKeychainProbeBypassesControlPlane(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runContext(context.Background(), []string{"--keychain-probe", "read", "default.session"}, &stdout, &stderr,
+		func() (controller, error) { t.Fatal("probe constructed account controller"); return nil, nil },
+		func() (terminal, error) { t.Fatal("probe opened terminal"); return nil, nil })
+	if code != 1 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "invalid_input") || strings.Contains(stdout.String(), "default.session") {
+		t.Fatalf("code=%d output=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}

@@ -43,7 +43,14 @@ static int tmcp_is_login_keychain_path(const char *path) {
 
 static OSStatus tmcp_copy_unlocked_login_keychain(SecKeychainRef *result) {
     *result = NULL;
-    OSStatus status = SecKeychainCopyDefault(result);
+    // The legacy file-keychain backend can wait for ACL interaction despite
+    // kSecUseAuthenticationUIFail. Disable its process-wide UI path as well;
+    // all callers of this adapter require noninteractive operations.
+    OSStatus status = SecKeychainSetUserInteractionAllowed(false);
+    if (status != errSecSuccess) {
+        return status;
+    }
+    status = SecKeychainCopyDefault(result);
     if (status != errSecSuccess) {
         return status;
     }

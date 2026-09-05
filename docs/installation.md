@@ -36,8 +36,9 @@ executable must be a regular, current-user-owned executable with no group or
 other write permission. Paths must be absolute, canonical, and free of symlinks.
 Installation verifies each executable with `codesign --verify --strict`.
 A valid signature establishes artifact integrity, not shared Keychain access:
-ad-hoc signatures do not prove that the control command and daemon can access
-one another's items or preserve access after a rebuild. Cross-command identity,
+separately ad-hoc-signed control and daemon artifacts fail the native sharing
+and rebuild checks. This development setup supports credential-free connectivity
+checks; it is not qualified for shared account custody. Cross-command identity,
 Developer ID signing, upgrades, and actual LaunchAgent Keychain access require
 separate qualification described in [Keychain behavior](keychain.md).
 

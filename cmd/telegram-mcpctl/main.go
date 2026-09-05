@@ -14,6 +14,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/buildinfo"
 	operatorcli "github.com/lstpsche/telegram-mcp/internal/cli"
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
+	"github.com/lstpsche/telegram-mcp/internal/keychaincheck"
 	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/policy"
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
@@ -56,6 +57,9 @@ func runContext(
 	newController controllerFactory,
 	openTerminal terminalFactory,
 ) int {
+	if len(args) > 0 && args[0] == "--keychain-probe" {
+		return keychaincheck.Run(ctx, args[1:], stdout)
+	}
 	if len(args) == 1 && args[0] == "--version" {
 		fmt.Fprintln(stdout, buildinfo.String("telegram-mcpctl"))
 		return 0

@@ -19,12 +19,20 @@ the named legacy login keychain's lock state instead. Removing the wrapper also
 avoids retaining an unnecessary dependency.
 
 The explicit login-keychain APIs (`SecKeychainCopyDefault`,
-`SecKeychainGetPath`, and `SecKeychainGetStatus`) and the noninteractive
+`SecKeychainGetPath`, `SecKeychainGetStatus`, and
+`SecKeychainSetUserInteractionAllowed`) and the noninteractive
 `kSecUseAuthenticationUIFail` value are deprecated by Apple. They are used here
 because the storage contract requires a named, unlocked login keychain and a
 fail-closed CLI path. Release qualification must reevaluate this against the
 minimum supported macOS version and a signed application identity; do not
 silently replace it with an implicit or synchronizing store.
+
+Before opening the keychain, the adapter disables legacy Keychain interaction
+process-wide with `SecKeychainSetUserInteractionAllowed(false)`. Failure to set
+that control aborts the operation. It stays disabled because every caller
+requires noninteractive access. The per-query UI-fail value alone does not
+prevent the legacy backend from waiting for ACL interaction. Neither control
+grants access or changes an item's trusted applications.
 
 The account runtime uses one service, `dev.telegram-mcp.gateway`, with three
 fixed accounts: `default.session` for gotd sessions and `default.credentials`
@@ -67,7 +75,7 @@ temporary item after failures.
 Run it on macOS without Telegram credentials:
 
 ```sh
-go build -o tmp/keychain-probe ./tools/keychain-probe
+env GO111MODULE=on go build -o tmp/keychain-probe ./tools/keychain-probe
 codesign --force --sign - tmp/keychain-probe
 env -i HOME="$HOME" LANG=C PATH=/usr/bin:/bin TMPDIR=/tmp \
   ./tmp/keychain-probe </dev/null
@@ -76,19 +84,85 @@ env -i HOME="$HOME" LANG=C PATH=/usr/bin:/bin TMPDIR=/tmp \
 Expected output contains only the static success statement. It never prints an
 item name or secret.
 
-## Native API evidence and signing consequence
+## Binary identity qualification
 
-On 2026-09-04, Go 1.27.1 produced an unsigned x86_64 Mach-O. After applying an
-ad-hoc signature, `codesign -dvvv` reported `Signature=adhoc` and no team
-identifier. The noninteractive cross-process store/read/update/delete probe
-then passed against the unlocked login keychain, and `otool -L` confirmed
-direct CoreFoundation and Security.framework linkage.
+The same-artifact probe cannot establish sharing between the control command
+and daemon or access after rebuilding either executable. To exercise those
+identities, build the actual commands into two distinct private directories.
+Use changed build metadata to ensure the upgrade artifacts differ:
 
-This proves the native API behavior for one unchanged development artifact. It
-does not prove shared ACL access between `telegram-mcpctl` and `telegram-mcpd`,
-or stable identity across rebuilds or upgrades. The
+```sh
+(
+set -eu
+umask 077
+mkdir -p tmp
+for variant in current upgrade; do
+  mkdir -m 700 "tmp/keychain-$variant"
+  for command in telegram-mcpctl telegram-mcpd; do
+    env GO111MODULE=on go build \
+      -ldflags "-X github.com/lstpsche/telegram-mcp/internal/buildinfo.Version=synthetic-$variant" \
+      -o "tmp/keychain-$variant/$command" "./cmd/$command"
+    codesign --force --sign - "tmp/keychain-$variant/$command"
+  done
+done
+env GO111MODULE=on go build -o tmp/keychain-probe ./tools/keychain-probe
+codesign --force --sign - tmp/keychain-probe
+env -i HOME="$HOME" LANG=C PATH=/usr/bin:/bin TMPDIR=/tmp \
+  ./tmp/keychain-probe \
+  --bin-dir "$PWD/tmp/keychain-current" \
+  --upgrade-bin-dir "$PWD/tmp/keychain-upgrade" </dev/null
+)
+```
+
+Both directories must be canonical, owned by the current user, and mode `0700`,
+with safe ancestors. Each command must be an owned regular executable without
+group/other write permissions and must pass `codesign --verify --strict`.
+The probe verifies these properties and SHA-256 hashes before and after the
+exercise. Use the intended signed distribution artifacts instead of ad-hoc
+builds when qualifying a release. Do not replace artifacts while probing them.
+
+The eight checks cover unchanged control/daemon restarts, sharing in both
+directions, each command's upgrade, and sharing between the upgraded commands.
+Each check creates a fresh random synthetic item, reads and updates it through
+the second artifact, verifies the exact replacement through the creator, then
+deletes it through the creator and verifies absence. Cleanup has an independent
+deadline after a worker failure; an uncertain cleanup stops further checks.
+Keep the creator binaries until cleanup is verified. An interrupted parent or
+failed cleanup can leave a synthetic item; the probe cannot promise cleanup
+after process termination.
+
+The commands' `--keychain-probe ACTION TOKEN` entry point runs before account
+or daemon construction. It accepts only fixed actions and a 32-character
+lowercase hexadecimal token. Service `dev.telegram-mcp.keychain.qualification`,
+the derived account name, and non-sensitive fixture bytes are fixed by code.
+It cannot select real account items, accept credentials, construct a Telegram
+client, or mutate policy. This human diagnostic is absent from the relay and
+MCP tool surface. Workers have null stdin, a minimal environment, ten-second
+deadlines and bounded output; results contain fixed categories and numeric
+native statuses without item names, values, paths or raw errors.
+
+The JSON report includes artifact hashes and each check's result and cleanup
+status. Exit `0` requires all eight checks, verified cleanup and unchanged
+artifacts. Any failure exits `1`; invalid qualification syntax exits `2`.
+A `worker_timeout` reports a subprocess deadline, not a native access denial.
+
+Separate ad-hoc-signed artifacts currently pass unchanged restarts but fail all
+six sharing/upgrade checks with native status `-25293` (`errSecAuthFailed`).
+With legacy interaction disabled, these failures return promptly and cleanup
+is verified. They establish that this signing arrangement is unsuitable for
+shared account custody. Do not approve Keychain prompts or broaden item ACLs
+to make the checks pass. A shared, upgrade-stable trusted identity needs an
+explicit design and successful qualification against its actual artifacts.
+
+The
 [local installer](installation.md) verifies executable signatures and registers
 a LaunchAgent, but never reads or changes Keychain items. Developer ID signing,
 noninteractive access by both distinct executables, access after an upgrade,
 actual LaunchAgent execution, and locked-keychain recovery remain explicit
 release gates. A valid ad-hoc signature alone does not satisfy them.
+
+Apple's [macOS Keychain overview](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains)
+distinguishes the legacy file keychain from Data Protection Keychain access
+groups. [Code-signing requirements](https://developer.apple.com/library/archive/technotes/tn2206/)
+describe identity-based access decisions. Sharing a signing team alone must
+not be assumed to grant access under the legacy item's ACL.

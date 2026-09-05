@@ -12,6 +12,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/app"
 	"github.com/lstpsche/telegram-mcp/internal/buildinfo"
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
+	"github.com/lstpsche/telegram-mcp/internal/keychaincheck"
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 	telegramruntime "github.com/lstpsche/telegram-mcp/internal/telegram"
 )
@@ -33,6 +34,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func runContext(ctx context.Context, args []string, stdout, stderr io.Writer, newDaemon daemonFactory) int {
+	if len(args) > 0 && args[0] == "--keychain-probe" {
+		return keychaincheck.Run(ctx, args[1:], stdout)
+	}
 	if len(args) == 1 && args[0] == "--version" {
 		fmt.Fprintln(stdout, buildinfo.String("telegram-mcpd"))
 		return 0
