@@ -7,7 +7,7 @@ metadata:
 |---|---:|---|
 | Go | 1.27.1 | Current stable toolchain; selected by `go.mod` and `.go-version` |
 | `github.com/gotd/td` | v0.161.0 | Current stable; Telegram account runtime, requires Go 1.25+ |
-| `github.com/gotd/contrib` | v0.25.0 | Stable bounded flood-wait scheduler and request rate limiter, aligned with gotd v0.161.0 |
+| `github.com/gotd/contrib` | v0.25.0 | Bounded per-invocation flood waits and request rate limiter, aligned with gotd v0.161.0 |
 | `github.com/awnumar/memguard` | v0.23.0 | Locked, wipe-on-use 2FA buffers through gotd `srpguard` |
 | `github.com/modelcontextprotocol/go-sdk` | v1.7.0 | Official MCP server and client SDK; prerelease v1.8 builds are not selected |
 | `github.com/google/jsonschema-go` | v0.4.3 | Schema inference for structured status results; shares the SDK's existing pin |

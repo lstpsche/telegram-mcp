@@ -8,9 +8,78 @@ import (
 	"time"
 
 	"github.com/gotd/td/bin"
+	"github.com/gotd/td/session"
 	gotdtelegram "github.com/gotd/td/telegram"
+	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
 )
+
+func TestExpiredFloodWaitDoesNotDelayFreshRequests(t *testing.T) {
+	account, err := NewAccount(Config{Environment: TestEnvironment, APIID: 12345, APIHash: []byte("0123456789abcdef0123456789abcdef"), TestDC: 2}, &session.StorageMemory{}, ModeRead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	invoke := account.middlewares[1].Handle(gotdtelegram.InvokeFunc(func(ctx context.Context, _ bin.Encoder, _ bin.Decoder) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if calls.Add(1) == 1 {
+			return tgerr.New(420, "FLOOD_WAIT_2")
+		}
+		return nil
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	first, cancelFirst := context.WithTimeout(ctx, 100*time.Millisecond)
+	err = invoke.Invoke(first, &tg.MessagesGetDialogsRequest{}, nil)
+	cancelFirst()
+	if !errors.Is(err, context.DeadlineExceeded) || calls.Load() != 1 {
+		t.Fatal("first request did not reach its flood wait deadline", err, calls.Load())
+	}
+	// Let the server's requested wait fully elapse after cancellation.
+	select {
+	case <-time.After(2100 * time.Millisecond):
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	fresh, cancelFresh := context.WithTimeout(ctx, 250*time.Millisecond)
+	defer cancelFresh()
+	if err := invoke.Invoke(fresh, &tg.MessagesGetDialogsRequest{}, nil); err != nil {
+		t.Fatal("fresh request retained an expired flood wait", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatal("fresh request did not reach the upstream invoker", calls.Load())
+	}
+}
+
+func TestFloodWaitKeepsWaitAndRetryBounds(t *testing.T) {
+	for _, mode := range []string{"wait_limit", "retry_limit"} {
+		t.Run(mode, func(t *testing.T) {
+			account, err := NewAccount(Config{Environment: TestEnvironment, APIID: 12345, APIHash: []byte("0123456789abcdef0123456789abcdef"), TestDC: 2}, &session.StorageMemory{}, ModeNoUpdates)
+			if err != nil {
+				t.Fatal(err)
+			}
+			failure := tgerr.New(420, "FLOOD_WAIT_31")
+			expectedCalls := 1
+			if mode == "retry_limit" {
+				failure = tgerr.New(420, "FLOOD_WAIT_1")
+				expectedCalls = maximumFloodRetries + 1
+			}
+			calls := 0
+			invoke := account.middlewares[1].Handle(gotdtelegram.InvokeFunc(func(context.Context, bin.Encoder, bin.Decoder) error {
+				calls++
+				return failure
+			}))
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			err = invoke.Invoke(ctx, &tg.MessagesGetDialogsRequest{}, nil)
+			if !errors.Is(err, failure) || calls != expectedCalls {
+				t.Fatal("flood-wait bounds or cause changed", err, calls)
+			}
+		})
+	}
+}
 
 func TestValidateConfigRejectsImplicitOrMixedEnvironments(t *testing.T) {
 	t.Parallel()

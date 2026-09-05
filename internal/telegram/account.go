@@ -56,7 +56,6 @@ const (
 
 type Account struct {
 	client      *gotdtelegram.Client
-	waiter      *floodwait.Waiter
 	loggedIn    qrlogin.LoggedIn
 	reads       *readRuntime
 	openImageDC func(context.Context, int) (gotdtelegram.CloseInvoker, error)
@@ -79,7 +78,9 @@ func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (
 	if config.Environment == ProductionEnvironment {
 		dc, dcList = 2, dcs.Prod()
 	}
-	waiter := floodwait.NewWaiter().
+	// Inline waits stay bound to one invocation. A cancelled request must not
+	// leave a scheduler delay that outlives the server's requested wait.
+	waiter := floodwait.NewSimpleWaiter().
 		WithMaxWait(maximumFloodWait).
 		WithMaxRetries(maximumFloodRetries)
 	options := gotdtelegram.Options{
@@ -112,7 +113,7 @@ func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (
 		options.Middlewares = append(options.Middlewares, readMiddleware{reads})
 	}
 	client := gotdtelegram.NewClient(config.APIID, string(config.APIHash), options)
-	return &Account{client: client, waiter: waiter, loggedIn: loggedIn, reads: reads,
+	return &Account{client: client, loggedIn: loggedIn, reads: reads,
 		openImageDC: func(ctx context.Context, dc int) (gotdtelegram.CloseInvoker, error) {
 			if dc == client.Config().ThisDC {
 				return client.Pool(1)
@@ -156,12 +157,10 @@ func (a *Account) Observe(ctx context.Context, callback func(context.Context, Au
 }
 
 func (a *Account) run(ctx context.Context, callback func(context.Context) error) error {
-	if a == nil || a.client == nil || a.waiter == nil {
+	if a == nil || a.client == nil {
 		return errors.New("Telegram account is not initialized")
 	}
-	return a.waiter.Run(ctx, func(waitContext context.Context) error {
-		return a.client.Run(waitContext, callback)
-	})
+	return a.client.Run(ctx, callback)
 }
 
 var apiHashPattern = regexp.MustCompile(`^[0-9A-Fa-f]{32}$`)

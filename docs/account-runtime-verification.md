@@ -27,6 +27,8 @@ The suite covers:
 - metadata-only environment configuration, method checks, epoch rotation, restart reuse,
   and logout invalidation;
 - bounded request concurrency plus rate/flood middleware configuration;
+- cancelled flood waits release their invocation without retaining per-method
+  delays on fresh requests after the server's requested wait has elapsed;
 - sanitized stdout/stderr and rejection of secret-bearing auth arguments;
 - startup and post-start authorization loss, daemon cancellation, socket
   removal, database close, and lock release;
