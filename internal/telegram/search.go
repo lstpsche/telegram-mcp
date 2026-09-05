@@ -14,9 +14,17 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	if !a.Ready() {
 		return nil, model.TextError(model.ErrorFreshnessDegraded, nil)
 	}
-	query, err := model.NormalizeSearchQuery(q.Query)
-	if err != nil {
-		return nil, err
+	query := q.Query
+	if q.Window != nil {
+		if q.Window.Validate() != nil || query != "" {
+			return nil, model.TextError(model.ErrorInvalidInput, nil)
+		}
+	} else {
+		var err error
+		query, err = model.NormalizeSearchQuery(query)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if q.MinID <= 0 || q.MaxID < q.MinID || q.Before < 0 || (q.Before > 0 && q.Before <= q.MinID) || model.ValidatePageSize(q.Limit) != nil {
 		return nil, model.TextError(model.ErrorInvalidInput, nil)
@@ -37,7 +45,12 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 			offset = maximum
 		}
 	}
-	response, err := a.reads.api.MessagesSearch(bounded, &tg.MessagesSearchRequest{Peer: input, Q: query, Filter: &tg.InputMessagesFilterEmpty{}, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
+	request := &tg.MessagesSearchRequest{Peer: input, Q: query, Filter: &tg.InputMessagesFilterEmpty{}, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum}
+	if q.Window != nil {
+		request.MinDate = int(q.Window.Since - 1)
+		request.MaxDate = int(q.Window.Until)
+	}
+	response, err := a.reads.api.MessagesSearch(bounded, request)
 	if err != nil {
 		return nil, readError(err)
 	}
@@ -62,6 +75,11 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 		return nil, err
 	}
 	for _, candidate := range candidates {
+		// Unsafe candidates intentionally carry no date/body and are filtered by
+		// the reader. Every deliverable candidate must satisfy the date selector.
+		if q.Window != nil && candidate.Message.Date != "" && !q.Window.Contains(candidate.Message.Date) {
+			return nil, model.TextError(model.ErrorInvalidReference, nil)
+		}
 		id := candidate.Message.ID.TelegramID()
 		if id < q.MinID || id > q.MaxID || (q.Before > 0 && id >= q.Before) {
 			return nil, model.TextError(model.ErrorInvalidReference, nil)

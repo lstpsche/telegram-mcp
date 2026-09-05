@@ -91,8 +91,14 @@ func (f *imageWireBackend) History(_ context.Context, query model.HistoryQuery) 
 
 func (f *imageWireBackend) Search(_ context.Context, query model.SearchQuery) ([]model.Candidate, error) {
 	f.fetches.Add(1)
-	if query.Peer != f.peer || query.Query != "synthetic" {
+	if query.Peer != f.peer || (query.Window == nil && query.Query != "synthetic") {
 		return nil, errors.New("unexpected image search")
+	}
+	if query.Window != nil {
+		if query.Query != "" || !query.Window.Contains(f.candidates[0].Message.Date) {
+			return nil, errors.New("unexpected image date window")
+		}
+		return f.candidates, nil
 	}
 	return []model.Candidate{f.candidates[0]}, nil
 }
@@ -174,7 +180,7 @@ func TestNativeImagesOverStdioRelay(t *testing.T) {
 			t.Fatal("image tool misrepresents its read effects")
 		}
 	}
-	if len(schemas) != 8 || schemas["open_image"] == nil {
+	if len(schemas) != 9 || schemas["open_image"] == nil {
 		t.Fatal("missing native image tool")
 	}
 	call := func(name string, args any) (*mcp.CallToolResult, map[string]any) {
@@ -228,6 +234,12 @@ func TestNativeImagesOverStdioRelay(t *testing.T) {
 	if search["read_effect"].(map[string]any)["kind"] != "none" || backend.acks.Load() != 0 || backend.downloads.Load() != 0 || photo["snippet"] != "synthetic photo" {
 		t.Fatal("image search changed read state, downloaded media, or lost caption")
 	}
+	_, catchUp := call("catch_up", map[string]any{"scope": discovered["id"], "since": "2026-09-05T00:00:00Z", "until": "2026-09-06T00:00:00Z"})
+	caught := catchUp["items"].([]any)
+	if len(caught) != len(backend.candidates) || backend.acks.Load() != 0 || backend.downloads.Load() != 0 {
+		t.Fatal("catch-up image discovery changed state or lost images")
+	}
+	photo = caught[0].(map[string]any)
 	open := func(item map[string]any, expected model.Candidate) {
 		t.Helper()
 		descriptor := item["image"].(map[string]any)

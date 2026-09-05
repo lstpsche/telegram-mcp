@@ -152,6 +152,9 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 				return searchWindow{}, err
 			}
 		}
+		if query.Window != nil && !query.Window.Contains(message.Date) {
+			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
 		date, err := time.Parse(time.RFC3339Nano, message.Date)
 		if err != nil || date.IsZero() || message.Author.Kind() != model.PeerKindUser || (message.Text == "" && candidate.Image == nil) || !utf8.ValidString(message.Text) {
 			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)

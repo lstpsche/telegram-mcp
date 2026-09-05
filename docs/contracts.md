@@ -2,7 +2,7 @@
 
 These transport-independent contracts define the MCP input and output boundary.
 The daemon registers a static inventory: `status`, `list_chats`, `list_messages`,
-`get_message_context`, `search_messages`, `list_unread`, `list_scopes`, and `open_image`. Authentication and
+`get_message_context`, `search_messages`, `list_unread`, `list_scopes`, `catch_up`, and `open_image`. Authentication and
 policy mutations are human-only.
 
 ## Available MCP behavior
@@ -59,6 +59,29 @@ Scoped search visits canonical peer IDs in ascending bytewise order and returns
 newest messages first within each peer. It bounds fetched candidates, including
 filtered ones, to the requested limit and backend lookups to 20 per request.
 See [text access](text-access.md) for continuation and eligibility semantics.
+
+`catch_up` requires `scope`, `since`, and `until`, with optional `limit` and
+`cursor`. Dates use RFC3339 with an explicit timezone and no fractional seconds.
+The range is [since, until): start included, end excluded. Both must be positive
+Unix timestamps within Telegram's signed 32-bit timestamp range. There is no
+implicit current time. The response uses search-hit snippets and image references,
+never full bodies or read receipts. Ordinary `search_messages` still requires a
+nonempty query.
+
+Catch-up requires the `scope` coverage object and its `catch_up` field:
+`since` and `until` normalized to UTC, and a `peers` array containing each
+eligible peer's `peer` ID, `state`, `fetched` and `returned` counts.
+States are `pending`, `in_progress` and `complete`. State spans the cursor
+chain; counts describe only the current response. Excluded peer identities are
+never exposed. Completion means traversal of the authorized window, not absence
+of unsupported or excluded content.
+
+Catch-up uses the same canonical peer order, candidate and response budgets,
+fixed cursor expiry, and authority invalidation as scoped search. The cursor
+also binds both dates and the operation. Equivalent timezone representations
+can continue the same window. Follow continuation even on empty pages. A terminal
+response may still be partial because content or peers were excluded. This is
+live traversal, not a cross-chat chronological snapshot.
 
 ## Typed references
 

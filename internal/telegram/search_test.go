@@ -283,3 +283,54 @@ func TestMessagePageRevalidatesReturnedPeerConstructors(t *testing.T) {
 		}
 	}
 }
+
+func TestDateSearchUsesExclusiveRPCBoundsAndValidatesDelivery(t *testing.T) {
+	for _, date := range []int{99, 100, 101, 102} {
+		t.Run(fmt.Sprint(date), func(t *testing.T) {
+			searched := false
+			account, _ := newReadTestAccount(t, func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
+				switch q := in.(type) {
+				case *tg.UpdatesGetStateRequest:
+					return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
+				case *tg.MessagesSearchRequest:
+					searched = true
+					if q.Q != "" || q.MinDate != 99 || q.MaxDate != 102 || q.OffsetID != 21 || q.Limit != 2 {
+						t.Fatal("incorrect date search request")
+					}
+					message := testMessage(20)
+					message.Date = date
+					return encodeReadResponse(out, &tg.MessagesMessages{Messages: []tg.MessageClass{message}})
+				default:
+					return fmt.Errorf("unexpected RPC %T", in)
+				}
+			})
+			rows, err := account.Search(context.Background(), model.SearchQuery{Peer: testSelfPeer(t), Window: &model.DateWindow{Since: 100, Until: 102}, MinID: 10, MaxID: 20, Limit: 2})
+			if !searched {
+				t.Fatal("search not invoked")
+			}
+			if date >= 100 && date < 102 {
+				if err != nil || len(rows) != 1 {
+					t.Fatal("valid date rejected", err)
+				}
+			} else if model.TextErrorCategory(err) != model.ErrorInvalidReference || rows != nil {
+				t.Fatal("out-of-window result released")
+			}
+		})
+	}
+}
+
+func TestDateSearchRejectsUnboundedOrMixedQueryBeforeIO(t *testing.T) {
+	account, _ := newReadTestAccount(t, func(context.Context, bin.Encoder, bin.Decoder) error {
+		t.Fatal("invalid input reached Telegram")
+		return nil
+	})
+	for _, q := range []model.SearchQuery{
+		{Peer: testSelfPeer(t), MinID: 1, MaxID: 20, Limit: 2},
+		{Peer: testSelfPeer(t), Query: "mixed", Window: &model.DateWindow{Since: 100, Until: 102}, MinID: 1, MaxID: 20, Limit: 2},
+		{Peer: testSelfPeer(t), Window: &model.DateWindow{Since: 102, Until: 100}, MinID: 1, MaxID: 20, Limit: 2},
+	} {
+		if _, err := account.Search(context.Background(), q); model.TextErrorCategory(err) != model.ErrorInvalidInput {
+			t.Fatal("invalid date query accepted")
+		}
+	}
+}

@@ -124,12 +124,13 @@ func (code WarningCode) valid() bool {
 
 // ScopeCoverage describes selection exclusions separately from bounded traversal.
 type ScopeCoverage struct {
-	ID             ScopeID `json:"id"`
-	TotalPeers     int     `json:"total_peers"`
-	EligiblePeers  int     `json:"eligible_peers"`
-	ExcludedPeers  int     `json:"excluded_peers"`
-	QueriedPeers   int     `json:"queried_peers"`
-	CompletedPeers int     `json:"completed_peers"`
+	CatchUp        *CatchUpCoverage `json:"catch_up,omitempty"`
+	ID             ScopeID          `json:"id"`
+	TotalPeers     int              `json:"total_peers"`
+	EligiblePeers  int              `json:"eligible_peers"`
+	ExcludedPeers  int              `json:"excluded_peers"`
+	QueriedPeers   int              `json:"queried_peers"`
+	CompletedPeers int              `json:"completed_peers"`
 }
 
 func (c ScopeCoverage) Validate() error {
@@ -138,6 +139,30 @@ func (c ScopeCoverage) Validate() error {
 	}
 	if c.TotalPeers < 0 || c.TotalPeers > 20 || c.EligiblePeers < 0 || c.ExcludedPeers < 0 || c.EligiblePeers+c.ExcludedPeers != c.TotalPeers || c.QueriedPeers < 0 || c.QueriedPeers > c.EligiblePeers || c.CompletedPeers < 0 || c.CompletedPeers > c.EligiblePeers {
 		return errors.New("invalid scope coverage")
+	}
+	if c.CatchUp != nil {
+		if _, err := ParseDateWindow(c.CatchUp.Since, c.CatchUp.Until); err != nil || c.CatchUp.Peers == nil || len(c.CatchUp.Peers) != c.EligiblePeers {
+			return errors.New("invalid catch-up coverage")
+		}
+		fetched, completed := 0, 0
+		var previous PeerID
+		for _, peer := range c.CatchUp.Peers {
+			if _, err := ParsePeerID(peer.Peer.String()); err != nil || peer.Peer.String() <= previous.String() || peer.Fetched < 0 || peer.Returned < 0 || peer.Returned > peer.Fetched {
+				return errors.New("invalid catch-up peer coverage")
+			}
+			switch peer.State {
+			case "complete":
+				completed++
+			case "pending", "in_progress":
+			default:
+				return errors.New("invalid catch-up peer state")
+			}
+			previous = peer.Peer
+			fetched += peer.Fetched
+		}
+		if fetched > MaximumPageSize || completed != c.CompletedPeers {
+			return errors.New("inconsistent catch-up coverage")
+		}
 	}
 	return nil
 }

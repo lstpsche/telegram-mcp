@@ -9,7 +9,7 @@ context, and searching chats on one user account, initially on macOS.
 
 The MCP server exposes **`status`**, **`list_chats`**, **`list_messages`**,
 **`get_message_context`**, **`search_messages`**, **`list_unread`**,
-**`list_scopes`**, and **`open_image`**.
+**`list_scopes`**, **`catch_up`**, and **`open_image`**.
 No Telegram credentials are needed to connect and
 inspect status. Text operations require a ready authorized account and an explicit
 human authorization: restricted grants or Full read access. Restricted grants
@@ -20,6 +20,11 @@ The account runtime supports interactive production and Test-DC phone/2FA and QR
 authentication, native login-Keychain session and credential storage, exclusive
 account ownership, metadata-only SQLite storage, and remote-first logout.
 Real-account authentication and release-binary acceptance remain human checks.
+
+For a dated briefing, discover a named scope with `list_scopes`, then call
+`catch_up` with its ID and explicit `since`/`until` timestamps. It returns
+authorized snippets and image references without marking chats read. Continue
+through `next_cursor` until null; each eligible chat has explicit progress.
 
 ## Connect an agent
 

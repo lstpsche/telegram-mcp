@@ -80,6 +80,7 @@ func TextErrorCategory(err error) ErrorCategory {
 
 // SearchQuery is adapter input. Query text is transient and must never be logged.
 type SearchQuery struct {
+	Window               *DateWindow
 	Peer                 PeerID
 	Query                string
 	MinID, MaxID, Before int32

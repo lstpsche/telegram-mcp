@@ -13,6 +13,8 @@ import (
 )
 
 type scopeCursorBinding struct {
+	Since         int64         `json:"since,omitempty"`
+	Until         int64         `json:"until,omitempty"`
 	Operation     string        `json:"operation"`
 	Scope         model.ScopeID `json:"scope"`
 	MembersDigest string        `json:"members_digest"`

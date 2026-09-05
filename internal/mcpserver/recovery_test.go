@@ -23,7 +23,7 @@ func TestAllToolsRespectReadinessOverStdioRelay(t *testing.T) {
 	}
 	defer session.Close()
 	inventory, err := session.ListTools(ctx, nil)
-	if err != nil || len(inventory.Tools) != 8 {
+	if err != nil || len(inventory.Tools) != 9 {
 		t.Fatal("tool discovery unavailable during recovery", err)
 	}
 	for _, ready := range []bool{false, true, false} {

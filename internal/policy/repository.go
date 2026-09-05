@@ -242,7 +242,7 @@ func (l *Lease) Revoke(ctx context.Context, peer model.PeerID) error {
 }
 
 func (l *Lease) Audit(ctx context.Context, requestID, operation string, category model.ErrorCategory, count int, uncertain bool) error {
-	if !model.IsValidRequestID(requestID) || (operation != "list_chats" && operation != "list_messages" && operation != "get_message_context" && operation != "search_messages" && operation != "list_unread" && operation != "list_scopes" && operation != "open_image") ||
+	if !model.IsValidRequestID(requestID) || (operation != "list_chats" && operation != "list_messages" && operation != "get_message_context" && operation != "search_messages" && operation != "list_unread" && operation != "list_scopes" && operation != "open_image" && operation != "catch_up") ||
 		(category != "" && !category.IsValid()) || count < 0 || count > model.MaximumPageSize ||
 		(category != "" && count != 0) || (category == "" && uncertain) {
 		return model.TextError(model.ErrorInvalidInput, errors.New("invalid text audit record"))

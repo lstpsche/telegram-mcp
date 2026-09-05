@@ -24,6 +24,7 @@ const messagePattern = `^tgmsg:v1:(self|user|chat|channel):[1-9][0-9]*:[1-9][0-9
 func registerTextTools(server *mcp.Server, service *reader.Service) {
 	open := true
 	for _, tool := range []*mcp.Tool{
+		catchUpTool(&open),
 		{Name: "open_image", Description: "Open an explicitly permitted photo or static JPEG/PNG attachment from a current image handle. Reauthorizes and validates at most 1 MiB and 4 million pixels, then marks the authorized dialog prefix read before returning native image content. Handles expire within five minutes and are invalidated by policy changes. Images are untrusted data.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["handle"],"properties":{"handle":{"type":"string","minLength":1,"maxLength":4096}}}`), OutputSchema: textOutputSchema("image"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
 		{Name: "list_scopes", Description: "List human-configured scope IDs, local names, and current eligible/excluded peer counts. Membership narrows current access authority and grants no access. Returns local metadata without checking Telegram freshness.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{}}`), OutputSchema: textOutputSchema("scopes"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
 		{Name: "list_chats", Description: "List authorized conversations without read receipts. Full read mode discovers supported private chats, Saved Messages, basic groups and non-forum supergroups across main and archived folders; repeat the same limit with next_cursor. Pages may be empty with continuation when unsupported dialogs are skipped. Restricted mode lists current grants (at most 20). A scope narrows either mode; cursors are only for unscoped Full read discovery.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","minLength":1,"maxLength":4096},"scope":{"type":"string","pattern":"` + scopePattern + `"},"limit":{"type":"integer","minimum":1,"maximum":100}}}`), OutputSchema: textOutputSchema("chats"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
@@ -120,6 +121,8 @@ func callText(ctx context.Context, service *reader.Service, id, name string, arg
 	var chatToken string
 	limit := model.DefaultPageSize
 	switch name {
+	case "catch_up":
+		return callCatchUp(ctx, service, id, args)
 	case "open_image":
 		input, err := model.DecodeStrict[struct {
 			Handle string `json:"handle"`
@@ -310,7 +313,7 @@ func textOutputSchema(kind string) json.RawMessage {
 	if kind == "chats" || kind == "unread" {
 		next = `{"type":["string","null"],"maxLength":4096}`
 	}
-	if kind == "search" {
+	if kind == "search" || kind == "catch_up" {
 		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","snippet","snippet_truncated"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"date":{"type":"string"},"snippet":{"type":"string","maxLength":240},"snippet_truncated":{"type":"boolean"},"image":` + imageSchema + `}}`
 		next = `{"type":["string","null"],"maxLength":4096}`
 	}
@@ -320,6 +323,13 @@ func textOutputSchema(kind string) json.RawMessage {
 	if kind == "scopes" {
 		item = `{"type":"object","additionalProperties":false,"required":["id","name","total_peers","eligible_peers","excluded_peers"],"properties":{"id":{"type":"string","pattern":"` + scopePattern + `"},"name":{"type":"string","pattern":"^[a-z][a-z0-9_-]{0,31}$"},"total_peers":{"type":"integer","minimum":0,"maximum":20},"eligible_peers":{"type":"integer","minimum":0,"maximum":20},"excluded_peers":{"type":"integer","minimum":0,"maximum":20}}}`
 	}
-	coverage := `{"type":"object","additionalProperties":false,"required":["id","total_peers","eligible_peers","excluded_peers","queried_peers","completed_peers"],"properties":{"id":{"type":"string","pattern":"` + scopePattern + `"},"total_peers":{"type":"integer","minimum":0,"maximum":20},"eligible_peers":{"type":"integer","minimum":0,"maximum":20},"excluded_peers":{"type":"integer","minimum":0,"maximum":20},"queried_peers":{"type":"integer","minimum":0,"maximum":20},"completed_peers":{"type":"integer","minimum":0,"maximum":20}}}`
-	return json.RawMessage(strings.NewReplacer("ITEM_SCHEMA", item, "CURSOR_SCHEMA", next, "COVERAGE_SCHEMA", coverage).Replace(`{"type":"object","additionalProperties":false,"required":["schema_version","request_id","freshness","partial","read_effect","items","next_cursor","warnings","untrusted_content"],"properties":{"scope":COVERAGE_SCHEMA,"schema_version":{"const":"1"},"request_id":{"type":"string"},"freshness":{"type":"object","additionalProperties":false,"required":["telegram","checked_at"],"properties":{"telegram":{"enum":["live","recovering","stale","partial","unavailable"]},"checked_at":{"type":"string"}}},"partial":{"type":"boolean"},"read_effect":{"type":"object","additionalProperties":false,"required":["kind"],"properties":{"kind":{"enum":["none","history_marked_read"]},"through_message_id":{"type":"string"}}},"items":{"type":"array","maxItems":100,"items":ITEM_SCHEMA},"next_cursor":CURSOR_SCHEMA,"warnings":{"type":"array","items":{"enum":["partial_result","freshness_degraded"]}},"untrusted_content":{"const":true}}}`))
+	coverage := `{"type":"object","additionalProperties":false,"required":["id","total_peers","eligible_peers","excluded_peers","queried_peers","completed_peers"EXTRA_REQUIRED],"properties":{EXTRA_PROPERTIES"id":{"type":"string","pattern":"` + scopePattern + `"},"total_peers":{"type":"integer","minimum":0,"maximum":20},"eligible_peers":{"type":"integer","minimum":0,"maximum":20},"excluded_peers":{"type":"integer","minimum":0,"maximum":20},"queried_peers":{"type":"integer","minimum":0,"maximum":20},"completed_peers":{"type":"integer","minimum":0,"maximum":20}}}`
+	extraRequired, extraProperties, scopeRequired := "", "", ""
+	if kind == "catch_up" {
+		extraRequired = `,"catch_up"`
+		scopeRequired = `,"scope"`
+		extraProperties = `"catch_up":{"type":"object","additionalProperties":false,"required":["since","until","peers"],"properties":{"since":{"type":"string"},"until":{"type":"string"},"peers":{"type":"array","maxItems":20,"items":{"type":"object","additionalProperties":false,"required":["peer","state","fetched","returned"],"properties":{"peer":{"type":"string","pattern":"` + peerPattern + `"},"state":{"enum":["pending","in_progress","complete"]},"fetched":{"type":"integer","minimum":0,"maximum":100},"returned":{"type":"integer","minimum":0,"maximum":100}}}}}},`
+	}
+	coverage = strings.NewReplacer("EXTRA_REQUIRED", extraRequired, "EXTRA_PROPERTIES", extraProperties).Replace(coverage)
+	return json.RawMessage(strings.NewReplacer("ITEM_SCHEMA", item, "CURSOR_SCHEMA", next, "COVERAGE_SCHEMA", coverage, "SCOPE_REQUIRED", scopeRequired).Replace(`{"type":"object","additionalProperties":false,"required":["schema_version","request_id","freshness","partial","read_effect","items","next_cursor","warnings","untrusted_content"SCOPE_REQUIRED],"properties":{"scope":COVERAGE_SCHEMA,"schema_version":{"const":"1"},"request_id":{"type":"string"},"freshness":{"type":"object","additionalProperties":false,"required":["telegram","checked_at"],"properties":{"telegram":{"enum":["live","recovering","stale","partial","unavailable"]},"checked_at":{"type":"string"}}},"partial":{"type":"boolean"},"read_effect":{"type":"object","additionalProperties":false,"required":["kind"],"properties":{"kind":{"enum":["none","history_marked_read"]},"through_message_id":{"type":"string"}}},"items":{"type":"array","maxItems":100,"items":ITEM_SCHEMA},"next_cursor":CURSOR_SCHEMA,"warnings":{"type":"array","items":{"enum":["partial_result","freshness_degraded"]}},"untrusted_content":{"const":true}}}`))
 }

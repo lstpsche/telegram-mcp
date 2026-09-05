@@ -142,11 +142,28 @@ func (s *Service) checkGrantsCurrent(ctx context.Context, grants []policy.Grant)
 
 // SearchScope traverses exact peers in canonical order, newest first per peer.
 // The candidate budget includes filtered entries, so sparse pages stay bounded.
-func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID model.ScopeID, query string, limit int, token string) (result Result, resultErr error) {
+func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID model.ScopeID, query string, limit int, token string) (Result, error) {
 	query, err := model.NormalizeSearchQuery(query)
 	if err != nil {
 		return Result{}, err
 	}
+	return s.searchScope(ctx, requestID, scopeID, query, limit, token, nil)
+}
+
+// CatchUp discovers bounded snippets in an explicit window without read receipts.
+func (s *Service) CatchUp(ctx context.Context, requestID string, scopeID model.ScopeID, window model.DateWindow, limit int, token string) (Result, error) {
+	if err := window.Validate(); err != nil {
+		return Result{}, err
+	}
+	return s.searchScope(ctx, requestID, scopeID, "", limit, token, &window)
+}
+
+func (s *Service) searchScope(ctx context.Context, requestID string, scopeID model.ScopeID, query string, limit int, token string, window *model.DateWindow) (result Result, resultErr error) {
+	operation := "search_messages"
+	if window != nil {
+		operation = "catch_up"
+	}
+
 	if _, err := model.ParseScopeID(scopeID.String()); err != nil || model.ValidatePageSize(limit) != nil || len(token) > 4096 {
 		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
 	}
@@ -173,7 +190,7 @@ func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID mod
 		return nil
 	}
 	defer func() {
-		resultErr = s.finish(ctx, lease, requestID, "search_messages", count, false, resultErr, beforeRelease)
+		resultErr = s.finish(ctx, lease, requestID, operation, count, false, resultErr, beforeRelease)
 		if resultErr != nil {
 			result = Result{}
 		}
@@ -186,7 +203,18 @@ func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID mod
 	if err != nil {
 		return Result{}, err
 	}
-	binding := scopeCursorBinding{Operation: "search_messages", Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(query), Limit: limit, Epoch: epoch, Revision: revision}
+	binding := scopeCursorBinding{Operation: operation, Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(query), Limit: limit, Epoch: epoch, Revision: revision}
+	if window != nil {
+		binding.Since, binding.Until = window.Since, window.Until
+		coverage.CatchUp = &model.CatchUpCoverage{
+			Since: time.Unix(window.Since, 0).UTC().Format(time.RFC3339),
+			Until: time.Unix(window.Until, 0).UTC().Format(time.RFC3339),
+			Peers: make([]model.CatchUpPeer, len(grants)),
+		}
+		for i, grant := range grants {
+			coverage.CatchUp.Peers[i] = model.CatchUpPeer{Peer: grant.Peer, State: "pending"}
+		}
+	}
 	deadline := s.now().Add(cursorLifetime)
 	for _, grant := range grants {
 		deadline = grant.Deadline(deadline)
@@ -218,25 +246,29 @@ func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID mod
 			return Result{}, err
 		}
 		grant := grants[cursor.Index]
-		search := model.SearchQuery{Peer: grant.Peer, Query: query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: remaining}
+		search := model.SearchQuery{Window: window, Peer: grant.Peer, Query: query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: remaining}
 		candidates, err := s.backend.Search(ctx, search)
 		if err != nil {
 			return Result{}, err
 		}
 		coverage.QueriedPeers++
-		window, err := s.normalizeSearchWindow(grant, search, candidates, imageAuthority{epoch, revision})
+		normalized, err := s.normalizeSearchWindow(grant, search, candidates, imageAuthority{epoch, revision})
 		if err != nil {
 			return Result{}, err
 		}
-		items = append(items, window.items...)
+		items = append(items, normalized.items...)
+		if coverage.CatchUp != nil {
+			peer := &coverage.CatchUp.Peers[cursor.Index]
+			peer.Fetched, peer.Returned = len(candidates), len(normalized.items)
+		}
 		// Filtering makes this page partial independently of whether traversal ended.
-		partial = partial || len(window.items) < len(candidates)
+		partial = partial || len(normalized.items) < len(candidates)
 		remaining -= len(candidates)
-		if len(candidates) == search.Limit && window.lowest > grant.MinID {
+		if len(candidates) == search.Limit && normalized.lowest > grant.MinID {
 			if cursor.Before == 0 {
-				cursor.Ceiling = window.highest
+				cursor.Ceiling = normalized.highest
 			}
-			cursor.Before = window.lowest
+			cursor.Before = normalized.lowest
 			break
 		}
 		cursor.Index++
@@ -252,6 +284,16 @@ func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID mod
 		return Result{}, model.TextError(model.ErrorCursorExpired, nil)
 	}
 	coverage.CompletedPeers = cursor.Index
+	if coverage.CatchUp != nil {
+		for i := range coverage.CatchUp.Peers {
+			switch {
+			case i < cursor.Index:
+				coverage.CatchUp.Peers[i].State = "complete"
+			case i == cursor.Index && cursor.Before != 0:
+				coverage.CatchUp.Peers[i].State = "in_progress"
+			}
+		}
+	}
 	var next *string
 	if cursor.Index < len(grants) {
 		encoded, err := s.encodeScopeCursor(cursor)
