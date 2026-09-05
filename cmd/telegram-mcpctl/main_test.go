@@ -307,3 +307,19 @@ func TestProductionConfigurationRequiresAttestationBeforeSecrets(t *testing.T) {
 		t.Fatal("credential leaked")
 	}
 }
+
+func TestAuthenticationDiagnosticsAreDistinctAndContentFree(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{tgaccount.ErrPasswordRequired, "empty value cannot skip it"},
+		{tgaccount.ErrAuthenticationRateLimited, "rate-limiting authentication"},
+	} {
+		var output bytes.Buffer
+		writeControlError(&output, errors.Join(errors.New("sensitive remote details"), tc.err))
+		if !strings.Contains(output.String(), tc.want) || strings.Contains(output.String(), "sensitive") || strings.Contains(output.String(), "operation is unavailable") {
+			t.Fatal("authentication diagnostic lost or leaked", output.String())
+		}
+	}
+}

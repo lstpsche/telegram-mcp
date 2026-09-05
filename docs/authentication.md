@@ -59,6 +59,12 @@ from `/dev/tty`. The 2FA password is moved into locked memory and wiped after
 gotd computes its SRP answer. New-account sign-up and Terms-of-Service
 acceptance are intentionally unsupported.
 
+The password prompt appears only when Telegram requires Two-Step Verification.
+It asks for the existing account password, not an app passcode or a password to
+create. An empty value cannot skip this requirement and produces a specific
+diagnostic. Authentication rate limits have a separate fixed diagnostic; other
+unclassified failures disclose no raw Telegram error or credential details.
+
 ## QR
 
 ```sh

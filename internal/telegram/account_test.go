@@ -192,17 +192,46 @@ func TestInteractiveAuthenticatorClearsBuffersReturnedWithErrors(t *testing.T) {
 }
 
 type authPromptStub struct {
-	phone       []byte
-	phoneErr    error
-	code        []byte
-	codeErr     error
-	password    []byte
-	passwordErr error
+	phone         []byte
+	phoneErr      error
+	code          []byte
+	codeErr       error
+	password      []byte
+	passwordErr   error
+	passwordCalls int
 }
 
 func (p *authPromptStub) Phone(context.Context) ([]byte, error) { return p.phone, p.phoneErr }
 func (p *authPromptStub) Code(context.Context) ([]byte, error)  { return p.code, p.codeErr }
 func (p *authPromptStub) Password(context.Context) ([]byte, error) {
+	p.passwordCalls++
 	return p.password, p.passwordErr
 }
 func (p *authPromptStub) ShowQRCode(context.Context, string, time.Time) error { return nil }
+
+func TestAuthenticationDiagnosticsSurviveOuterSanitization(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		input, want error
+	}{
+		{"password_missing", ErrPasswordRequired, ErrPasswordRequired},
+		{"flood_wait", tgerr.New(420, "FLOOD_WAIT_300"), ErrAuthenticationRateLimited},
+		{"phone_flood", tgerr.New(400, "PHONE_NUMBER_FLOOD"), ErrAuthenticationRateLimited},
+		{"unknown", errors.New("sensitive remote details"), ErrTelegramUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sanitizeAccountError(sanitizeAuthenticationError(tc.input))
+			if !errors.Is(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEmptyRequestedPasswordDoesNotComputeSRP(t *testing.T) {
+	authenticator := interactiveAuthenticator{prompt: &authPromptStub{}}
+	answer, err := authenticator.PasswordHash(context.Background(), nil)
+	if answer != nil || !errors.Is(err, ErrPasswordRequired) {
+		t.Fatalf("answer=%v error=%v", answer, err)
+	}
+}

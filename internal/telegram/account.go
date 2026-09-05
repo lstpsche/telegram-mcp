@@ -25,11 +25,13 @@ const (
 )
 
 var (
-	ErrInvalidConfig            = errors.New("Telegram account configuration is invalid")
-	ErrQRModeRequired           = errors.New("QR authentication requires a QR-enabled runtime")
-	ErrAuthenticationRejected   = errors.New("Telegram authentication was rejected")
-	ErrReauthenticationRequired = errors.New("Telegram authorization is no longer valid")
-	ErrTelegramUnavailable      = errors.New("Telegram operation is unavailable")
+	ErrInvalidConfig             = errors.New("Telegram account configuration is invalid")
+	ErrQRModeRequired            = errors.New("QR authentication requires a QR-enabled runtime")
+	ErrPasswordRequired          = errors.New("Telegram requires the existing Two-Step Verification password")
+	ErrAuthenticationRateLimited = errors.New("Telegram is rate-limiting authentication")
+	ErrAuthenticationRejected    = errors.New("Telegram authentication was rejected")
+	ErrReauthenticationRequired  = errors.New("Telegram authorization is no longer valid")
+	ErrTelegramUnavailable       = errors.New("Telegram operation is unavailable")
 )
 
 const (
@@ -192,7 +194,8 @@ func sanitizeAccountError(err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	if errors.Is(err, ErrAuthenticationRejected) || errors.Is(err, ErrQRModeRequired) ||
+	if errors.Is(err, ErrPasswordRequired) || errors.Is(err, ErrAuthenticationRateLimited) ||
+		errors.Is(err, ErrAuthenticationRejected) || errors.Is(err, ErrQRModeRequired) ||
 		errors.Is(err, ErrReauthenticationRequired) || errors.Is(err, ErrTelegramUnavailable) {
 		return err
 	}

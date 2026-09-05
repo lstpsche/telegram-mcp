@@ -249,11 +249,15 @@ func writeControlError(writer io.Writer, err error) {
 	case errors.Is(err, daemon.ErrAccountLocked):
 		fmt.Fprintln(writer, "telegram-mcpctl: account runtime is busy; stop the daemon before authentication changes or peer discovery")
 	case errors.Is(err, metastore.ErrAuthorizationExists):
-		fmt.Fprintln(writer, "telegram-mcpctl: log out before changing Test-DC application credentials")
+		fmt.Fprintln(writer, "telegram-mcpctl: log out before changing Telegram application credentials")
 	case errors.Is(err, app.ErrConfigurationRequired):
 		fmt.Fprintln(writer, "telegram-mcpctl: run configure before authentication or logout")
 	case errors.Is(err, tgaccount.ErrInvalidConfig):
-		fmt.Fprintln(writer, "telegram-mcpctl: invalid Test-DC application credentials")
+		fmt.Fprintln(writer, "telegram-mcpctl: invalid Telegram application credentials")
+	case errors.Is(err, tgaccount.ErrPasswordRequired):
+		fmt.Fprintln(writer, "telegram-mcpctl: Telegram requested your existing Two-Step Verification password; an empty value cannot skip it")
+	case errors.Is(err, tgaccount.ErrAuthenticationRateLimited):
+		fmt.Fprintln(writer, "telegram-mcpctl: Telegram is rate-limiting authentication; pause login attempts before trying again")
 	case errors.Is(err, tgaccount.ErrAuthenticationRejected):
 		fmt.Fprintln(writer, "telegram-mcpctl: Telegram rejected the interactive authentication input")
 	case errors.Is(err, tgaccount.ErrReauthenticationRequired):

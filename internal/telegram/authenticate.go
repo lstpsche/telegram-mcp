@@ -41,7 +41,7 @@ type AuthResult struct {
 	Performed bool
 }
 
-// Authenticate performs one explicit Test-DC login. onUnauthorized runs after
+// Authenticate performs one explicit login. onUnauthorized runs after
 // Telegram proves the existing session is unauthorized and before prompting.
 func (a *Account) Authenticate(
 	ctx context.Context,
@@ -214,13 +214,22 @@ func (a interactiveAuthenticator) SignUp(context.Context) (auth.UserInfo, error)
 }
 
 func validatePassword(secret []byte) error {
-	if len(secret) == 0 || len(secret) > maximumPasswordBytes || !utf8.Valid(secret) || bytes.IndexByte(secret, 0) >= 0 {
+	if len(secret) == 0 {
+		return ErrPasswordRequired
+	}
+	if len(secret) > maximumPasswordBytes || !utf8.Valid(secret) || bytes.IndexByte(secret, 0) >= 0 {
 		return ErrAuthenticationRejected
 	}
 	return nil
 }
 
 func sanitizeAuthenticationError(err error) error {
+	if errors.Is(err, ErrPasswordRequired) {
+		return ErrPasswordRequired
+	}
+	if tgerr.Is(err, "FLOOD_WAIT", "FLOOD_PREMIUM_WAIT", "PHONE_NUMBER_FLOOD", "PHONE_PASSWORD_FLOOD") {
+		return ErrAuthenticationRateLimited
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}

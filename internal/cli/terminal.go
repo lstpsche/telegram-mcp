@@ -131,10 +131,7 @@ func (t *Terminal) readHidden(ctx context.Context, label string, trimSpace bool)
 			value = value[:len(trimmed)]
 		}
 	}
-	if len(value) == 0 {
-		clear(value)
-		return nil, errors.New("interactive input length is outside the allowed range")
-	}
+	// Callers validate empty input according to the requested credential.
 	return value, nil
 }
 
