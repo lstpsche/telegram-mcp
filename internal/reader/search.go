@@ -119,6 +119,7 @@ type searchWindow struct {
 	items           []model.SearchHit
 	lowest, highest int32
 	partial         bool
+	exhausted       bool
 }
 
 // normalizeSearchWindow applies the same bounds and content policy to both selectors.
@@ -128,7 +129,8 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 	}
 	items := make([]model.SearchHit, 0, len(candidates))
 	seen := make(map[int32]bool, len(candidates))
-	partial := len(candidates) == query.Limit
+	partial := query.Window == nil && len(candidates) == query.Limit
+	exhausted := false
 	var lowest, highest int32
 	for _, candidate := range candidates {
 		message := candidate.Message
@@ -143,6 +145,18 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		if id > highest {
 			highest = id
 		}
+		if query.Window != nil && candidate.SentAt != 0 {
+			if candidate.SentAt < 0 {
+				return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
+			}
+			if candidate.SentAt < query.Window.Since {
+				exhausted = true
+				continue
+			}
+			if candidate.SentAt >= query.Window.Until {
+				continue
+			}
+		}
 		if err := grant.CheckMessage(candidate, s.backend.SelfID(), s.now()); err != nil {
 			switch model.TextErrorCategory(err) {
 			case model.ErrorPolicyDenied, model.ErrorProtectedContent, model.ErrorEphemeralContent, model.ErrorUnsupportedPeer:
@@ -152,11 +166,11 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 				return searchWindow{}, err
 			}
 		}
-		if query.Window != nil && !query.Window.Contains(message.Date) {
+		if query.Window != nil && (!query.Window.Contains(message.Date) || candidate.SentAt == 0) {
 			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		date, err := time.Parse(time.RFC3339Nano, message.Date)
-		if err != nil || date.IsZero() || message.Author.Kind() != model.PeerKindUser || (message.Text == "" && candidate.Image == nil) || !utf8.ValidString(message.Text) {
+		if err != nil || date.IsZero() || (query.Window != nil && date.Unix() != candidate.SentAt) || message.Author.Kind() != model.PeerKindUser || (message.Text == "" && candidate.Image == nil) || !utf8.ValidString(message.Text) {
 			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		if len(message.Text) > 64*1024 {
@@ -175,7 +189,7 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 	}
 
 	sort.Slice(items, func(i, j int) bool { return items[i].ID.TelegramID() > items[j].ID.TelegramID() })
-	return searchWindow{items: items, lowest: lowest, highest: highest, partial: partial}, nil
+	return searchWindow{items: items, lowest: lowest, highest: highest, partial: partial, exhausted: exhausted}, nil
 }
 
 // ListUnread returns the first page of authorized whole-dialog counts.

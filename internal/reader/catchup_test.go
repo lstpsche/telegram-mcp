@@ -167,3 +167,21 @@ func TestSearchCursorEncodingOmitsDateFields(t *testing.T) {
 		t.Fatal("search cursor encoding changed")
 	}
 }
+
+func TestCatchUpStopsAtLowerDateBoundaryWithoutCallingOlderPages(t *testing.T) {
+	s, f, _, _, grants, scope := scopeService(t)
+	old := candidate(grants[0], 20, "outside window")
+	old.SentAt = catchUpWindow(t).Since - 1
+	old.Message.Date = time.Unix(old.SentAt, 0).UTC().Format(time.RFC3339)
+	f.messages[grants[0].Peer] = []model.Candidate{old}
+	result, err := s.CatchUp(context.Background(), "req_boundary", scope.ID, catchUpWindow(t), 1, "")
+	first := decodeScopeEnvelope[model.SearchHit](t, result, err)
+	if len(first.Items) != 0 || first.Scope.CompletedPeers != 1 || first.NextCursor == nil || first.Scope.CatchUp.Peers[0].Fetched != 1 {
+		t.Fatal("lower boundary did not complete the peer")
+	}
+	result, err = s.CatchUp(context.Background(), "req_next", scope.ID, catchUpWindow(t), 1, *first.NextCursor)
+	last := decodeScopeEnvelope[model.SearchHit](t, result, err)
+	if last.NextCursor != nil || last.Partial || len(f.queries) != 2 || f.queries[1].Peer != grants[1].Peer {
+		t.Fatal("fetched beyond lower boundary")
+	}
+}

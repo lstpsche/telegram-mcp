@@ -30,7 +30,7 @@ func (f *multiPeerWireBackend) message(peer model.PeerID) (model.Candidate, erro
 	if err != nil {
 		return model.Candidate{}, err
 	}
-	return model.Candidate{Message: model.Message{ID: id, Author: f.author, Date: "2026-09-05T12:00:00Z", Text: "synthetic scoped context"}}, nil
+	return model.Candidate{SentAt: 1788609600, Message: model.Message{ID: id, Author: f.author, Date: "2026-09-05T12:00:00Z", Text: "synthetic scoped context"}}, nil
 }
 func (f *multiPeerWireBackend) Search(_ context.Context, q model.SearchQuery) ([]model.Candidate, error) {
 	f.fetches.Add(1)

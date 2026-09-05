@@ -284,7 +284,7 @@ func TestMessagePageRevalidatesReturnedPeerConstructors(t *testing.T) {
 	}
 }
 
-func TestDateSearchUsesExclusiveRPCBoundsAndValidatesDelivery(t *testing.T) {
+func TestDateTraversalUsesHistoryAndPreservesBoundaryEvidence(t *testing.T) {
 	for _, date := range []int{99, 100, 101, 102} {
 		t.Run(fmt.Sprint(date), func(t *testing.T) {
 			searched := false
@@ -292,9 +292,9 @@ func TestDateSearchUsesExclusiveRPCBoundsAndValidatesDelivery(t *testing.T) {
 				switch q := in.(type) {
 				case *tg.UpdatesGetStateRequest:
 					return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
-				case *tg.MessagesSearchRequest:
+				case *tg.MessagesGetHistoryRequest:
 					searched = true
-					if q.Q != "" || q.MinDate != 99 || q.MaxDate != 102 || q.OffsetID != 21 || q.Limit != 2 {
+					if q.OffsetDate != 102 || q.OffsetID != 21 || q.Limit != 2 {
 						t.Fatal("incorrect date search request")
 					}
 					message := testMessage(20)
@@ -308,12 +308,8 @@ func TestDateSearchUsesExclusiveRPCBoundsAndValidatesDelivery(t *testing.T) {
 			if !searched {
 				t.Fatal("search not invoked")
 			}
-			if date >= 100 && date < 102 {
-				if err != nil || len(rows) != 1 {
-					t.Fatal("valid date rejected", err)
-				}
-			} else if model.TextErrorCategory(err) != model.ErrorInvalidReference || rows != nil {
-				t.Fatal("out-of-window result released")
+			if err != nil || len(rows) != 1 || rows[0].SentAt != int64(date) {
+				t.Fatal("history boundary evidence lost", err)
 			}
 		})
 	}

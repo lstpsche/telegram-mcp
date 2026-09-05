@@ -106,7 +106,7 @@ func saveGrant(t *testing.T, p *policy.Repository, g policy.Grant) {
 }
 func candidate(g policy.Grant, id int32, text string) model.Candidate {
 	message, _ := model.NewMessageID(g.Peer, id)
-	return model.Candidate{Message: model.Message{ID: message, Author: g.Author, Date: "2026-09-05T12:00:00Z", Text: text}}
+	return model.Candidate{SentAt: 1788609600, Message: model.Message{ID: message, Author: g.Author, Date: "2026-09-05T12:00:00Z", Text: text}}
 }
 func request(g policy.Grant) model.HistoryQuery { return model.HistoryQuery{Peer: g.Peer, Limit: 20} }
 

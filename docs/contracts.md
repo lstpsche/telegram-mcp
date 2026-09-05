@@ -76,6 +76,14 @@ chain; counts describe only the current response. Excluded peer identities are
 never exposed. Completion means traversal of the authorized window, not absence
 of unsupported or excluded content.
 
+Catch-up positions history at the upper date and traverses descending IDs within
+current authority. Date checks exclude newer messages and stop each peer once a
+validated sending timestamp precedes the start. Timestamp evidence from excluded
+service/content entries can establish that boundary; undated empty entries cannot.
+Every fetched candidate consumes the budget, including out-of-window entries.
+This avoids relying on empty-query search date filters, which basic groups can
+ignore. No history acknowledgment is issued by catch-up.
+
 Catch-up uses the same canonical peer order, candidate and response budgets,
 fixed cursor expiry, and authority invalidation as scoped search. The cursor
 also binds both dates and the operation. Equivalent timezone representations

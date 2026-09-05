@@ -45,12 +45,12 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 			offset = maximum
 		}
 	}
-	request := &tg.MessagesSearchRequest{Peer: input, Q: query, Filter: &tg.InputMessagesFilterEmpty{}, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum}
+	var response tg.MessagesMessagesClass
 	if q.Window != nil {
-		request.MinDate = int(q.Window.Since - 1)
-		request.MaxDate = int(q.Window.Until)
+		response, err = a.reads.api.MessagesGetHistory(bounded, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, OffsetDate: int(q.Window.Until), Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
+	} else {
+		response, err = a.reads.api.MessagesSearch(bounded, &tg.MessagesSearchRequest{Peer: input, Q: query, Filter: &tg.InputMessagesFilterEmpty{}, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
 	}
-	response, err := a.reads.api.MessagesSearch(bounded, request)
 	if err != nil {
 		return nil, readError(err)
 	}
@@ -74,12 +74,12 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	if err != nil {
 		return nil, err
 	}
-	for _, candidate := range candidates {
-		// Unsafe candidates intentionally carry no date/body and are filtered by
-		// the reader. Every deliverable candidate must satisfy the date selector.
-		if q.Window != nil && candidate.Message.Date != "" && !q.Window.Contains(candidate.Message.Date) {
-			return nil, model.TextError(model.ErrorInvalidReference, nil)
+	if q.Window != nil {
+		if err := dateCandidates(q.Peer, response, candidates); err != nil {
+			return nil, err
 		}
+	}
+	for _, candidate := range candidates {
 		id := candidate.Message.ID.TelegramID()
 		if id < q.MinID || id > q.MaxID || (q.Before > 0 && id >= q.Before) {
 			return nil, model.TextError(model.ErrorInvalidReference, nil)

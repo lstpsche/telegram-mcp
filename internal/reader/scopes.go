@@ -262,9 +262,13 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 			peer.Fetched, peer.Returned = len(candidates), len(normalized.items)
 		}
 		// Filtering makes this page partial independently of whether traversal ended.
-		partial = partial || len(normalized.items) < len(candidates)
+		if window != nil {
+			partial = partial || normalized.partial
+		} else {
+			partial = partial || len(normalized.items) < len(candidates)
+		}
 		remaining -= len(candidates)
-		if len(candidates) == search.Limit && normalized.lowest > grant.MinID {
+		if len(candidates) == search.Limit && normalized.lowest > grant.MinID && !normalized.exhausted {
 			if cursor.Before == 0 {
 				cursor.Ceiling = normalized.highest
 			}

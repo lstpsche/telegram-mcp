@@ -67,6 +67,7 @@ func newImageWireBackend(t *testing.T, base *wireBackend) *imageWireBackend {
 		}
 		digest := sha256.Sum256(encoded.Bytes())
 		backend.candidates = append(backend.candidates, model.Candidate{
+			SentAt:  1788609600,
 			Message: model.Message{ID: id, Author: base.author, Date: "2026-09-05T12:00:00Z", Text: spec.caption},
 			Image:   &model.ImageSource{Kind: spec.kind, MIMEType: spec.mime, Width: spec.width, Height: spec.height, Size: int64(encoded.Len()), Fingerprint: hex.EncodeToString(digest[:])},
 		})

@@ -28,6 +28,8 @@ type Message struct {
 // Candidate carries normalization evidence only inside the application.
 // Unsafe source bodies must not be copied into Message.Text.
 type Candidate struct {
+	// SentAt retains only timestamp evidence for date traversal, including excluded bodies.
+	SentAt      int64
 	Image       *ImageSource
 	Message     Message
 	Protected   bool
