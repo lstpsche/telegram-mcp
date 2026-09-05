@@ -14,6 +14,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/buildinfo"
 	operatorcli "github.com/lstpsche/telegram-mcp/internal/cli"
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
+	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/policy"
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 	metastore "github.com/lstpsche/telegram-mcp/internal/store"
@@ -70,6 +71,8 @@ func runContext(
 		return 1
 	}
 	switch args[0] {
+	case "scopes", "scope", "unscope":
+		return runScopeCommand(ctx, args, stdout, stderr, control)
 	case "peers", "grants", "grant", "revoke":
 		return runTextCommand(ctx, args, stdout, stderr, control)
 	case "status":
@@ -187,6 +190,9 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcpctl grants")
 	fmt.Fprintln(writer, "  telegram-mcpctl grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible")
 	fmt.Fprintln(writer, "  telegram-mcpctl revoke --peer PEER")
+	fmt.Fprintln(writer, "  telegram-mcpctl scopes")
+	fmt.Fprintln(writer, "  telegram-mcpctl scope --name NAME [--id ID] [--peer PEER ...]")
+	fmt.Fprintln(writer, "  telegram-mcpctl unscope --id ID")
 	fmt.Fprintln(writer, "Authentication is interactive through /dev/tty; production login is disabled.")
 }
 
@@ -211,6 +217,10 @@ func writeControlError(writer io.Writer, err error) {
 		fmt.Fprintln(writer, "telegram-mcpctl: text policy is busy; retry after the in-flight content request or grant operation finishes")
 	case errors.Is(err, policy.ErrInvalidGrant):
 		fmt.Fprintln(writer, "telegram-mcpctl: invalid text grant; check IDs, scope, eligibility, and expiry within 30 days")
+	case errors.Is(err, policy.ErrInvalidScope):
+		fmt.Fprintln(writer, "telegram-mcpctl: invalid named scope; check its name, ID, unique supported peers, and scope limits")
+	case errors.Is(err, model.ErrInvalidReference):
+		fmt.Fprintln(writer, "telegram-mcpctl: invalid or unavailable reference; use a current exact identifier")
 	case errors.Is(err, policy.ErrEpochChanged):
 		fmt.Fprintln(writer, "telegram-mcpctl: authorization epoch is unavailable or changed; authenticate and retry")
 	case errors.Is(err, app.ErrTextControlUnsupported):
