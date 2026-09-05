@@ -45,8 +45,10 @@ no title, body or access hash. Telegram can return more dialogs than requested.
 The adapter accepts at most 200 entries in each response vector, consumes only
 the requested candidate window, and resumes after its last dialog. Pinned
 continuations refetch the live pinned prefix; ordinary continuations exclude
-pinned dialogs. A missing or unpinned boundary invalidates the
-cursor. Unconsumed entries are neither cached nor treated as delivered.
+pinned dialogs. Returned pins belonging to another folder are excluded before
+selecting the candidate window; they cannot become a continuation boundary.
+A missing, unpinned or moved-to-another-folder boundary invalidates the cursor.
+Unconsumed entries are neither cached nor treated as delivered.
 Scoped lists still inspect only their bounded membership and accept no cursor.
 
 The daemon requires an existing local authorization epoch before opening the

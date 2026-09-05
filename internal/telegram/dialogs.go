@@ -87,7 +87,8 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 	start := 0
 	seen := make(map[model.PeerID]bool)
 	ordinary := false
-	for i, value := range dialogs {
+	folderDialogs := make([]tg.DialogClass, 0, len(dialogs))
+	for _, value := range dialogs {
 		dialog, ok := value.(*tg.Dialog)
 		if !ok {
 			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
@@ -97,7 +98,20 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, err)
 		}
 		seen[id] = true
-		if dialog.Pinned && (ordinary || request.ExcludePinned) {
+		folder, _ := dialog.GetFolderID() // An absent folder is the main list.
+		if folder < 0 || folder > 1 || (dialog.Pinned && request.ExcludePinned) {
+			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		if folder != position.Folder {
+			// Telegram can prepend pins from another folder. They are not
+			// candidates or continuation boundaries for the requested list.
+			if !dialog.Pinned {
+				return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+			}
+			continue
+		}
+		folderDialogs = append(folderDialogs, dialog)
+		if dialog.Pinned && ordinary {
 			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		ordinary = ordinary || !dialog.Pinned
@@ -105,12 +119,13 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 			if !dialog.Pinned {
 				return model.DialogPage{}, model.TextError(model.ErrorCursorInvalid, nil)
 			}
-			start = i + 1
+			start = len(folderDialogs)
 		}
 	}
 	if position.Pinned && start == 0 {
 		return model.DialogPage{}, model.TextError(model.ErrorCursorInvalid, nil)
 	}
+	dialogs = folderDialogs
 	end := min(start+limit, len(dialogs))
 	if end < len(dialogs) {
 		complete = false
