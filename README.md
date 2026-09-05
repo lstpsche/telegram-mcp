@@ -66,8 +66,9 @@ freshness as `unavailable` because it does not perform a freshness check.
 
 The relay never starts a daemon automatically. If the daemon is absent, it
 exits with a structured diagnostic on stderr. Its stdout carries only MCP
-frames during normal operation. Idle connections expire after a minute;
-clients can reconnect by restarting the relay.
+frames during normal operation. Connections remain open between requests.
+An incomplete input frame expires one minute after its first byte arrives;
+clients can reconnect by restarting the relay after a disconnect.
 
 ## Configure an account
 

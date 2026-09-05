@@ -149,4 +149,5 @@ against an account that already has configuration or authorization.
 
 GUI-session connectivity does not establish account Keychain access under
 launchd, disposable Test-DC workflows, production eligibility, or publication.
-Those remain separate checks. Production login is absent.
+Those remain separate checks. Production login requires explicit eligibility
+attestation and [interactive local authentication](../README.md#configure-an-account).

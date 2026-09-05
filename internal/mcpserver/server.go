@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -109,12 +110,20 @@ func (r *frameReader) Read(output []byte) (int, error) {
 		if err := r.limiter.Wait(r.ctx); err != nil {
 			return 0, errors.New("request cancelled")
 		}
+		// Agent sessions can be idle between requests. Start the completion
+		// deadline only after the first byte of a new frame arrives.
+		if err := r.connection.SetReadDeadline(time.Time{}); err != nil {
+			return 0, fmt.Errorf("clear MCP frame deadline: %w", err)
+		}
+		if _, err := r.reader.Peek(1); err != nil {
+			return 0, fmt.Errorf("wait for MCP frame: %w", err)
+		}
 		if err := r.connection.SetReadDeadline(time.Now().Add(time.Minute)); err != nil {
-			return 0, errors.New("connection unavailable")
+			return 0, fmt.Errorf("set MCP frame deadline: %w", err)
 		}
 		line, err := r.reader.ReadSlice('\n')
 		if err != nil {
-			return 0, io.EOF
+			return 0, fmt.Errorf("read MCP frame: %w", err)
 		}
 		if err := validateRPCID(line); err != nil {
 			return 0, err

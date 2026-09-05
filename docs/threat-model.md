@@ -123,8 +123,9 @@ directory/socket; `lstat` and owner/type validation; length-checked path;
 same-user stale socket cleanup only after positive `ECONNREFUSED`; fail-closed
 handling of inconclusive dial errors; no relay fallback; cancellation-aware
 accept loop. Both socket endpoints check peer credentials; the listener bounds
-concurrent connections and the MCP boundary limits input frames and rate, idle
-reads, and blocked writes.
+concurrent connections and the MCP boundary limits input frame size and rate,
+incomplete frame duration, and blocked writes. Idle sessions remain connected
+between requests; the input deadline starts when the first frame byte arrives.
 
 ### Stale or incomplete state represented as live
 

@@ -13,8 +13,10 @@ Both endpoints verify the other process's OS user. The server accepts at most
 eight connections, caps each input frame at 64 KiB, and limits each connection
 to 20 incoming frames per second with a burst of four. The normalized JSON
 encoding of a reflected request ID is capped at 1 KiB, including Unicode
-escaping; oversized IDs close the connection before tool execution. Idle reads expire after
-one minute and blocked output writes after ten seconds; reconnect after expiry.
+escaping; oversized IDs close the connection before tool execution. Connections
+may remain idle between requests. Once the first byte arrives, an incomplete
+input frame expires after one minute. Blocked output writes expire after ten
+seconds; reconnect after either timeout.
 
 `status` accepts an empty object and returns the standard envelope. Its single
 item reports `account_state`, `message_reads`, and
