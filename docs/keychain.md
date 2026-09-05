@@ -85,6 +85,10 @@ then passed against the unlocked login keychain, and `otool -L` confirmed
 direct CoreFoundation and Security.framework linkage.
 
 This proves the native API behavior for one unchanged development artifact. It
-does not prove stable ACL identity across rebuilds or upgrades. Developer ID
-signing, expected access across an upgraded binary, launchd installation, and
-locked-keychain recovery remain explicit release gates.
+does not prove shared ACL access between `telegram-mcpctl` and `telegram-mcpd`,
+or stable identity across rebuilds or upgrades. The
+[local installer](installation.md) verifies executable signatures and registers
+a LaunchAgent, but never reads or changes Keychain items. Developer ID signing,
+noninteractive access by both distinct executables, access after an upgrade,
+actual LaunchAgent execution, and locked-keychain recovery remain explicit
+release gates. A valid ad-hoc signature alone does not satisfy them.

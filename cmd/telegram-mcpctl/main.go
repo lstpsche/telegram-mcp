@@ -65,6 +65,10 @@ func runContext(
 		return 0
 	}
 
+	if isSupportCommand(args[0]) {
+		return runSupportCommand(ctx, args, stdout, stderr, defaultSupport)
+	}
+
 	control, err := newController()
 	if err != nil {
 		writeControlError(stderr, err)
@@ -184,6 +188,10 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "usage:")
 	fmt.Fprintln(writer, "  telegram-mcpctl configure --test-dc {1|2|3}")
 	fmt.Fprintln(writer, "  telegram-mcpctl auth {phone|qr}")
+	fmt.Fprintln(writer, "  telegram-mcpctl service install --bin-dir ABSOLUTE_DIRECTORY")
+	fmt.Fprintln(writer, "  telegram-mcpctl service {start|stop|restart|uninstall}")
+	fmt.Fprintln(writer, "  telegram-mcpctl doctor")
+	fmt.Fprintln(writer, "  telegram-mcpctl agent-config")
 	fmt.Fprintln(writer, "  telegram-mcpctl status")
 	fmt.Fprintln(writer, "  telegram-mcpctl logout")
 	fmt.Fprintln(writer, "  telegram-mcpctl peers")

@@ -22,6 +22,11 @@ Real-account authentication and release-binary acceptance remain human checks.
 
 ## Connect an agent
 
+For per-user background operation, use the [installation and diagnostics
+guide](docs/installation.md). The human CLI provides `service` lifecycle
+commands, a read-only `doctor`, and `agent-config` with the exact installed
+relay path. The following commands run the daemon in the foreground.
+
 Use Go 1.27.1, as selected by `go.mod` and `.go-version`. A parent-shell
 `GO111MODULE=off` override must not be set.
 
