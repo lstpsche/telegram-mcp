@@ -46,7 +46,8 @@ func TestSupergroupLiveHistorySearchUnreadAndReceipt(t *testing.T) {
 				t.Fatal("wrong read ceiling")
 			}
 			read = true
-			return encodeReadResponse(out, &tg.BoolTrue{})
+			// Successful RPCs may return false; exact readback establishes completion.
+			return encodeReadResponse(out, &tg.BoolFalse{})
 		case *tg.MessagesGetPeerDialogsRequest:
 			readbacks++
 			max := 0
@@ -125,7 +126,7 @@ func TestSupergroupRejectsUnsupportedMetadataBeforeHistory(t *testing.T) {
 }
 
 func TestSupergroupReceiptRequiresPositiveExactReadback(t *testing.T) {
-	for _, failure := range []string{"false", "stale", "wrong_peer", "protected", "bad_state", "rpc"} {
+	for _, failure := range []string{"false_stale", "stale", "wrong_peer", "protected", "bad_state", "rpc"} {
 		t.Run(failure, func(t *testing.T) {
 			group := syntheticSupergroup()
 			receipted := false
@@ -137,7 +138,7 @@ func TestSupergroupReceiptRequiresPositiveExactReadback(t *testing.T) {
 					return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
 				case *tg.ChannelsReadHistoryRequest:
 					receipted = true
-					if failure == "false" {
+					if failure == "false_stale" {
 						return encodeReadResponse(out, &tg.BoolFalse{})
 					}
 					if failure == "rpc" {
@@ -150,7 +151,7 @@ func TestSupergroupReceiptRequiresPositiveExactReadback(t *testing.T) {
 					}
 					dialog := &tg.Dialog{Peer: &tg.PeerChannel{ChannelID: 42}, ReadInboxMaxID: 7}
 					state := tg.UpdatesState{Pts: 10, Date: 100, Seq: 1}
-					if failure == "stale" {
+					if failure == "stale" || failure == "false_stale" {
 						dialog.ReadInboxMaxID = 6
 					}
 					if failure == "wrong_peer" {

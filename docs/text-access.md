@@ -75,8 +75,9 @@ missing hashes fail explicitly instead of guessing from Bot API encodings.
 
 Supergroup history and search use live RPC responses, with peer type and protection
 revalidated on each response. Their read receipt requires `channels.readHistory`
-to succeed and an exact dialog readback to confirm `read_inbox_max_id` reached
-the requested boundary. Common update synchronization also remains required.
+to complete without an RPC error (either Boolean value) and an exact dialog
+readback to confirm `read_inbox_max_id` reached the requested boundary. Common
+update synchronization also remains required.
 There is no channel subscription, cache, independent pts checkpoint or channel
 gap-recovery guarantee. Channel events/entities are projected out of the common
 updates manager while enclosing seq/date and common pts/qts remain intact.

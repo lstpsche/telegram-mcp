@@ -201,7 +201,12 @@ Ordinary non-forum supergroups use channel-kind IDs. Broadcasts, forums and
 inaccessible/protected groups remain excluded. Live history/search responses
 must include the exact permitted entity and a positive channel pts, but channel
 pts is not stored or used as proof of continuous channel updates. Supergroup
-receipts require a true `channels.readHistory` result, exact dialog readback at
+receipts require a successful `channels.readHistory` RPC, exact dialog readback at
 or beyond the requested boundary, and common checkpoint synchronization before
 release. This is a live RPC/readback contract, not a channel subscription or
 atomic remote snapshot.
+
+The Boolean result itself is not a success flag. Like Telegram's
+[TDLib read handler](https://github.com/tdlib/td/blob/master/td/telegram/MessagesManager.cpp),
+the adapter distinguishes RPC errors from either returned Boolean; exact
+read-position readback remains required before content release.

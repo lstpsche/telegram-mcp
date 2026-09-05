@@ -37,13 +37,11 @@ func (r *readRuntime) saveChannels(ctx context.Context, groups []tg.ChatClass) e
 // Supergroups are fetched live, without subscribing to independent channel pts.
 // Their receipt RPC returns Bool, not affected pts. Verify both success and the
 // server's exact dialog read position before the reader can release any body.
+// A false Bool is a valid RPC result (also accepted by TDLib), not an RPC error.
 func (a *Account) acknowledgeSupergroup(ctx context.Context, peer model.PeerID, input *tg.InputPeerChannel, through int32) error {
-	accepted, err := a.reads.api.ChannelsReadHistory(ctx, &tg.ChannelsReadHistoryRequest{Channel: &tg.InputChannel{ChannelID: input.ChannelID, AccessHash: input.AccessHash}, MaxID: int(through)})
+	_, err := a.reads.api.ChannelsReadHistory(ctx, &tg.ChannelsReadHistoryRequest{Channel: &tg.InputChannel{ChannelID: input.ChannelID, AccessHash: input.AccessHash}, MaxID: int(through)})
 	if err != nil {
 		return readError(err)
-	}
-	if !accepted {
-		return model.TextError(model.ErrorFreshnessDegraded, nil)
 	}
 	response, err := a.reads.api.MessagesGetPeerDialogs(ctx, []tg.InputDialogPeerClass{&tg.InputDialogPeer{Peer: input}})
 	if err != nil {

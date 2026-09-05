@@ -295,10 +295,10 @@ live and can shift when Telegram dialogs change.
 Supergroup lookups validate `Megagroup` and reject broadcast/forum/minimal,
 forbidden, left, restricted and protected entities both before content fetch and
 on the returned page. Bot and anonymous/channel authors remain excluded.
-`channels.readHistory` does not return common affected pts. A positive RPC result
-alone is insufficient: an exact subsequent dialog must report an inbox read
-position at least as high as requested. Common checkpoint synchronization is
-also required. A possible effect followed by any failure returns
+`channels.readHistory` does not return common affected pts. An error-free RPC
+(either Boolean value) alone is insufficient: an exact subsequent dialog must
+report an inbox read position at least as high as requested. Common checkpoint
+synchronization is also required. A possible effect followed by any failure returns
 `read_effect_uncertain` without bodies or media.
 
 Supergroup content is not cached, indexed or subscribed to. Independent channel
