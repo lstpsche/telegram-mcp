@@ -41,6 +41,10 @@ and rebuild checks. This development setup supports credential-free connectivity
 checks; it is not qualified for shared account custody. Cross-command identity,
 Developer ID signing, upgrades, and actual LaunchAgent Keychain access require
 separate qualification described in [Keychain behavior](keychain.md).
+For local account development, use the verified
+[Apple Development signing recipe](development-signing.md). It supplies shared
+control/daemon access across rebuilds using one pinned certificate, while the
+relay retains a separate identity. Qualify the exact artifacts before installation.
 
 The generated file is
 `~/Library/LaunchAgents/dev.telegram-mcp.gateway.plist`. It is the installation
@@ -124,7 +128,8 @@ fact. Start the service again after resolving the cause and stopping the
 foreground process. Authentication remains interactive through `/dev/tty` and
 must run while the daemon is stopped.
 
-Automated verification uses temporary files, a fake process runner, and a local
-synthetic MCP server. Real GUI-session installation, cross-command and upgrade
-Keychain access, disposable Test-DC workflows, production eligibility, and
-publication are separate acceptance checks. Production login remains absent.
+Automated service verification uses temporary files, a fake process runner,
+and a local synthetic MCP server. Native synthetic Keychain checks additionally
+qualify local Apple Development signing across commands and rebuilt upgrades.
+Real GUI-session installation, disposable Test-DC workflows, production
+eligibility, and publication remain separate checks. Production login is absent.

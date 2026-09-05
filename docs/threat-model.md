@@ -151,8 +151,16 @@ changed code identity breaks or broadens Keychain access.
 
 Controls: explicit stable pins and checksums; compile selected gotd/MCP packages;
 direct platform Keychain API; vulnerability checks at release; signed/notarized
-artifacts; upgrade ACL proof. The ad-hoc signing probe proves only one unchanged
-development binary, not release identity.
+artifacts; upgrade access proof. Local Apple Development builds use a shared
+designated requirement pinned to one certificate and the control/daemon
+identifiers. The relay and unrelated identifiers remain outside that requirement.
+Native synthetic checks prove cross-command and rebuilt-upgrade access, with
+denial for an unrelated same-certificate identifier and an ad-hoc spoof.
+Ad-hoc signatures alone fail sharing and upgrade access. Self-signed certificates
+also lack the stable Apple signing-family partition used by the legacy Keychain.
+No item ACL is widened to compensate. Certificate rotation, real launchd access
+and distribution artifacts require separate qualification. See
+[local development signing](development-signing.md).
 
 ## Excluded or deferred risk
 

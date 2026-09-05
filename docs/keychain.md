@@ -151,15 +151,18 @@ six sharing/upgrade checks with native status `-25293` (`errSecAuthFailed`).
 With legacy interaction disabled, these failures return promptly and cleanup
 is verified. They establish that this signing arrangement is unsuitable for
 shared account custody. Do not approve Keychain prompts or broaden item ACLs
-to make the checks pass. A shared, upgrade-stable trusted identity needs an
-explicit design and successful qualification against its actual artifacts.
+to make the checks pass. For local development, an Apple Development identity
+with a certificate-pinned shared designated requirement passes all eight checks;
+the [development signing recipe](development-signing.md) keeps the control and
+daemon identifiers distinct and excludes the relay. This qualification applies
+to rebuilt artifacts using the same certificate and requirement. Certificate
+rotation and migration of items created under other requirements remain separate.
 
-The
-[local installer](installation.md) verifies executable signatures and registers
-a LaunchAgent, but never reads or changes Keychain items. Developer ID signing,
-noninteractive access by both distinct executables, access after an upgrade,
-actual LaunchAgent execution, and locked-keychain recovery remain explicit
-release gates. A valid ad-hoc signature alone does not satisfy them.
+The [local installer](installation.md) verifies executable signatures and
+registers a LaunchAgent, but never reads or changes Keychain items. Actual
+LaunchAgent execution and locked-keychain recovery remain separate checks.
+Developer ID distribution needs qualification against its own signed artifacts;
+local Apple Development results do not establish distribution readiness.
 
 Apple's [macOS Keychain overview](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains)
 distinguishes the legacy file keychain from Data Protection Keychain access
