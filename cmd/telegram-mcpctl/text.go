@@ -107,6 +107,13 @@ func parseGrant(args []string) (policy.Grant, bool) {
 			attested = true
 			continue
 		}
+		if key == "--allow-images" {
+			if grant.Images {
+				return grant, false
+			}
+			grant.Images = true
+			continue
+		}
 		switch key {
 		case "--peer", "--author", "--min-id", "--max-id", "--read-through", "--expires-at", "--profile":
 		default:
@@ -180,11 +187,12 @@ type grantRecord struct {
 	Profile     string       `json:"profile"`
 	ExpiresAt   time.Time    `json:"expires_at"`
 	Eligible    bool         `json:"eligible"`
+	Images      bool         `json:"images"`
 }
 
 func newGrantRecord(grant policy.Grant) grantRecord {
 	return grantRecord{Peer: grant.Peer, Author: grant.Author, MinID: grant.MinID, MaxID: grant.MaxID,
-		ReadThrough: grant.ReadThrough, Profile: grant.Profile, ExpiresAt: grant.ExpiresAt, Eligible: grant.Eligible}
+		ReadThrough: grant.ReadThrough, Profile: grant.Profile, ExpiresAt: grant.ExpiresAt, Eligible: grant.Eligible, Images: grant.Images}
 }
 
 // Encode the whole result before writing. JSON quoting prevents terminal control

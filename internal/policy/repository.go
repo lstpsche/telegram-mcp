@@ -105,12 +105,12 @@ func (l *Lease) transaction(ctx context.Context, operation func(*sql.Tx) error) 
 	return nil
 }
 
-const grantColumns = "peer, author, min_id, max_id, read_through, profile, expires_at, eligible"
+const grantColumns = "peer, author, min_id, max_id, read_through, profile, expires_at, eligible, images"
 
 func scanGrant(row interface{ Scan(...any) error }) (Grant, error) {
 	var grant Grant
 	var peer, author, expiry string
-	if err := row.Scan(&peer, &author, &grant.MinID, &grant.MaxID, &grant.ReadThrough, &grant.Profile, &expiry, &grant.Eligible); err != nil {
+	if err := row.Scan(&peer, &author, &grant.MinID, &grant.MaxID, &grant.ReadThrough, &grant.Profile, &expiry, &grant.Eligible, &grant.Images); err != nil {
 		return Grant{}, err
 	}
 	var err error
@@ -206,12 +206,12 @@ func (l *Lease) Save(ctx context.Context, grant Grant) error {
 		if count >= MaximumGrants {
 			return model.TextError(model.ErrorInvalidInput, errors.New("text grant limit reached; revoke an existing grant"))
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO text_grants (peer,authorization_epoch,author,min_id,max_id,read_through,profile,expires_at,eligible)
-   VALUES (?,?,?,?,?,?,?,?,1)
+		_, err := tx.ExecContext(ctx, `INSERT INTO text_grants (peer,authorization_epoch,author,min_id,max_id,read_through,profile,expires_at,eligible,images)
+   VALUES (?,?,?,?,?,?,?,?,1,?)
    ON CONFLICT(peer) DO UPDATE SET authorization_epoch=excluded.authorization_epoch,
    author=excluded.author,min_id=excluded.min_id,max_id=excluded.max_id,read_through=excluded.read_through,
-   profile=excluded.profile,expires_at=excluded.expires_at,eligible=excluded.eligible`,
-			grant.Peer.String(), l.epoch, grant.Author.String(), grant.MinID, grant.MaxID, grant.ReadThrough, grant.Profile, grant.ExpiresAt.UTC().Format(time.RFC3339Nano))
+   profile=excluded.profile,expires_at=excluded.expires_at,eligible=excluded.eligible,images=excluded.images`,
+			grant.Peer.String(), l.epoch, grant.Author.String(), grant.MinID, grant.MaxID, grant.ReadThrough, grant.Profile, grant.ExpiresAt.UTC().Format(time.RFC3339Nano), grant.Images)
 		if err != nil {
 			return internalError(err)
 		}
@@ -232,7 +232,7 @@ func (l *Lease) Revoke(ctx context.Context, peer model.PeerID) error {
 }
 
 func (l *Lease) Audit(ctx context.Context, requestID, operation string, category model.ErrorCategory, count int, uncertain bool) error {
-	if !model.IsValidRequestID(requestID) || (operation != "list_chats" && operation != "list_messages" && operation != "get_message_context" && operation != "search_messages" && operation != "list_unread" && operation != "list_scopes") ||
+	if !model.IsValidRequestID(requestID) || (operation != "list_chats" && operation != "list_messages" && operation != "get_message_context" && operation != "search_messages" && operation != "list_unread" && operation != "list_scopes" && operation != "open_image") ||
 		(category != "" && !category.IsValid()) || count < 0 || count > model.MaximumPageSize ||
 		(category != "" && count != 0) || (category == "" && uncertain) {
 		return model.TextError(model.ErrorInvalidInput, errors.New("invalid text audit record"))

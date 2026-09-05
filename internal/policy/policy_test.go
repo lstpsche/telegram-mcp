@@ -185,6 +185,7 @@ func TestExpiryAndAuthorizationCleanup(t *testing.T) {
 			ctx := context.Background()
 			lease := leaseFor(t, r)
 			grant := validGrant(t, *now)
+			grant.Images = true
 			if err := lease.Save(ctx, grant); err != nil {
 				t.Fatal(err)
 			}
@@ -271,5 +272,66 @@ func TestAuditUsesClosedContentFreeFields(t *testing.T) {
 	}
 	if err := lease.Audit(ctx, "req_fail", "list_messages", "", 1, false); err == nil {
 		t.Fatal("audit storage failure concealed")
+	}
+}
+
+func TestImagePermissionRequiresOptInAndPreservesContentBounds(t *testing.T) {
+	now := time.Now()
+	grant := validGrant(t, now)
+	id, _ := model.NewMessageID(grant.Peer, 18)
+	candidate := model.Candidate{Message: model.Message{ID: id, Author: grant.Author}, Image: &model.ImageSource{}}
+	if err := grant.CheckMessage(candidate, grant.Author, now); !errors.Is(err, ErrDenied) {
+		t.Fatal("text grant permitted image metadata", err)
+	}
+	grant.Images = true
+	if err := grant.CheckMessage(candidate, grant.Author, now); err != nil {
+		t.Fatal("image permission rejected", err)
+	}
+	if err := grant.CheckRead(18, now); !errors.Is(err, ErrDenied) {
+		t.Fatal("image permission expanded read prefix", err)
+	}
+	candidate.Message.Author = peer(t, model.PeerKindUser, 23)
+	if err := grant.CheckMessage(candidate, grant.Author, now); !errors.Is(err, ErrDenied) {
+		t.Fatal("image permission expanded authors", err)
+	}
+	candidate.Message.Author = grant.Author
+	candidate.Protected = true
+	if err := grant.CheckMessage(candidate, grant.Author, now); !errors.Is(err, ErrDenied) {
+		t.Fatal("image permission allowed protected content", err)
+	}
+}
+
+func TestImagePermissionPersistsAndReplacementDisablesIt(t *testing.T) {
+	r, _, now := fixture(t)
+	ctx := context.Background()
+	lease := leaseFor(t, r)
+	grant := validGrant(t, *now)
+	for _, allowed := range []bool{false, true, false} {
+		_, before, err := lease.Binding(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		grant.Images = allowed
+		if err := lease.Save(ctx, grant); err != nil {
+			t.Fatal(err)
+		}
+		got, err := lease.Grant(ctx, grant.Peer)
+		if err != nil || got != grant {
+			t.Fatalf("image permission round trip: %+v %v", got, err)
+		}
+		listed, err := lease.List(ctx)
+		if err != nil || len(listed) != 1 || listed[0] != grant {
+			t.Fatalf("image permission listing: %+v %v", listed, err)
+		}
+		_, after, err := lease.Binding(ctx)
+		if err != nil || after <= before {
+			t.Fatal("image permission mutation did not invalidate authority", err)
+		}
+	}
+	if err := lease.Audit(ctx, "req_image", "open_image", "", 1, false); err != nil {
+		t.Fatal("image audit failed", err)
+	}
+	if err := lease.Audit(ctx, "req_uncertain_image", "open_image", model.ErrorReadEffectUncertain, 0, true); err != nil {
+		t.Fatal("uncertain image audit failed", err)
 	}
 }

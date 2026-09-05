@@ -18,15 +18,17 @@ type Chat struct {
 }
 
 type Message struct {
-	ID     MessageID `json:"id"`
-	Author PeerID    `json:"author"`
-	Date   string    `json:"date"`
-	Text   string    `json:"text"`
+	Image  *ImageDescriptor `json:"image,omitempty"`
+	ID     MessageID        `json:"id"`
+	Author PeerID           `json:"author"`
+	Date   string           `json:"date"`
+	Text   string           `json:"text"`
 }
 
 // Candidate carries normalization evidence only inside the application.
 // Unsafe source bodies must not be copied into Message.Text.
 type Candidate struct {
+	Image       *ImageSource
 	Message     Message
 	Protected   bool
 	Ephemeral   bool
@@ -85,11 +87,12 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
-	ID               MessageID `json:"id"`
-	Author           PeerID    `json:"author"`
-	Date             string    `json:"date"`
-	Snippet          string    `json:"snippet"`
-	SnippetTruncated bool      `json:"snippet_truncated"`
+	Image            *ImageDescriptor `json:"image,omitempty"`
+	ID               MessageID        `json:"id"`
+	Author           PeerID           `json:"author"`
+	Date             string           `json:"date"`
+	Snippet          string           `json:"snippet"`
+	SnippetTruncated bool             `json:"snippet_truncated"`
 }
 
 // Unread describes the entire granted dialog, not just its authorized body range.

@@ -188,7 +188,7 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcpctl logout")
 	fmt.Fprintln(writer, "  telegram-mcpctl peers")
 	fmt.Fprintln(writer, "  telegram-mcpctl grants")
-	fmt.Fprintln(writer, "  telegram-mcpctl grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible")
+	fmt.Fprintln(writer, "  telegram-mcpctl grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible [--allow-images]")
 	fmt.Fprintln(writer, "  telegram-mcpctl revoke --peer PEER")
 	fmt.Fprintln(writer, "  telegram-mcpctl scopes")
 	fmt.Fprintln(writer, "  telegram-mcpctl scope --name NAME [--id ID] [--peer PEER ...]")

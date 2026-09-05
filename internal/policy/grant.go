@@ -33,6 +33,7 @@ type Grant struct {
 	Profile     string
 	ExpiresAt   time.Time
 	Eligible    bool
+	Images      bool
 }
 
 func (g Grant) validateFields() error {
@@ -78,7 +79,7 @@ func (g Grant) CheckMessage(candidate model.Candidate, self model.PeerID, now ti
 	if candidate.Ephemeral {
 		return model.TextError(model.ErrorEphemeralContent, ErrDenied)
 	}
-	if candidate.Forwarded || candidate.Quoted || candidate.Unsupported {
+	if candidate.Forwarded || candidate.Quoted || candidate.Unsupported || (candidate.Image != nil && !g.Images) {
 		return model.TextError(model.ErrorPolicyDenied, ErrDenied)
 	}
 	return nil

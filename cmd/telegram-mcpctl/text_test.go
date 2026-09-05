@@ -170,3 +170,42 @@ func TestGrantJSONKeepsIdentifiersAsStrings(t *testing.T) {
 		}
 	}
 }
+
+func TestGrantImagesRequireStandaloneExplicitFlag(t *testing.T) {
+	args := grantArguments()
+	grant, ok := parseGrant(args)
+	if !ok || grant.Images {
+		t.Fatal("text grant implicitly enabled images")
+	}
+	grant, ok = parseGrant(append(append([]string(nil), args...), "--allow-images"))
+	if !ok || !grant.Images {
+		t.Fatal("explicit image grant rejected")
+	}
+	for _, suffix := range [][]string{{"--allow-images", "--allow-images"}, {"--allow-images=true"}, {"--allow-images", "true"}, {"--allow-images", "false"}} {
+		if _, ok := parseGrant(append(append([]string(nil), args...), suffix...)); ok {
+			t.Fatal("ambiguous image flag accepted")
+		}
+	}
+	control := &fakeTextController{}
+	for _, enabled := range []bool{true, false} {
+		command := append([]string{"grant"}, args...)
+		if enabled {
+			command = append(command, "--allow-images")
+		}
+		var stdout, stderr bytes.Buffer
+		if code := runTextCommand(context.Background(), command, &stdout, &stderr, control); code != 0 || control.saved.Images != enabled {
+			t.Fatalf("image permission did not reach controller: code=%d grant=%+v", code, control.saved)
+		}
+		var output bytes.Buffer
+		if err := writeTextJSON(&output, newGrantRecord(control.saved)); err != nil {
+			t.Fatal(err)
+		}
+		expected := `"images":false`
+		if enabled {
+			expected = `"images":true`
+		}
+		if !strings.Contains(output.String(), expected) {
+			t.Fatal("grant JSON omitted image permission")
+		}
+	}
+}

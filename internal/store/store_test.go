@@ -55,8 +55,8 @@ func TestOpenAppliesEmbeddedMigrationsAndSecurityPragmas(t *testing.T) {
 	if err := database.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 6 {
-		t.Fatalf("migration count = %d, want 6", migrationCount)
+	if migrationCount != 7 {
+		t.Fatalf("migration count = %d, want 7", migrationCount)
 	}
 	var tableCount int
 	if err := database.QueryRow(`
