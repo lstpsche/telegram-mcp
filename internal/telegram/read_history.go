@@ -229,9 +229,15 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 		}
 	}
 	candidate.Unsupported = message.Post || message.Legacy || message.Offline || message.FromScheduled || message.SavedPeerID != nil || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.ReplyMarkup != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
+	var image *model.ImageSource
 	if message.Media != nil {
 		if _, empty := message.Media.(*tg.MessageMediaEmpty); !empty {
-			candidate.Unsupported = true
+			location := normalizeImage(message)
+			if location == nil {
+				candidate.Unsupported = true
+			} else {
+				image = &location.source
+			}
 		}
 	}
 	if message.ReplyTo != nil {
@@ -260,13 +266,14 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	if author > 0 {
 		candidate.Message.Author, _ = model.NewPeerID(model.PeerKindUser, author)
 	}
-	candidate.Unsupported = candidate.Unsupported || author <= 0 || !authors[author] || message.Date <= 0 || message.Message == ""
+	candidate.Unsupported = candidate.Unsupported || author <= 0 || !authors[author] || message.Date <= 0 || (message.Message == "" && image == nil)
 	if !utf8.ValidString(message.Message) || len(message.Message) > 64*1024 {
 		return model.Candidate{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
 	if !candidate.Protected && !candidate.Ephemeral && !candidate.Forwarded && !candidate.Quoted && !candidate.Unsupported {
 		candidate.Message.Text = message.Message
 		candidate.Message.Date = time.Unix(int64(message.Date), 0).UTC().Format(time.RFC3339)
+		candidate.Image = image
 	}
 	return candidate, nil
 }

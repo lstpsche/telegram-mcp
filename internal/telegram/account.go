@@ -47,10 +47,12 @@ const (
 )
 
 type Account struct {
-	client   *gotdtelegram.Client
-	waiter   *floodwait.Waiter
-	loggedIn qrlogin.LoggedIn
-	reads    *readRuntime
+	client      *gotdtelegram.Client
+	waiter      *floodwait.Waiter
+	loggedIn    qrlogin.LoggedIn
+	reads       *readRuntime
+	openImageDC func(context.Context, int) (gotdtelegram.CloseInvoker, error)
+	middlewares []gotdtelegram.Middleware
 }
 
 // NewAccount builds a gotd client pinned to Telegram Test DCs. There is no
@@ -99,7 +101,15 @@ func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (
 		options.Middlewares = append(options.Middlewares, readMiddleware{reads})
 	}
 	client := gotdtelegram.NewClient(config.APIID, string(config.APIHash), options)
-	return &Account{client: client, waiter: waiter, loggedIn: loggedIn, reads: reads}, nil
+	return &Account{client: client, waiter: waiter, loggedIn: loggedIn, reads: reads,
+		openImageDC: func(ctx context.Context, dc int) (gotdtelegram.CloseInvoker, error) {
+			if dc == client.Config().ThisDC {
+				return client.Pool(1)
+			}
+			return client.DC(ctx, dc, 1)
+		},
+		middlewares: options.Middlewares,
+	}, nil
 }
 
 type AuthorizationStatus struct {
