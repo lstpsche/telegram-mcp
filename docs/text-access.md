@@ -1,8 +1,8 @@
 # Message access
 
 Telegram MCP is an unofficial client using Telegram's API. Text tools are
-available only with an authorized local Test-DC account and an explicit human
-grant. Production login is disabled. Authentication, peer discovery, eligibility
+available only with an authorized local account and an explicit human
+grant. Authentication, peer discovery, eligibility
 decisions, grant and named-scope mutations belong to `telegram-mcpctl`; they are never MCP
 tools.
 
@@ -30,10 +30,13 @@ objects in upstream responses; these are discarded and are not stored or
 returned by discovery. Establish eligibility for discovery before invoking it.
 Titles are untrusted display data; use the immutable typed ID for authority.
 The current adapter supports ordinary Saved Messages, non-bot users and basic
-groups. Channels, including megagroups, are unsupported pending per-channel
-update synchronization. A required channel update recovery makes the read
-runtime unavailable; use a disposable Test-DC account with only supported
-dialogs for acceptance. Bot chats, Secret Chats and topics are unsupported.
+groups. Channels, including megagroups, remain unsupported for content access.
+Their independent pts events and channel entities are excluded before the
+updates manager sees live batches or validated common differences. Enclosing
+seq/date and common pts/qts remain intact, so membership in channels does not
+require channel recovery. Common recovery budgets apply before this projection;
+common gaps and checkpoint failures still block reads. Bot chats, Secret Chats
+and topics are unsupported.
 
 Create a grant with every scope field explicit:
 
@@ -132,7 +135,7 @@ characters remain data. Diagnostics do not echo submitted arguments or raw
 Telegram failures. Keep credentials in the existing interactive terminal
 prompts; there are no credential-bearing command-line options.
 
-Implementation tests use synthetic data. Live Test-DC content access and agent
+Implementation tests use synthetic data. Live account content access and agent
 acceptance require a separately authorized human-run check and are not implied
 by a successful local build or test suite.
 

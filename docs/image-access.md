@@ -1,6 +1,6 @@
 # Image access
 
-Image access requires a ready Test-DC account and an exact human grant with
+Image access requires a ready authorized account and an exact human grant with
 `--allow-images`. Add that standalone flag to the grant command documented in
 [text access](text-access.md). Existing grants default to `images: false`;
 replacing a grant without the flag disables images. The flag does not expand
@@ -78,5 +78,5 @@ can retain delivered content under its own settings. Treat all visual content
 as untrusted data.
 
 Automated acceptance uses in-memory synthetic JPEG/PNG fixtures and the actual
-stdio relay. Live Test-DC content acceptance, production eligibility, signing,
+stdio relay. Live account content acceptance, production eligibility, signing,
 installation, and publication remain separate decisions.

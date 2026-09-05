@@ -13,7 +13,7 @@ func TestKeychainSessionStorageMapsMissingAndDeletes(t *testing.T) {
 	t.Parallel()
 
 	secretStore := &memorySecretStore{}
-	storage, err := NewKeychainSessionStorage(secretStore)
+	storage, err := NewKeychainSessionStorage(secretStore, TestEnvironment)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestKeychainSessionStorageClearsDataReturnedWithError(t *testing.T) {
 	t.Parallel()
 
 	value := []byte("partial session material")
-	storage, err := NewKeychainSessionStorage(&errorSecretStore{value: value})
+	storage, err := NewKeychainSessionStorage(&errorSecretStore{value: value}, TestEnvironment)
 	if err != nil {
 		t.Fatal(err)
 	}

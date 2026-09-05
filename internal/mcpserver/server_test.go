@@ -86,7 +86,7 @@ func TestConcurrentRelayClientsAndSanitizedStatus(t *testing.T) {
 		if err := json.Unmarshal([]byte(content), &structured); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(content, `"account_state":"reauth_required"`) || !strings.Contains(content, `"message_reads":false`) || !strings.Contains(content, `"telegram":"unavailable"`) {
+		if !strings.Contains(content, `"account_state":"reauth_required"`) || !strings.Contains(content, `"message_reads":false`) || !strings.Contains(content, `"production_login":true`) || !strings.Contains(content, `"telegram":"unavailable"`) {
 			t.Fatalf("false readiness: %s", content)
 		}
 		bytes, err := json.Marshal(result.StructuredContent)

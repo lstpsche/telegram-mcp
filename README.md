@@ -11,11 +11,12 @@ The MCP server exposes **`status`**, **`list_chats`**, **`list_messages`**,
 **`get_message_context`**, **`search_messages`**, **`list_unread`**,
 **`list_scopes`**, and **`open_image`**.
 No Telegram credentials are needed to connect and
-inspect status. Text operations require a ready Test-DC account and an explicit
+inspect status. Text operations require a ready authorized account and an explicit
 human grant. Photos and static JPEG/PNG attachments require a separate image
-opt-in on that grant. Production login remains unavailable.
+opt-in on that grant. Production configuration requires explicit eligibility
+attestation; configuring an account grants no content access.
 
-The account runtime supports interactive Test-DC phone/2FA and QR
+The account runtime supports interactive production and Test-DC phone/2FA and QR
 authentication, native login-Keychain session and credential storage, exclusive
 account ownership, metadata-only SQLite storage, and remote-first logout.
 Real-account authentication and release-binary acceptance remain human checks.
@@ -58,7 +59,8 @@ For MCP clients using JSON configuration, the equivalent stdio registration is:
 
 Ask the agent to call `status`. An unconfigured account reports
 `account_state: reauth_required`, `message_reads: false`, and
-`production_login: false`. `message_reads` reports text-engine readiness;
+`production_login: true`. This is a static capability, not evidence of login or
+eligibility. `message_reads` reports text-engine readiness;
 individual reads still require current grants. Status itself reports Telegram
 freshness as `unavailable` because it does not perform a freshness check.
 
@@ -67,13 +69,16 @@ exits with a structured diagnostic on stderr. Its stdout carries only MCP
 frames during normal operation. Idle connections expire after a minute;
 clients can reconnect by restarting the relay.
 
-## Configure a Test-DC account
+## Configure an account
 
 Stop the daemon before configuration, authentication, or logout. They share
-its exclusive account lock. Use only disposable Test-DC accounts.
+its exclusive account lock. After establishing eligibility for the intended
+use, explicitly select production with the human attestation flag. Use the
+[local signing recipe](docs/development-signing.md) and qualify the exact
+control/daemon artifacts before entrusting them with account credentials.
 
 ```sh
-./tmp/telegram-mcpctl configure --test-dc 2
+./tmp/telegram-mcpctl configure --production --attest-eligible
 ./tmp/telegram-mcpctl auth phone
 # Alternatively, from a logged-out session:
 ./tmp/telegram-mcpctl auth qr
@@ -81,9 +86,12 @@ its exclusive account lock. Use only disposable Test-DC accounts.
 ./tmp/telegram-mcpd
 ```
 
+For disposable Test-DC accounts, select `configure --test-dc 2` instead. There
+is no default environment; changing environments requires logout first.
+
 Credentials are read without echo directly from `/dev/tty`, never from argv or
-the environment. API ID, API hash, and Test DC are stored as one atomic Keychain
-bundle. If an interrupted configuration leaves SQLite inconsistent, account
+the environment. API ID, API hash, environment, and Test DC are stored as one
+atomic Keychain bundle. If an interrupted configuration leaves SQLite inconsistent, account
 operations refuse it; stop the daemon and rerun configuration to recover.
 
 See [authentication](docs/authentication.md),
@@ -107,7 +115,7 @@ See [text access](docs/text-access.md) for grant commands, eligibility
 prerequisites, supported peers, and recovery behavior. Ordinary Saved Messages,
 non-bot users, and basic groups are supported. Supergroups, topics, forwarded,
 quoted, protected, expiring, and unsupported media content are excluded. The automated
-workflow uses synthetic fixtures; live Test-DC content acceptance remains a
+workflow uses synthetic fixtures; live account content acceptance remains a
 separate human check. See [image access](docs/image-access.md) for discovery,
 native image delivery, permission, and byte/pixel limits.
 
@@ -127,8 +135,9 @@ cryptographic isolation boundary.
 
 Telegram's [API terms](https://core.telegram.org/api/terms) and
 [content licensing terms](https://telegram.org/tos/content-licensing) constrain
-the intended use. Production eligibility remains unresolved; local execution
-and an access grant alone do not establish permission. These decisions must
+the intended use. The operator must establish eligibility for each intended
+use; local execution, configuration attestation, and an access grant alone do
+not establish permission. These decisions must
 precede real-data enablement, independently of technical implementation.
 
 See the [architecture decisions](docs/adr/),

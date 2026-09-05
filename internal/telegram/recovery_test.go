@@ -18,7 +18,7 @@ import (
 
 func restartReadAccount(t *testing.T, db *sql.DB, invoke gotdtelegram.InvokeFunc) *Account {
 	t.Helper()
-	account, err := NewAccount(Config{APIID: 12345, APIHash: []byte("0123456789abcdef0123456789abcdef"), TestDC: 2}, &session.StorageMemory{}, ModeRead)
+	account, err := NewAccount(Config{Environment: TestEnvironment, APIID: 12345, APIHash: []byte("0123456789abcdef0123456789abcdef"), TestDC: 2}, &session.StorageMemory{}, ModeRead)
 	if err != nil {
 		t.Fatal(err)
 	}

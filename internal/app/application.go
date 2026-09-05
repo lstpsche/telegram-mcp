@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	ErrConfigurationRequired = errors.New("Test-DC account configuration is required")
+	ErrConfigurationRequired = errors.New("Telegram account configuration is required")
 )
 
 type AuthOutcome struct {
@@ -35,6 +35,7 @@ type AuthOutcome struct {
 type Status struct {
 	Daemon           daemon.SocketState
 	Configured       bool
+	Environment      string
 	TestDC           int
 	Authorized       bool
 	PhoneCheckPassed bool
@@ -93,13 +94,13 @@ func NewDefault() (*Application, error) {
 	return New(paths, secrets)
 }
 
-// Configure writes only the non-secret API ID/DC metadata to SQLite and the
-// API hash to Keychain. Existing authorization must be logged out first.
-func (a *Application) Configure(ctx context.Context, testDC int, read ConfigurationReader) (resultError error) {
+// Configure writes non-secret account metadata to SQLite and the atomic
+// credential tuple to Keychain. Existing authorization must be logged out first.
+func (a *Application) Configure(ctx context.Context, environment string, testDC int, read ConfigurationReader) (resultError error) {
 	if a == nil {
 		return errors.New("application is not initialized")
 	}
-	if testDC < 1 || testDC > 3 {
+	if !tgaccount.ValidEnvironment(environment, testDC) {
 		return tgaccount.ErrInvalidConfig
 	}
 	if read == nil {
@@ -122,31 +123,31 @@ func (a *Application) Configure(ctx context.Context, testDC int, read Configurat
 	if authorized {
 		return metastore.ErrAuthorizationExists
 	}
-	sessionStorage, err := tgaccount.NewKeychainSessionStorage(a.secrets)
-	if err != nil {
-		return err
-	}
-	sessionExists, err := sessionStorage.Exists(ctx)
-	if err != nil {
-		return fmt.Errorf("inspect Telegram session: %w", err)
-	}
-	if sessionExists {
-		return metastore.ErrAuthorizationExists
+	// Either environment's surviving session prevents implicit replacement.
+	for _, sessionEnvironment := range []string{tgaccount.TestEnvironment, tgaccount.ProductionEnvironment} {
+		sessionStorage, err := tgaccount.NewKeychainSessionStorage(a.secrets, sessionEnvironment)
+		if err != nil {
+			return err
+		}
+		sessionExists, err := sessionStorage.Exists(ctx)
+		if err != nil {
+			return fmt.Errorf("inspect Telegram session: %w", err)
+		}
+		if sessionExists {
+			return metastore.ErrAuthorizationExists
+		}
 	}
 	apiID, apiHash, err := read(ctx)
 	defer clear(apiHash)
 	if err != nil {
 		return err
 	}
-	if err := tgaccount.ValidateConfig(tgaccount.Config{APIID: apiID, APIHash: apiHash, TestDC: testDC}); err != nil {
-		return err
-	}
-	if err := tgaccount.StoreCredentials(ctx, a.secrets, tgaccount.Config{APIID: apiID, APIHash: apiHash, TestDC: testDC}); err != nil {
+	if err := tgaccount.StoreCredentials(ctx, a.secrets, tgaccount.Config{Environment: environment, APIID: apiID, APIHash: apiHash, TestDC: testDC}); err != nil {
 		return fmt.Errorf("store Telegram application credentials: %w", err)
 	}
 	return repository.SaveConfig(ctx, metastore.AccountConfig{
 		APIID:       apiID,
-		Environment: metastore.TestEnvironment,
+		Environment: environment,
 		TestDC:      testDC,
 		UpdatedAt:   a.now().UTC(),
 	})
@@ -218,14 +219,14 @@ func (a *Application) Logout(ctx context.Context) (resultError error) {
 		return err
 	}
 	defer func() { resultError = errors.Join(resultError, database.Close()) }()
-	_, account, err := a.account(ctx, repository, tgaccount.ModeNoUpdates)
+	config, account, err := a.account(ctx, repository, tgaccount.ModeNoUpdates)
 	if err != nil {
 		return err
 	}
 	if err := account.Logout(ctx); err != nil {
 		return err
 	}
-	sessionStorage, err := tgaccount.NewKeychainSessionStorage(a.secrets)
+	sessionStorage, err := tgaccount.NewKeychainSessionStorage(a.secrets, config.Environment)
 	if err != nil {
 		return err
 	}
@@ -259,6 +260,7 @@ func (a *Application) Status(ctx context.Context) (status Status, resultError er
 		return Status{}, err
 	}
 	status.Configured = metadataStatus.Configured
+	status.Environment = metadataStatus.Config.Environment
 	status.TestDC = metadataStatus.Config.TestDC
 	status.Authorized = metadataStatus.Authorized
 	status.PhoneCheckPassed = metadataStatus.PhoneCheck
@@ -483,7 +485,7 @@ func (a *Application) account(
 	if err != nil {
 		return metastore.AccountConfig{}, nil, err
 	}
-	if !configured || config.Environment != metastore.TestEnvironment {
+	if !configured {
 		return metastore.AccountConfig{}, nil, ErrConfigurationRequired
 	}
 	credentials, err := tgaccount.LoadCredentials(ctx, a.secrets)
@@ -496,10 +498,10 @@ func (a *Application) account(
 		return metastore.AccountConfig{}, nil, err
 	}
 	defer clear(credentials.APIHash)
-	if credentials.APIID != config.APIID || credentials.TestDC != config.TestDC {
+	if credentials.APIID != config.APIID || credentials.TestDC != config.TestDC || credentials.Environment != config.Environment {
 		return metastore.AccountConfig{}, nil, ErrConfigurationRequired
 	}
-	sessionStorage, err := tgaccount.NewKeychainSessionStorage(a.secrets)
+	sessionStorage, err := tgaccount.NewKeychainSessionStorage(a.secrets, config.Environment)
 	if err != nil {
 		return metastore.AccountConfig{}, nil, err
 	}

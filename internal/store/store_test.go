@@ -55,8 +55,8 @@ func TestOpenAppliesEmbeddedMigrationsAndSecurityPragmas(t *testing.T) {
 	if err := database.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 7 {
-		t.Fatalf("migration count = %d, want 7", migrationCount)
+	if migrationCount != 8 {
+		t.Fatalf("migration count = %d, want 8", migrationCount)
 	}
 	var tableCount int
 	if err := database.QueryRow(`
@@ -169,8 +169,8 @@ func TestAccountRepositoryRotatesAndInvalidatesAuthorization(t *testing.T) {
 		t.Fatalf("Status() after reconfiguration retained stale method checks: %#v", status)
 	}
 	if _, err := database.Exec(`
-		INSERT INTO authentication_checks(method, test_dc, authorization_epoch, passed_at)
-		VALUES ('phone', 2, ?, 'invalid')
+		INSERT INTO authentication_checks(method, environment, test_dc, authorization_epoch, passed_at)
+		VALUES ('phone', 'test', 2, ?, 'invalid')
 	`, strings.Repeat("c", 43)); err != nil {
 		t.Fatal(err)
 	}

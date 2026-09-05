@@ -63,7 +63,7 @@ func (t *Terminal) ReadAPIHash(ctx context.Context) ([]byte, error) {
 }
 
 func (t *Terminal) Phone(ctx context.Context) ([]byte, error) {
-	return t.readHidden(ctx, "Test-DC phone number: ", true)
+	return t.readHidden(ctx, "Telegram phone number: ", true)
 }
 
 func (t *Terminal) Code(ctx context.Context) ([]byte, error) {

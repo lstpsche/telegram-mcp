@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	KeychainServiceName      = "dev.telegram-mcp.gateway"
-	SessionSecretAccount     = "default.session"
-	CredentialsSecretAccount = "default.credentials"
+	KeychainServiceName            = "dev.telegram-mcp.gateway"
+	SessionSecretAccount           = "default.session"
+	ProductionSessionSecretAccount = "production.session"
+	CredentialsSecretAccount       = "default.credentials"
 )
 
 type SecretStore interface {
@@ -24,15 +25,23 @@ type SecretStore interface {
 // KeychainSessionStorage adapts the native secret store to gotd's session
 // contract. It serializes replacement writes for one account.
 type KeychainSessionStorage struct {
-	store SecretStore
-	mutex sync.Mutex
+	store   SecretStore
+	account string
+	mutex   sync.Mutex
 }
 
-func NewKeychainSessionStorage(store SecretStore) (*KeychainSessionStorage, error) {
+func NewKeychainSessionStorage(store SecretStore, environment string) (*KeychainSessionStorage, error) {
 	if store == nil {
 		return nil, errors.New("session secret store is required")
 	}
-	return &KeychainSessionStorage{store: store}, nil
+	if environment != TestEnvironment && environment != ProductionEnvironment {
+		return nil, ErrInvalidConfig
+	}
+	account := SessionSecretAccount
+	if environment == ProductionEnvironment {
+		account = ProductionSessionSecretAccount
+	}
+	return &KeychainSessionStorage{store: store, account: account}, nil
 }
 
 func (s *KeychainSessionStorage) LoadSession(ctx context.Context) ([]byte, error) {
@@ -41,7 +50,7 @@ func (s *KeychainSessionStorage) LoadSession(ctx context.Context) ([]byte, error
 	}
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	value, err := s.store.Get(ctx, SessionSecretAccount)
+	value, err := s.store.Get(ctx, s.account)
 	if errors.Is(err, keychain.ErrNotFound) {
 		clear(value)
 		return nil, session.ErrNotFound
@@ -73,7 +82,7 @@ func (s *KeychainSessionStorage) StoreSession(ctx context.Context, data []byte) 
 	}
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return s.store.Put(ctx, SessionSecretAccount, data)
+	return s.store.Put(ctx, s.account, data)
 }
 
 func (s *KeychainSessionStorage) Delete(ctx context.Context) error {
@@ -82,7 +91,7 @@ func (s *KeychainSessionStorage) Delete(ctx context.Context) error {
 	}
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return s.store.Delete(ctx, SessionSecretAccount)
+	return s.store.Delete(ctx, s.account)
 }
 
 var _ session.Storage = (*KeychainSessionStorage)(nil)

@@ -15,10 +15,11 @@
   state, broadcast channels, bot chats, or Secret Chats without a new plan and
   threat review.
 - Test-DC authentication, production login, real-data use, publication,
-  deployment, and acceptance are separate decisions. The current runtime permits
-  only interactive credentials for disposable Test-DC accounts. Text access
-  requires human eligibility attestation and exact grants; production login
-  remains absent. Automated acceptance uses synthetic local fixtures.
+  deployment, and acceptance are separate decisions. Production configuration
+  requires explicit human eligibility attestation; Test DC selection is explicit.
+  Credentials remain interactive and local. Text access requires separate exact
+  grants, and image access requires an additional opt-in. Automated acceptance
+  uses synthetic local fixtures; implementation does not authorize real-data use.
 
 ## Trust and data rules
 
@@ -56,7 +57,7 @@
   message/search/media content columns.
 - Run `gofmt`, `go build ./cmd/...`, `go test ./...`, and `go vet ./...` for
   every change. Keychain-adapter changes additionally require the
-  noninteractive macOS probe documented in `docs/keychain.md`; live Test-DC
+  noninteractive macOS probe documented in `docs/keychain.md`; live account
   acceptance remains a separate human-run gate.
 
 ## Committed content and change descriptions

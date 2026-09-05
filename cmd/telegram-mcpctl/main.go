@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/lstpsche/telegram-mcp/internal/app"
@@ -23,7 +23,7 @@ import (
 )
 
 type controller interface {
-	Configure(context.Context, int, app.ConfigurationReader) error
+	Configure(context.Context, string, int, app.ConfigurationReader) error
 	Authenticate(context.Context, tgaccount.AuthMethod, tgaccount.Prompt) (app.AuthOutcome, error)
 	Logout(context.Context) error
 	Status(context.Context) (app.Status, error)
@@ -104,19 +104,19 @@ func runContext(
 			writeControlError(stderr, err)
 			return 1
 		}
-		fmt.Fprintln(stdout, "Telegram Test-DC session removed and authorization epoch invalidated.")
+		fmt.Fprintln(stdout, "Telegram session removed and authorization epoch invalidated.")
 		return 0
 	case "configure":
-		testDC, ok := parseTestDC(args[1:])
+		environment, testDC, ok := parseConfiguration(args[1:])
 		if !ok {
-			fmt.Fprintln(stderr, "telegram-mcpctl: configure requires exactly --test-dc 1, 2, or 3")
+			fmt.Fprintln(stderr, "telegram-mcpctl: configure requires --test-dc {1|2|3} or --production --attest-eligible")
 			return 2
 		}
-		if err := control.Configure(ctx, testDC, configurationReader(openTerminal)); err != nil {
+		if err := control.Configure(ctx, environment, testDC, configurationReader(openTerminal)); err != nil {
 			writeControlError(stderr, err)
 			return 1
 		}
-		fmt.Fprintf(stdout, "Telegram Test DC %d configured; production login remains disabled.\n", testDC)
+		fmt.Fprintf(stdout, "Telegram %s account configured; authenticate interactively before granting content access.\n", environment)
 		return 0
 	case "auth":
 		if len(args) != 2 || (args[1] != "phone" && args[1] != "qr") {
@@ -139,9 +139,9 @@ func runContext(
 			return 1
 		}
 		if outcome.Performed {
-			fmt.Fprintf(stdout, "Telegram Test-DC %s authentication passed; a new authorization epoch is active.\n", method)
+			fmt.Fprintf(stdout, "Telegram %s authentication passed; a new authorization epoch is active.\n", method)
 		} else {
-			fmt.Fprintln(stdout, "The existing Telegram Test-DC session is authorized; no new method check was recorded.")
+			fmt.Fprintln(stdout, "The existing Telegram session is authorized; no new method check was recorded.")
 		}
 		return 0
 	default:
@@ -178,19 +178,26 @@ func defaultTerminal() (terminal, error) {
 	return operatorcli.OpenTerminal()
 }
 
-func parseTestDC(args []string) (int, bool) {
-	flags := flag.NewFlagSet("configure", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	testDC := flags.Int("test-dc", 0, "Telegram Test DC number")
-	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || *testDC < 1 || *testDC > 3 {
-		return 0, false
+func parseConfiguration(args []string) (string, int, bool) {
+	if len(args) != 2 {
+		return "", 0, false
 	}
-	return *testDC, true
+	if args[0] == "--test-dc" {
+		dc, err := strconv.Atoi(args[1])
+		if err == nil && args[1] == strconv.Itoa(dc) && dc >= 1 && dc <= 3 {
+			return tgaccount.TestEnvironment, dc, true
+		}
+	}
+	if (args[0] == "--production" && args[1] == "--attest-eligible") || (args[1] == "--production" && args[0] == "--attest-eligible") {
+		return tgaccount.ProductionEnvironment, 0, true
+	}
+	return "", 0, false
 }
 
 func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "usage:")
 	fmt.Fprintln(writer, "  telegram-mcpctl configure --test-dc {1|2|3}")
+	fmt.Fprintln(writer, "  telegram-mcpctl configure --production --attest-eligible")
 	fmt.Fprintln(writer, "  telegram-mcpctl auth {phone|qr}")
 	fmt.Fprintln(writer, "  telegram-mcpctl service install --bin-dir ABSOLUTE_DIRECTORY")
 	fmt.Fprintln(writer, "  telegram-mcpctl service {start|stop|restart|uninstall}")
@@ -205,20 +212,22 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcpctl scopes")
 	fmt.Fprintln(writer, "  telegram-mcpctl scope --name NAME [--id ID] [--peer PEER ...]")
 	fmt.Fprintln(writer, "  telegram-mcpctl unscope --id ID")
-	fmt.Fprintln(writer, "Authentication is interactive through /dev/tty; production login is disabled.")
+	fmt.Fprintln(writer, "Authentication is interactive through /dev/tty; content access requires exact human grants.")
 }
 
 func writeStatus(writer io.Writer, status app.Status) {
 	fmt.Fprintf(writer, "daemon=%s\n", status.Daemon)
 	fmt.Fprintf(writer, "configured=%t\n", status.Configured)
 	if status.Configured {
-		fmt.Fprintln(writer, "environment=test")
-		fmt.Fprintf(writer, "test_dc=%d\n", status.TestDC)
+		fmt.Fprintf(writer, "environment=%s\n", status.Environment)
+		if status.Environment == tgaccount.TestEnvironment {
+			fmt.Fprintf(writer, "test_dc=%d\n", status.TestDC)
+		}
 	}
 	fmt.Fprintf(writer, "authorization_recorded=%t\n", status.Authorized)
-	fmt.Fprintf(writer, "test_dc_phone_check=%t\n", status.PhoneCheckPassed)
-	fmt.Fprintf(writer, "test_dc_qr_check=%t\n", status.QRCheckPassed)
-	fmt.Fprintln(writer, "production_login=disabled")
+	fmt.Fprintf(writer, "phone_check=%t\n", status.PhoneCheckPassed)
+	fmt.Fprintf(writer, "qr_check=%t\n", status.QRCheckPassed)
+	fmt.Fprintln(writer, "production_login=supported")
 }
 
 func writeControlError(writer io.Writer, err error) {

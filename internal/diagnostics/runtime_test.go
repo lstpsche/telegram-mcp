@@ -233,7 +233,7 @@ func TestInspectRejectsHostileOrIncompleteStatus(t *testing.T) {
 			case "unknown_state":
 				item["account_state"] = "private peer title"
 			case "production":
-				item["production_login"] = true
+				item["production_login"] = "invalid"
 			case "missing_flag":
 				delete(item, "message_reads")
 			case "null_flag":

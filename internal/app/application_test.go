@@ -37,7 +37,7 @@ func TestConfigureAuthenticateRestartAndLogoutState(t *testing.T) {
 
 	ctx := context.Background()
 	application, secretStore := newTestApplication(t)
-	if err := application.Configure(ctx, 2, staticConfiguration(12345)); err != nil {
+	if err := application.Configure(ctx, tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := secretStore.value(tgaccount.CredentialsSecretAccount); !ok {
@@ -101,7 +101,7 @@ func TestConfigureAuthenticateRestartAndLogoutState(t *testing.T) {
 		t.Fatal("existing session was recorded as a QR authentication check")
 	}
 
-	if err := application.Configure(ctx, 3, staticConfiguration(54321)); !errors.Is(err, metastore.ErrAuthorizationExists) {
+	if err := application.Configure(ctx, tgaccount.TestEnvironment, 3, staticConfiguration(54321)); !errors.Is(err, metastore.ErrAuthorizationExists) {
 		t.Fatalf("Configure() while authorized error = %v", err)
 	}
 	secretStore.set(tgaccount.SessionSecretAccount, []byte("session material"))
@@ -129,7 +129,7 @@ func TestConfigureRejectsKeychainSessionWithoutAuthorizationEpoch(t *testing.T) 
 	application, secretStore := newTestApplication(t)
 	secretStore.set(tgaccount.SessionSecretAccount, []byte("session material"))
 	readerCalled := false
-	err := application.Configure(context.Background(), 2, func(context.Context) (int, []byte, error) {
+	err := application.Configure(context.Background(), tgaccount.TestEnvironment, 2, func(context.Context) (int, []byte, error) {
 		readerCalled = true
 		return 12345, []byte(testAPIHash), nil
 	})
@@ -157,7 +157,7 @@ func TestConfigureAcquiresLockBeforeReadingCredentials(t *testing.T) {
 	}
 	defer lock.Release()
 	readerCalled := false
-	err = application.Configure(context.Background(), 2, func(context.Context) (int, []byte, error) {
+	err = application.Configure(context.Background(), tgaccount.TestEnvironment, 2, func(context.Context) (int, []byte, error) {
 		readerCalled = true
 		return 12345, []byte(testAPIHash), nil
 	})
@@ -174,7 +174,7 @@ func TestLogoutKeepsLocalStateWhenRemoteRevocationFails(t *testing.T) {
 
 	ctx := context.Background()
 	application, secretStore := newTestApplication(t)
-	if err := application.Configure(ctx, 2, staticConfiguration(12345)); err != nil {
+	if err := application.Configure(ctx, tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &fakeRuntime{authResult: tgaccount.AuthResult{Performed: true}}
@@ -205,7 +205,7 @@ func TestDaemonAcquiresLockBeforeReadingSecrets(t *testing.T) {
 	t.Parallel()
 
 	application, secretStore := newTestApplication(t)
-	if err := application.Configure(context.Background(), 2, staticConfiguration(12345)); err != nil {
+	if err := application.Configure(context.Background(), tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
 	lock, err := daemon.AcquireAccountLock(application.paths.Lock)
@@ -226,7 +226,7 @@ func TestDaemonOwnsLockSocketAndStopsOnCancellation(t *testing.T) {
 	t.Parallel()
 
 	application, _ := newTestApplication(t)
-	if err := application.Configure(context.Background(), 2, staticConfiguration(12345)); err != nil {
+	if err := application.Configure(context.Background(), tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
 	recordDaemonAuthorization(t, application, 2)
@@ -271,7 +271,7 @@ func TestDaemonOwnsLockSocketAndStopsOnCancellation(t *testing.T) {
 
 func TestDaemonRequiresRecordedEpochBeforeOpeningTextRuntime(t *testing.T) {
 	application, secrets := newTestApplication(t)
-	if err := application.Configure(context.Background(), 2, staticConfiguration(12345)); err != nil {
+	if err := application.Configure(context.Background(), tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
 	baseline := secrets.readCount()
@@ -304,7 +304,7 @@ func TestUnauthorizedDaemonInvalidatesStaleEpoch(t *testing.T) {
 	t.Parallel()
 
 	application, _ := newTestApplication(t)
-	if err := application.Configure(context.Background(), 1, staticConfiguration(12345)); err != nil {
+	if err := application.Configure(context.Background(), tgaccount.TestEnvironment, 1, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
 	database, repository, err := application.openRepository(context.Background())
@@ -348,7 +348,7 @@ func TestDaemonInvalidatesEpochWhenAuthorizationExpiresAfterReady(t *testing.T) 
 	t.Parallel()
 
 	application, _ := newTestApplication(t)
-	if err := application.Configure(context.Background(), 2, staticConfiguration(12345)); err != nil {
+	if err := application.Configure(context.Background(), tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
 	database, repository, err := application.openRepository(context.Background())
@@ -462,7 +462,7 @@ func TestDaemonSIGTERMHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := application.Configure(context.Background(), 2, staticConfiguration(12345)); err != nil {
+	if err := application.Configure(context.Background(), tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
 	recordDaemonAuthorization(t, application, 2)
@@ -702,7 +702,7 @@ func TestInterruptedConfigurationCannotConstructMixedAccount(t *testing.T) {
 		t.Run(fmt.Sprintf("cancellation=%t", cancellation), func(t *testing.T) {
 			application, secrets := newTestApplication(t)
 			ctx := context.Background()
-			if err := application.Configure(ctx, 2, staticConfiguration(12345)); err != nil {
+			if err := application.Configure(ctx, tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {
 				t.Fatal(err)
 			}
 			database, repository, err := application.openRepository(ctx)
@@ -719,7 +719,7 @@ func TestInterruptedConfigurationCannotConstructMixedAccount(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			err = application.Configure(writeContext, 3, staticConfiguration(54321))
+			err = application.Configure(writeContext, tgaccount.TestEnvironment, 3, staticConfiguration(54321))
 			if err == nil {
 				t.Fatal("expected interrupted configuration")
 			}
@@ -755,7 +755,7 @@ func TestInterruptedConfigurationCannotConstructMixedAccount(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := restarted.Configure(ctx, 3, staticConfiguration(54321)); err != nil {
+			if err := restarted.Configure(ctx, tgaccount.TestEnvironment, 3, staticConfiguration(54321)); err != nil {
 				t.Fatal(err)
 			}
 			if _, _, err := restarted.account(ctx, repository, tgaccount.ModeNoUpdates); err != nil || !called {

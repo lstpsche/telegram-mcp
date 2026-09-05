@@ -184,15 +184,28 @@ safe stale-socket replacement, fail-closed inconclusive socket probes,
 Keychain-backed gotd session reconciliation, authorization-epoch
 rotation/invalidation after startup and at runtime, bounded request scheduling,
 sanitized command output, and cancellation cleanup. Live phone/2FA and QR login
-still require a human Test-DC account and are recorded separately when run.
+still require a human account in the explicitly selected environment and are
+recorded separately when run.
 
 Synthetic tests cover default-deny grants, exact author/range/prefix authority,
 revocation serialization, hostile input and content, mirrored result budgets,
 hooked acknowledgment and durable checkpoint failures, and the stdio text
 workflow. They do not establish live account acceptance, production eligibility,
-signing across upgrades or release readiness. Production DC construction remains
-absent. Channel recovery is unsupported and degrades the text runtime; ordinary
-user/basic-group synchronization is the supported boundary.
+signing across upgrades or release readiness. Production DC construction requires
+explicit human configuration and eligibility attestation. Metadata and the atomic
+credential tuple must agree on environment before client creation. Production
+sessions use a distinct Keychain item; either environment's session blocks
+reconfiguration. Logout removes only the selected session. Legacy credential
+bundles are accepted only as test credentials. No MCP tool can change these
+controls.
+
+Channel content remains excluded. Telegram defines channel pts independently
+from common pts/qts and outer seq. The adapter removes channel pts events and
+channel entities before the pinned updates manager sees live batches or validated
+common differences, retaining the accepted common checkpoint and enclosing
+sequence. It does not manufacture channel checkpoints or successful channel
+recovery responses. Common recovery failures still fail closed. See Telegram's
+[update sequence contract](https://core.telegram.org/api/updates).
 
 ## Search continuation and unread disclosure
 

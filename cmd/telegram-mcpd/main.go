@@ -43,7 +43,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer, ne
 	}
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		fmt.Fprintln(stdout, "usage: telegram-mcpd")
-		fmt.Fprintln(stdout, "Runs the single-account Telegram Test-DC daemon; production login is disabled.")
+		fmt.Fprintln(stdout, "Runs the single-account Telegram daemon; configure and authenticate through telegram-mcpctl.")
 		return 0
 	}
 	if len(args) != 0 {

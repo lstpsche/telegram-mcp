@@ -14,7 +14,10 @@ var (
 	ErrInvalidAccountState = errors.New("account metadata is invalid")
 )
 
-const TestEnvironment = "test"
+const (
+	TestEnvironment       = "test"
+	ProductionEnvironment = "production"
+)
 
 type AuthMethod string
 
@@ -111,13 +114,13 @@ func (r *Repository) SaveConfig(ctx context.Context, config AccountConfig) error
 	}
 	if _, err := transaction.ExecContext(ctx, `
 		INSERT INTO account_config(singleton, api_id, environment, test_dc, updated_at)
-		VALUES (1, ?, 'test', ?, ?)
+		VALUES (1, ?, ?, ?, ?)
 		ON CONFLICT(singleton) DO UPDATE SET
 			api_id = excluded.api_id,
 			environment = excluded.environment,
 			test_dc = excluded.test_dc,
 			updated_at = excluded.updated_at
-	`, config.APIID, config.TestDC, config.UpdatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+	`, config.APIID, config.Environment, config.TestDC, config.UpdatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
 		return fmt.Errorf("save account configuration: %w", err)
 	}
 	if err := transaction.Commit(); err != nil {
@@ -159,7 +162,7 @@ func (r *Repository) Authorization(ctx context.Context) (AuthorizationState, boo
 }
 
 // RecordAuthorization atomically rotates the authorization epoch and, when a
-// method is supplied, records the corresponding Test-DC acceptance check.
+// method is supplied, records the corresponding environment-bound authentication check.
 func (r *Repository) RecordAuthorization(
 	ctx context.Context,
 	epoch string,
@@ -170,7 +173,7 @@ func (r *Repository) RecordAuthorization(
 	if r == nil || r.database == nil {
 		return errors.New("account repository is not initialized")
 	}
-	if !epochPattern.MatchString(epoch) || at.IsZero() || testDC < 1 || testDC > 3 {
+	if !epochPattern.MatchString(epoch) || at.IsZero() || testDC < 0 || testDC > 3 {
 		return ErrInvalidAccountState
 	}
 	if method != nil && !method.valid() {
@@ -183,11 +186,12 @@ func (r *Repository) RecordAuthorization(
 	}
 	defer transaction.Rollback()
 	var configuredTestDC int
+	var environment string
 	if err := transaction.QueryRowContext(ctx, `
-		SELECT test_dc
+		SELECT environment, test_dc
 		FROM account_config
 		WHERE singleton = 1
-	`).Scan(&configuredTestDC); err != nil {
+	`).Scan(&environment, &configuredTestDC); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrInvalidAccountState
 		}
@@ -208,13 +212,14 @@ func (r *Repository) RecordAuthorization(
 	}
 	if method != nil {
 		if _, err := transaction.ExecContext(ctx, `
-			INSERT INTO authentication_checks(method, test_dc, authorization_epoch, passed_at)
-			VALUES (?, ?, ?, ?)
+			INSERT INTO authentication_checks(method, environment, test_dc, authorization_epoch, passed_at)
+			VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT(method) DO UPDATE SET
+				environment = excluded.environment,
 				test_dc = excluded.test_dc,
 				authorization_epoch = excluded.authorization_epoch,
 				passed_at = excluded.passed_at
-		`, string(*method), testDC, epoch, timestamp); err != nil {
+		`, string(*method), environment, testDC, epoch, timestamp); err != nil {
 			return fmt.Errorf("record authentication check: %w", err)
 		}
 	}
@@ -245,7 +250,7 @@ func (r *Repository) Status(ctx context.Context) (AccountStatus, error) {
 	}
 	status := AccountStatus{Configured: configured, Config: config, Authorized: authorized}
 	rows, err := r.database.QueryContext(ctx, `
-		SELECT method, test_dc, authorization_epoch, passed_at
+		SELECT method, environment, test_dc, authorization_epoch, passed_at
 		FROM authentication_checks
 	`)
 	if err != nil {
@@ -255,12 +260,13 @@ func (r *Repository) Status(ctx context.Context) (AccountStatus, error) {
 	for rows.Next() {
 		var method AuthMethod
 		var testDC int
+		var environment string
 		var authorizationEpoch string
 		var passedAt string
-		if err := rows.Scan(&method, &testDC, &authorizationEpoch, &passedAt); err != nil {
+		if err := rows.Scan(&method, &environment, &testDC, &authorizationEpoch, &passedAt); err != nil {
 			return AccountStatus{}, fmt.Errorf("read authentication check: %w", err)
 		}
-		if !method.valid() || !configured || testDC != config.TestDC ||
+		if !method.valid() || !configured || testDC != config.TestDC || environment != config.Environment ||
 			!epochPattern.MatchString(authorizationEpoch) {
 			return AccountStatus{}, ErrInvalidAccountState
 		}
@@ -284,7 +290,8 @@ var epochPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{22,128}$`)
 
 func validateConfig(config AccountConfig) error {
 	if config.APIID <= 0 || int64(config.APIID) > int64(1<<31-1) ||
-		config.Environment != TestEnvironment || config.TestDC < 1 || config.TestDC > 3 ||
+		!((config.Environment == TestEnvironment && config.TestDC >= 1 && config.TestDC <= 3) ||
+			(config.Environment == ProductionEnvironment && config.TestDC == 0)) ||
 		config.UpdatedAt.IsZero() {
 		return ErrInvalidAccountState
 	}

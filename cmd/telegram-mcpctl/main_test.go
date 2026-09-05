@@ -27,7 +27,7 @@ func TestControlPlaneHelpListsOnlyHumanCommands(t *testing.T) {
 			t.Fatalf("help does not include %q: %q", command, stdout.String())
 		}
 	}
-	if !strings.Contains(stdout.String(), "production login is disabled") || stderr.Len() != 0 {
+	if !strings.Contains(stdout.String(), "--production --attest-eligible") || stderr.Len() != 0 {
 		t.Fatalf("stdout = %q, stderr = %q", stdout.String(), stderr.String())
 	}
 }
@@ -133,12 +133,13 @@ func TestAuthenticationRejectsSecretBearingArgumentsWithoutEcho(t *testing.T) {
 	}
 }
 
-func TestStatusIsSanitizedAndProductionGated(t *testing.T) {
+func TestStatusSeparatesCapabilityFromAccountState(t *testing.T) {
 	t.Parallel()
 
 	control := &fakeController{status: app.Status{
 		Daemon:           daemon.SocketLive,
 		Configured:       true,
+		Environment:      tgaccount.TestEnvironment,
 		TestDC:           3,
 		Authorized:       true,
 		PhoneCheckPassed: true,
@@ -161,9 +162,9 @@ func TestStatusIsSanitizedAndProductionGated(t *testing.T) {
 		"environment=test",
 		"test_dc=3",
 		"authorization_recorded=true",
-		"test_dc_phone_check=true",
-		"test_dc_qr_check=false",
-		"production_login=disabled",
+		"phone_check=true",
+		"qr_check=false",
+		"production_login=supported",
 	} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("status missing %q: %q", expected, stdout.String())
@@ -171,7 +172,7 @@ func TestStatusIsSanitizedAndProductionGated(t *testing.T) {
 	}
 }
 
-func TestParseTestDCRejectsProductionAndExtraArguments(t *testing.T) {
+func TestParseConfigurationRequiresExplicitEnvironment(t *testing.T) {
 	t.Parallel()
 
 	for _, args := range [][]string{
@@ -181,28 +182,29 @@ func TestParseTestDCRejectsProductionAndExtraArguments(t *testing.T) {
 		{"--test-dc", "2", "extra"},
 		{"--production"},
 	} {
-		if dc, ok := parseTestDC(args); ok {
-			t.Fatalf("parseTestDC(%q) = %d, true", args, dc)
+		if _, dc, ok := parseConfiguration(args); ok {
+			t.Fatalf("parseConfiguration(%q) = %d, true", args, dc)
 		}
 	}
-	if dc, ok := parseTestDC([]string{"--test-dc", "2"}); !ok || dc != 2 {
-		t.Fatalf("parseTestDC(valid) = %d, %t", dc, ok)
+	if _, dc, ok := parseConfiguration([]string{"--test-dc", "2"}); !ok || dc != 2 {
+		t.Fatalf("parseConfiguration(valid) = %d, %t", dc, ok)
 	}
 }
 
 type fakeController struct {
-	configuredAPIID int
-	configuredDC    int
-	configuredHash  []byte
-	configureError  error
-	authOutcome     app.AuthOutcome
-	authError       error
-	logoutError     error
-	status          app.Status
-	statusError     error
+	configuredAPIID       int
+	configuredDC          int
+	configuredEnvironment string
+	configuredHash        []byte
+	configureError        error
+	authOutcome           app.AuthOutcome
+	authError             error
+	logoutError           error
+	status                app.Status
+	statusError           error
 }
 
-func (f *fakeController) Configure(ctx context.Context, testDC int, read app.ConfigurationReader) error {
+func (f *fakeController) Configure(ctx context.Context, environment string, testDC int, read app.ConfigurationReader) error {
 	if f.configureError != nil {
 		return f.configureError
 	}
@@ -213,6 +215,7 @@ func (f *fakeController) Configure(ctx context.Context, testDC int, read app.Con
 	}
 	f.configuredAPIID = apiID
 	f.configuredDC = testDC
+	f.configuredEnvironment = environment
 	f.configuredHash = append([]byte(nil), apiHash...)
 	return nil
 }
@@ -275,5 +278,32 @@ func TestKeychainProbeBypassesControlPlane(t *testing.T) {
 		func() (terminal, error) { t.Fatal("probe opened terminal"); return nil, nil })
 	if code != 1 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "invalid_input") || strings.Contains(stdout.String(), "default.session") {
 		t.Fatalf("code=%d output=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestProductionConfigurationRequiresAttestationBeforeSecrets(t *testing.T) {
+	for _, args := range [][]string{
+		{"configure", "--production"},
+		{"configure", "--production", "--test-dc", "2", "--attest-eligible"},
+		{"configure", "--test-dc", "2", "--test-dc", "3"},
+		{"configure", "--production", "--attest-eligible", "unexpected"},
+	} {
+		control := &fakeController{}
+		var stdout, stderr bytes.Buffer
+		code := runContext(context.Background(), args, &stdout, &stderr, func() (controller, error) { return control, nil }, func() (terminal, error) { t.Fatal("invalid selection opened terminal"); return nil, nil })
+		if code != 2 || control.configuredAPIID != 0 {
+			t.Fatalf("invalid selection accepted: %v", args)
+		}
+	}
+	control := &fakeController{}
+	var stdout, stderr bytes.Buffer
+	code := runContext(context.Background(), []string{"configure", "--production", "--attest-eligible"}, &stdout, &stderr, func() (controller, error) { return control, nil }, func() (terminal, error) {
+		return &fakeTerminal{apiID: 12345, apiHash: []byte("0123456789abcdef0123456789abcdef")}, nil
+	})
+	if code != 0 || control.configuredEnvironment != tgaccount.ProductionEnvironment || control.configuredDC != 0 {
+		t.Fatal("explicit production configuration failed", stderr.String())
+	}
+	if strings.Contains(stdout.String(), "0123456789abcdef") || strings.Contains(stderr.String(), "0123456789abcdef") {
+		t.Fatal("credential leaked")
 	}
 }

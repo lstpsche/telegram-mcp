@@ -27,7 +27,7 @@ func TestPeerDiscoveryRequiresEpochBeforeOpeningAccount(t *testing.T) {
 func authorizedTextApplication(t *testing.T, runtime accountRuntime) *Application {
 	t.Helper()
 	application, _ := newTestApplication(t)
-	if err := application.Configure(context.Background(), 2, staticConfiguration(12345)); err != nil {
+	if err := application.Configure(context.Background(), tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {
 		t.Fatal(err)
 	}
 	database, repository, err := application.openRepository(context.Background())

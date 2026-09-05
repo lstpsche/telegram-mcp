@@ -12,18 +12,23 @@ import (
 	"github.com/gotd/td/tgerr"
 )
 
-func TestValidateConfigAllowsOnlyTestDCsAndHexHash(t *testing.T) {
+func TestValidateConfigRejectsImplicitOrMixedEnvironments(t *testing.T) {
 	t.Parallel()
 
-	valid := Config{APIID: 12345, APIHash: []byte("0123456789abcdef0123456789abcdef"), TestDC: 2}
+	valid := Config{Environment: TestEnvironment, APIID: 12345, APIHash: []byte("0123456789abcdef0123456789abcdef"), TestDC: 2}
 	if err := ValidateConfig(valid); err != nil {
 		t.Fatalf("ValidateConfig(valid) error = %v", err)
 	}
+	if err := ValidateConfig(Config{Environment: ProductionEnvironment, APIID: valid.APIID, APIHash: valid.APIHash}); err != nil {
+		t.Fatal(err)
+	}
 	for _, invalid := range []Config{
-		{APIID: 0, APIHash: valid.APIHash, TestDC: 2},
-		{APIID: valid.APIID, APIHash: valid.APIHash, TestDC: 0},
-		{APIID: valid.APIID, APIHash: valid.APIHash, TestDC: 4},
-		{APIID: valid.APIID, APIHash: []byte("not-a-secret-hash"), TestDC: 2},
+		{APIID: valid.APIID, APIHash: valid.APIHash, TestDC: 2},
+		{Environment: ProductionEnvironment, APIID: valid.APIID, APIHash: valid.APIHash, TestDC: 2},
+		{Environment: TestEnvironment, APIID: 0, APIHash: valid.APIHash, TestDC: 2},
+		{Environment: TestEnvironment, APIID: valid.APIID, APIHash: valid.APIHash, TestDC: 0},
+		{Environment: TestEnvironment, APIID: valid.APIID, APIHash: valid.APIHash, TestDC: 4},
+		{Environment: TestEnvironment, APIID: valid.APIID, APIHash: []byte("not-a-secret-hash"), TestDC: 2},
 	} {
 		if err := ValidateConfig(invalid); !errors.Is(err, ErrInvalidConfig) {
 			t.Fatalf("ValidateConfig(%#v) error = %v", invalid, err)

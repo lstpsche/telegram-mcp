@@ -229,7 +229,7 @@ func decodeEnvelope(data []byte) (model.Envelope[accountStatus], error) {
 	if string(raw.Partial) != "false" || !exactKeys(raw.Freshness, "telegram", "checked_at") || !exactKeys(raw.ReadEffect, "kind") {
 		return envelope, errors.New("invalid MCP status metadata fields")
 	}
-	if !exactKeys(raw.Items[0], "account_state", "message_reads", "production_login") || envelope.Items[0].ProductionLogin {
+	if !exactKeys(raw.Items[0], "account_state", "message_reads", "production_login") {
 		return envelope, errors.New("invalid MCP account status")
 	}
 	switch envelope.Items[0].AccountState {

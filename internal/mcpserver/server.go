@@ -36,7 +36,7 @@ func New(snapshot func() daemon.Snapshot, textService *reader.Service) *mcp.Serv
 	}
 	closed := false
 	server.AddTool(&mcp.Tool{
-		Name: "status", Description: "Inspect local account and text-engine readiness. Does not fetch content or change read receipts. Production login is unavailable; text operations require human grants.",
+		Name: "status", Description: "Inspect local account and text-engine readiness. Does not fetch content or change read receipts. Login is managed by the human operator; content operations require human grants.",
 		OutputSchema: schema,
 		InputSchema:  json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{}}`),
 		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closed},
@@ -59,7 +59,7 @@ func New(snapshot func() daemon.Snapshot, textService *reader.Service) *mcp.Serv
 		if err != nil {
 			return nil, errors.New("status unavailable")
 		}
-		result, err := model.NewEnvelope(requestID, freshness, []status{{AccountState: state.State, MessageReads: textService.Ready(), ProductionLogin: false}})
+		result, err := model.NewEnvelope(requestID, freshness, []status{{AccountState: state.State, MessageReads: textService.Ready(), ProductionLogin: true}})
 		if err != nil {
 			return nil, errors.New("status unavailable")
 		}

@@ -1,7 +1,8 @@
 # Account runtime verification
 
-- Scope: single-account Test-DC runtime, authentication, and MCP connectivity
-- Production login: disabled in code
+The runtime supports one explicitly configured production or Test-DC account.
+Automated evidence uses synthetic data and establishes no real-account login
+or content acceptance.
 
 ## Automated evidence
 
@@ -23,7 +24,7 @@ The suite covers:
 - Keychain-to-gotd session not-found/store/load/existence/delete semantics;
 - atomic credential bundles, failure/cancellation between stores, refusal of
   inconsistent configuration, and recovery by reconfiguration;
-- metadata-only configuration, Test-DC checks, epoch rotation, restart reuse,
+- metadata-only environment configuration, method checks, epoch rotation, restart reuse,
   and logout invalidation;
 - bounded request concurrency plus rate/flood middleware configuration;
 - sanitized stdout/stderr and rejection of secret-bearing auth arguments;
@@ -40,21 +41,27 @@ real account or a release binary. Record results against the exact binary in
 external acceptance notes; historical database method observations are not
 release approval.
 
-These checks require a human-owned Telegram application credential and a
-pre-registered disposable Test-DC account. They are not simulated by the unit
-suite and must not use production or private account data.
+These checks require a human-owned Telegram application credential and an
+existing account in the selected environment. Use disposable Test-DC fixtures
+for test acceptance. Ordinary-account acceptance requires separately established
+eligibility, explicit production configuration, and a narrowly scoped data plan.
+Enter every credential through the local no-echo terminal, never through an agent.
+Qualify the exact signed control/daemon artifacts before adding credentials.
 
-- Phone login succeeds on Test DC 1-3.
+- Explicit configuration selects the intended environment before prompting.
+- Phone login succeeds in the selected environment.
 - Phone login with 2FA succeeds where enabled.
 - Restart reuses the Keychain session without prompting.
-- QR login succeeds from a Test-DC-authorized scanning client.
+- QR login succeeds from a scanning client authorized in the same environment.
 - `telegram-mcpctl status` records each method only after that method ran.
 - Logout revokes remotely, deletes the Keychain session, and removes the
   active epoch.
 - A launchd-like invocation can reuse the signed binary's Keychain item.
 
-Passing both method checks does not enable production login. Production remains
-a separate, explicit authorization and implementation decision.
+Method checks are bound to the configured environment. Passing them establishes
+neither content eligibility nor authority; configuration and grants remain
+separate human actions. Production capability alone does not establish live
+network behavior or release acceptance.
 
 MCP consumer acceptance additionally requires registering the built relay in a
 real agent client, discovering the eight static tools, and verifying unavailable
@@ -78,7 +85,14 @@ last accepted checkpoint; post-start gap completion, failure and cancellation;
 unrecoverable, malformed, non-progressing and oversized differences; failed
 hash/checkpoint writes; rejection of later writes after failure; bounded
 recovery calls; and complete versus minimal or zero hash refresh across
-restart. Corrupt checkpoints fail without replacement RPCs.
+restart. Corrupt checkpoints fail without replacement RPCs. Mixed channel/common
+fixtures exercise the actual updates manager during recovery, live delivery,
+and restart: common checkpoints and outer sequence advance without channel RPCs
+or retained channel metadata. Oversized channel events still count against
+recovery limits. Migration tests preserve existing test authorization, grants,
+and common checkpoints while removing obsolete channel metadata. Account tests
+verify legacy test credentials, explicit environment validation, isolated session
+items, restart reuse, logout, and rejection of mixed stores before client creation.
 
 Reader and stdio tests additionally verify live search continuation after
 service reconstruction, edited/protected/deleted context targets, account

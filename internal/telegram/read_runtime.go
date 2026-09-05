@@ -191,7 +191,12 @@ func (r *readRuntime) Handle(ctx context.Context, u tg.UpdatesClass) error {
 	if err := r.err(); err != nil {
 		return model.TextError(model.ErrorFreshnessDegraded, err)
 	}
-	return r.manager.Handle(ctx, u)
+	projected, err := commonUpdates(u)
+	if err != nil {
+		r.fail(err)
+		return model.TextError(model.ErrorFreshnessDegraded, err)
+	}
+	return r.manager.Handle(ctx, projected)
 }
 
 type readMiddleware struct{ runtime *readRuntime }
@@ -275,6 +280,9 @@ func (r *readRuntime) UpdatesGetDifference(ctx context.Context, q *tg.UpdatesGet
 		if err == nil {
 			err = validateDifference(q, checkpoint.Seq, result)
 		}
+	}
+	if err == nil {
+		result, err = commonDifference(result)
 	}
 	if err == nil {
 		// The manager skips hashes it already knows. A recovered full entity

@@ -25,17 +25,23 @@ const (
 )
 
 var (
-	ErrInvalidConfig            = errors.New("Telegram Test-DC configuration is invalid")
+	ErrInvalidConfig            = errors.New("Telegram account configuration is invalid")
 	ErrQRModeRequired           = errors.New("QR authentication requires a QR-enabled runtime")
 	ErrAuthenticationRejected   = errors.New("Telegram authentication was rejected")
 	ErrReauthenticationRequired = errors.New("Telegram authorization is no longer valid")
 	ErrTelegramUnavailable      = errors.New("Telegram operation is unavailable")
 )
 
+const (
+	TestEnvironment       = "test"
+	ProductionEnvironment = "production"
+)
+
 type Config struct {
-	APIID   int
-	APIHash []byte
-	TestDC  int
+	Environment string
+	APIID       int
+	APIHash     []byte
+	TestDC      int
 }
 
 type Mode uint8
@@ -55,8 +61,7 @@ type Account struct {
 	middlewares []gotdtelegram.Middleware
 }
 
-// NewAccount builds a gotd client pinned to Telegram Test DCs. There is no
-// production-DC construction path.
+// NewAccount selects only the explicitly configured Telegram environment.
 func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (*Account, error) {
 	if err := ValidateConfig(config); err != nil {
 		return nil, err
@@ -68,12 +73,16 @@ func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (
 		return nil, errors.New("Telegram account mode is invalid")
 	}
 
+	dc, dcList := config.TestDC, dcs.Test()
+	if config.Environment == ProductionEnvironment {
+		dc, dcList = 2, dcs.Prod()
+	}
 	waiter := floodwait.NewWaiter().
 		WithMaxWait(maximumFloodWait).
 		WithMaxRetries(maximumFloodRetries)
 	options := gotdtelegram.Options{
-		DC:               config.TestDC,
-		DCList:           dcs.Test(),
+		DC:               dc,
+		DCList:           dcList,
 		NoUpdates:        true,
 		SessionStorage:   storage,
 		DialTimeout:      10 * time.Second,
@@ -157,7 +166,7 @@ var apiHashPattern = regexp.MustCompile(`^[0-9A-Fa-f]{32}$`)
 
 func ValidateConfig(config Config) error {
 	if config.APIID <= 0 || int64(config.APIID) > int64(1<<31-1) ||
-		config.TestDC < 1 || config.TestDC > 3 || !apiHashPattern.Match(config.APIHash) {
+		!ValidEnvironment(config.Environment, config.TestDC) || !apiHashPattern.Match(config.APIHash) {
 		return ErrInvalidConfig
 	}
 	return nil
@@ -188,4 +197,10 @@ func sanitizeAccountError(err error) error {
 		return err
 	}
 	return ErrTelegramUnavailable
+}
+
+// ValidEnvironment rejects implicit defaults and mixed environment selectors.
+func ValidEnvironment(environment string, testDC int) bool {
+	return (environment == TestEnvironment && testDC >= 1 && testDC <= 3) ||
+		(environment == ProductionEnvironment && testDC == 0)
 }

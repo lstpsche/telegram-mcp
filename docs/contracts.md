@@ -18,7 +18,8 @@ one minute and blocked output writes after ten seconds; reconnect after expiry.
 
 `status` accepts an empty object and returns the standard envelope. Its single
 item reports `account_state`, `message_reads`, and
-`production_login: false`. `account_state: ready` describes the account
+`production_login: true` as a static capability. It does not attest eligibility
+or imply an active session. `account_state: ready` describes the account
 runtime; `message_reads` reports the synchronized text-engine state, not a grant.
 Telegram data freshness in status remains `unavailable` because status does not
 check Telegram. This tool has no Telegram I/O

@@ -34,23 +34,28 @@ requires noninteractive access. The per-query UI-fail value alone does not
 prevent the legacy backend from waiting for ACL interaction. Neither control
 grants access or changes an item's trusted applications.
 
-The account runtime uses one service, `dev.telegram-mcp.gateway`, with three
-fixed accounts: `default.session` for gotd sessions and `default.credentials`
-for a versioned bundle containing the API ID, API hash, and Test DC;
+The account runtime uses one service, `dev.telegram-mcp.gateway`, with four
+fixed accounts: `default.session` for Test-DC gotd sessions, `production.session`
+for production gotd sessions, and `default.credentials` for a versioned bundle
+containing the API ID, API hash, environment, and Test DC;
 `default.cursor-integrity` holds an independent 32-byte search-cursor key. Keychain
 replaces the credential bundle atomically. SQLite stores only non-secret
-API ID/DC metadata. Before creating a Telegram client, the application verifies
+API ID/environment/DC metadata. Before creating a Telegram client, the application verifies
 that the two stores agree and uses the complete Keychain bundle as input.
+Version 2 requires an explicit environment; legacy version 1 bundles decode only
+as Test-DC credentials. Existing test session bytes remain readable under the
+original item name. A production session never reuses that item. Either item
+blocks reconfiguration, preserving one active account configuration.
 
 If a configuration write is interrupted, inconsistent metadata causes account
 operations to fail before any Telegram client is constructed. Stop the daemon
-and run `telegram-mcpctl configure --test-dc N` again to recover. Existing
+and rerun configuration with the intended explicit environment to recover. Existing
 sessions and authorization epochs continue to prevent reconfiguration.
 The implementation does not claim that SQLite and Keychain share a transaction.
 
 Login codes, phone numbers, 2FA passwords, and QR tokens are never stored.
-Logout deletes the session item; the credential bundle remains available for
-explicit reauthentication. The cursor key also survives logout and restart;
+Logout deletes only the selected environment's session item; the credential
+bundle remains available for explicit reauthentication. The cursor key also survives logout and restart;
 authorization-epoch binding invalidates old cursors after account changes.
 The daemon loads or initializes this key under the account lock only after a
 recorded epoch exists. A missing item initializes a new key and invalidates old
