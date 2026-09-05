@@ -9,11 +9,28 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
+	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestSearchUnreadAndContextOverStdio(t *testing.T) {
 	service, backend := wireService(t)
+	lease, err := backend.repository.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied, _ := model.NewPeerID(model.PeerKindChat, 999)
+	scope, err := lease.SaveScope(context.Background(), "", "work", []model.PeerID{backend.peer, denied})
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty, err := lease.SaveScope(context.Background(), "", "empty", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
 	path, ctx := serveTextTestServer(t, service)
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
@@ -47,7 +64,7 @@ func TestSearchUnreadAndContextOverStdio(t *testing.T) {
 			t.Fatal("metadata tool has incorrect side effects")
 		}
 	}
-	if len(schemas) != 6 || schemas["search_messages"] == nil || schemas["list_unread"] == nil {
+	if len(schemas) != 7 || schemas["search_messages"] == nil || schemas["list_unread"] == nil {
 		t.Fatal("missing tools")
 	}
 	call := func(name string, args any) map[string]any {
@@ -70,6 +87,45 @@ func TestSearchUnreadAndContextOverStdio(t *testing.T) {
 			t.Fatal("wire mirrors differ")
 		}
 		return content
+	}
+	beforeScopes := backend.fetches.Load()
+	scopes := call("list_scopes", map[string]any{})
+	if backend.fetches.Load() != beforeScopes || len(scopes["items"].([]any)) != 2 || scopes["freshness"].(map[string]any)["telegram"] != "unavailable" {
+		t.Fatal("scope discovery fetched or lied about freshness")
+	}
+	for _, value := range scopes["items"].([]any) {
+		item := value.(map[string]any)
+		if item["id"] == scope.ID.String() && (item["eligible_peers"] != float64(1) || item["excluded_peers"] != float64(1)) {
+			t.Fatal("scope eligibility mismatch")
+		}
+	}
+	for _, name := range []string{"list_chats", "list_unread", "search_messages"} {
+		args := map[string]any{"scope": scope.ID.String()}
+		if name == "search_messages" {
+			args["query"] = "synthetic"
+			args["limit"] = 2
+		}
+		scoped := call(name, args)
+		coverage := scoped["scope"].(map[string]any)
+		if scoped["partial"] != true || coverage["eligible_peers"] != float64(1) || coverage["excluded_peers"] != float64(1) || coverage["queried_peers"] != float64(1) || backend.acks.Load() != 0 {
+			t.Fatal("scoped result lost coverage or changed read state")
+		}
+		if name == "search_messages" {
+			args["cursor"] = scoped["next_cursor"]
+			last := call(name, args)
+			if last["next_cursor"] != nil || len(last["items"].([]any)) != 1 || last["scope"].(map[string]any)["completed_peers"] != float64(1) {
+				t.Fatal("scoped continuation mismatch")
+			}
+		}
+		emptyArgs := map[string]any{"scope": empty.ID.String()}
+		if name == "search_messages" {
+			emptyArgs["query"] = "synthetic"
+		}
+		before := backend.fetches.Load()
+		page := call(name, emptyArgs)
+		if len(page["items"].([]any)) != 0 || backend.fetches.Load() != before || page["partial"] != false {
+			t.Fatal("empty scope widened to all grants")
+		}
 	}
 	first := call("search_messages", map[string]any{"peer": backend.peer.String(), "query": "synthetic", "limit": 2})
 	if first["read_effect"].(map[string]any)["kind"] != "none" || backend.acks.Load() != 0 {
@@ -95,6 +151,12 @@ func TestSearchUnreadAndContextOverStdio(t *testing.T) {
 	call("search_messages", map[string]any{"peer": backend.peer.String(), "query": "  " + strings.Repeat("q", 256) + "  ", "limit": 2})
 	before := backend.fetches.Load()
 	for _, args := range []string{
+		`{"query":"q"}`,
+		`{"peer":"tgpeer:v1:chat:42","scope":"` + scope.ID.String() + `","query":"q"}`,
+		`{"scope":null,"query":"q"}`,
+		`{"scope":"work","query":"q"}`,
+		`{"scope":"` + scope.ID.String() + `","scope":"` + scope.ID.String() + `","query":"q"}`,
+		`{"scope":"` + scope.ID.String() + `","peer":null,"query":"q"}`,
 		`{"peer":"tgpeer:v1:chat:42","query":null}`,
 		`{"peer":"tgpeer:v1:chat:42","query":" "}`,
 		`{"peer":"tgpeer:v1:chat:42","Query":"synthetic"}`,
@@ -114,6 +176,14 @@ func TestSearchUnreadAndContextOverStdio(t *testing.T) {
 			t.Fatal("unsafe input error")
 		}
 	}
+	for _, name := range []string{"list_scopes", "list_chats", "list_unread"} {
+		for _, args := range []string{`{"scope":null}`, `{"Scope":"` + scope.ID.String() + `"}`, `{"scope":"` + scope.ID.String() + `","scope":"` + scope.ID.String() + `"}`} {
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: json.RawMessage(args)})
+			if err != nil || !result.IsError {
+				t.Fatal("invalid scope selector accepted")
+			}
+		}
+	}
 	for _, args := range []map[string]any{{"peer": backend.peer.String(), "query": "changed", "limit": 2, "cursor": token}, {"peer": "tgpeer:v1:chat:999", "query": "q"}} {
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "search_messages", Arguments: args})
 		if err != nil || !result.IsError {
@@ -127,7 +197,7 @@ func TestSearchUnreadAndContextOverStdio(t *testing.T) {
 }
 
 func TestUnconfiguredSearchToolsRemainUnavailable(t *testing.T) {
-	for _, name := range []string{"search_messages", "list_unread"} {
+	for _, name := range []string{"search_messages", "list_unread", "list_scopes"} {
 		args := json.RawMessage(`{}`)
 		if name == "search_messages" {
 			args = json.RawMessage(`{"peer":"tgpeer:v1:chat:42","query":"q"}`)

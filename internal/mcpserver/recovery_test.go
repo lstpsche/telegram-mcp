@@ -23,7 +23,7 @@ func TestAllToolsRespectReadinessOverStdioRelay(t *testing.T) {
 	}
 	defer session.Close()
 	inventory, err := session.ListTools(ctx, nil)
-	if err != nil || len(inventory.Tools) != 6 {
+	if err != nil || len(inventory.Tools) != 7 {
 		t.Fatal("tool discovery unavailable during recovery", err)
 	}
 	for _, ready := range []bool{false, true, false} {
@@ -41,6 +41,7 @@ func TestAllToolsRespectReadinessOverStdioRelay(t *testing.T) {
 			name string
 			args map[string]any
 		}{
+			{"list_scopes", map[string]any{}},
 			{"list_chats", map[string]any{}},
 			{"list_messages", map[string]any{"peer": backend.peer.String()}},
 			{"get_message_context", map[string]any{"message": "tgmsg:v1:chat:42:20", "before": 0, "after": 0}},

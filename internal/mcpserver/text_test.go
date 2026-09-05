@@ -22,6 +22,7 @@ import (
 )
 
 type wireBackend struct {
+	repository   *policy.Repository
 	peer, author model.PeerID
 	acks         atomic.Int32
 	fetches      atomic.Int32
@@ -90,7 +91,7 @@ func wireService(t *testing.T) (*reader.Service, *wireBackend) {
 		t.Fatal(err)
 	}
 	l.Close()
-	f := &wireBackend{peer: peer, author: author}
+	f := &wireBackend{peer: peer, author: author, repository: p}
 	s, err := reader.New(f, p, time.Now, []byte(strings.Repeat("k", 32)))
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +119,7 @@ func TestAuthorizedTextWorkflowOverStdioRelay(t *testing.T) {
 	for _, tool := range inventory.Tools {
 		names[tool.Name] = tool
 	}
-	if len(names) != 6 || names["status"] == nil || names["list_chats"] == nil || names["list_messages"] == nil || names["get_message_context"] == nil {
+	if len(names) != 7 || names["status"] == nil || names["list_chats"] == nil || names["list_messages"] == nil || names["get_message_context"] == nil {
 		t.Fatal("unexpected tool inventory")
 	}
 	if names["list_messages"].Annotations.ReadOnlyHint || names["get_message_context"].Annotations.ReadOnlyHint {
