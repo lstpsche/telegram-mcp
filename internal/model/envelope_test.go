@@ -198,3 +198,31 @@ func TestEnvelopeEmptyAndCopiedResults(t *testing.T) {
 		}
 	}
 }
+
+func TestScopeCoverageRejectsInconsistentCounts(t *testing.T) {
+	id, err := ParseScopeID("tgscope:v1:0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := ScopeCoverage{ID: id, TotalPeers: 3, EligiblePeers: 2, ExcludedPeers: 1, QueriedPeers: 1, CompletedPeers: 2}
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []func(*ScopeCoverage){
+		func(c *ScopeCoverage) { c.ID = "invalid" },
+		func(c *ScopeCoverage) { c.TotalPeers = 21 },
+		func(c *ScopeCoverage) { c.TotalPeers = -1 },
+		func(c *ScopeCoverage) { c.ExcludedPeers = 0 },
+		func(c *ScopeCoverage) { c.EligiblePeers = -1 },
+		func(c *ScopeCoverage) { c.QueriedPeers = 3 },
+		func(c *ScopeCoverage) { c.CompletedPeers = 3 },
+		func(c *ScopeCoverage) { c.QueriedPeers = -1 },
+		func(c *ScopeCoverage) { c.CompletedPeers = -1 },
+	} {
+		invalid := valid
+		change(&invalid)
+		if err := invalid.Validate(); err == nil {
+			t.Fatal("invalid scope coverage accepted")
+		}
+	}
+}

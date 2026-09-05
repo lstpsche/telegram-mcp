@@ -122,17 +122,38 @@ func (code WarningCode) valid() bool {
 	}
 }
 
+// ScopeCoverage describes selection exclusions separately from bounded traversal.
+type ScopeCoverage struct {
+	ID             ScopeID `json:"id"`
+	TotalPeers     int     `json:"total_peers"`
+	EligiblePeers  int     `json:"eligible_peers"`
+	ExcludedPeers  int     `json:"excluded_peers"`
+	QueriedPeers   int     `json:"queried_peers"`
+	CompletedPeers int     `json:"completed_peers"`
+}
+
+func (c ScopeCoverage) Validate() error {
+	if _, err := ParseScopeID(c.ID.String()); err != nil {
+		return err
+	}
+	if c.TotalPeers < 0 || c.TotalPeers > 20 || c.EligiblePeers < 0 || c.ExcludedPeers < 0 || c.EligiblePeers+c.ExcludedPeers != c.TotalPeers || c.QueriedPeers < 0 || c.QueriedPeers > c.EligiblePeers || c.CompletedPeers < 0 || c.CompletedPeers > c.EligiblePeers {
+		return errors.New("invalid scope coverage")
+	}
+	return nil
+}
+
 // Envelope is the shared v1 output shape for successful MCP results.
 type Envelope[T any] struct {
-	SchemaVersion    string        `json:"schema_version"`
-	RequestID        string        `json:"request_id"`
-	Freshness        Freshness     `json:"freshness"`
-	Partial          bool          `json:"partial"`
-	ReadEffect       ReadEffect    `json:"read_effect"`
-	Items            []T           `json:"items"`
-	NextCursor       *string       `json:"next_cursor"`
-	Warnings         []WarningCode `json:"warnings"`
-	UntrustedContent bool          `json:"untrusted_content"`
+	SchemaVersion    string         `json:"schema_version"`
+	Scope            *ScopeCoverage `json:"scope,omitempty"`
+	RequestID        string         `json:"request_id"`
+	Freshness        Freshness      `json:"freshness"`
+	Partial          bool           `json:"partial"`
+	ReadEffect       ReadEffect     `json:"read_effect"`
+	Items            []T            `json:"items"`
+	NextCursor       *string        `json:"next_cursor"`
+	Warnings         []WarningCode  `json:"warnings"`
+	UntrustedContent bool           `json:"untrusted_content"`
 }
 
 func NewEnvelope[T any](requestID string, freshness Freshness, items []T) (Envelope[T], error) {
@@ -158,6 +179,11 @@ func NewEnvelope[T any](requestID string, freshness Freshness, items []T) (Envel
 }
 
 func (e Envelope[T]) Validate() error {
+	if e.Scope != nil {
+		if err := e.Scope.Validate(); err != nil {
+			return err
+		}
+	}
 	if e.SchemaVersion != SchemaVersion {
 		return errors.New("unsupported schema version")
 	}

@@ -68,18 +68,63 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if err != nil {
 		return Result{}, err
 	}
-	if len(candidates) > limit {
-		return Result{}, model.TextError(model.ErrorResultTooLarge, nil)
+	window, err := s.normalizeSearchWindow(grant, model.SearchQuery{Peer: peer, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}, candidates)
+	if err != nil {
+		return Result{}, err
+	}
+	items, lowest, highest, partial := window.items, window.lowest, window.highest, window.partial
+	if err := grant.CheckCurrent(s.now()); err != nil {
+		return Result{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if !s.Ready() {
+		return Result{}, model.TextError(model.ErrorFreshnessDegraded, nil)
+	}
+	if cursor.Expires <= s.now().Unix() {
+		return Result{}, model.TextError(model.ErrorCursorExpired, nil)
+	}
+	var next *string
+	if len(candidates) == limit && lowest > grant.MinID {
+		if cursor.Before == 0 {
+			cursor.Ceiling = highest
+		}
+		cursor.Before = lowest
+		encoded, err := s.encodeCursor(cursor)
+		if err != nil {
+			return Result{}, err
+		}
+		next = &encoded
+	}
+	result, err = prepare(requestID, items, s.now(), partial, model.NoReadEffect(), next, nil)
+	if err != nil {
+		return Result{}, err
+	}
+	count = len(items)
+	return result, nil
+}
+
+type searchWindow struct {
+	items           []model.SearchHit
+	lowest, highest int32
+	partial         bool
+}
+
+// normalizeSearchWindow applies the same bounds and content policy to both selectors.
+func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQuery, candidates []model.Candidate) (searchWindow, error) {
+	if len(candidates) > query.Limit {
+		return searchWindow{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
 	items := make([]model.SearchHit, 0, len(candidates))
 	seen := make(map[int32]bool, len(candidates))
-	partial := len(candidates) == limit
+	partial := len(candidates) == query.Limit
 	var lowest, highest int32
 	for _, candidate := range candidates {
 		message := candidate.Message
 		id := message.ID.TelegramID()
-		if message.ID.Peer() != peer || id < grant.MinID || id > cursor.Ceiling || (cursor.Before > 0 && id >= cursor.Before) || seen[id] {
-			return Result{}, model.TextError(model.ErrorInvalidReference, nil)
+		if message.ID.Peer() != query.Peer || id < grant.MinID || id > query.MaxID || (query.Before > 0 && id >= query.Before) || seen[id] {
+			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		seen[id] = true
 		if lowest == 0 || id < lowest {
@@ -94,15 +139,15 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 				partial = true
 				continue
 			default:
-				return Result{}, err
+				return searchWindow{}, err
 			}
 		}
 		date, err := time.Parse(time.RFC3339Nano, message.Date)
 		if err != nil || date.IsZero() || message.Author.Kind() != model.PeerKindUser || message.Text == "" || !utf8.ValidString(message.Text) {
-			return Result{}, model.TextError(model.ErrorInvalidReference, nil)
+			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		if len(message.Text) > 64*1024 {
-			return Result{}, model.TextError(model.ErrorResultTooLarge, nil)
+			return searchWindow{}, model.TextError(model.ErrorResultTooLarge, nil)
 		}
 		snippet := []rune(message.Text)
 		truncated := len(snippet) > 240
@@ -111,42 +156,14 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 		}
 		items = append(items, model.SearchHit{ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated})
 	}
-	if err := grant.CheckCurrent(s.now()); err != nil {
-		return Result{}, err
-	}
-	if err := ctx.Err(); err != nil {
-		return Result{}, err
-	}
-	if !s.Ready() {
-		return Result{}, model.TextError(model.ErrorFreshnessDegraded, nil)
-	}
-	if cursor.Expires <= s.now().Unix() {
-		return Result{}, model.TextError(model.ErrorCursorExpired, nil)
-	}
+
 	sort.Slice(items, func(i, j int) bool { return items[i].ID.TelegramID() > items[j].ID.TelegramID() })
-	var next *string
-	if len(candidates) == limit && lowest > grant.MinID {
-		if cursor.Before == 0 {
-			cursor.Ceiling = highest
-		}
-		cursor.Before = lowest
-		encoded, err := s.encodeCursor(cursor)
-		if err != nil {
-			return Result{}, err
-		}
-		next = &encoded
-	}
-	result, err = prepare(requestID, items, s.now(), partial, model.NoReadEffect(), next)
-	if err != nil {
-		return Result{}, err
-	}
-	count = len(items)
-	return result, nil
+	return searchWindow{items: items, lowest: lowest, highest: highest, partial: partial}, nil
 }
 
 // ListUnread returns whole-dialog counts for the bounded set of current grants.
 // It never substitutes a partial result when any required peer lookup fails.
-func (s *Service) ListUnread(ctx context.Context, requestID string) (result Result, resultErr error) {
+func (s *Service) ListUnread(ctx context.Context, requestID string, scopes ...model.ScopeID) (result Result, resultErr error) {
 	if !s.Ready() {
 		return Result{}, model.TextError(model.ErrorNotReady, nil)
 	}
@@ -163,13 +180,13 @@ func (s *Service) ListUnread(ctx context.Context, requestID string) (result Resu
 			result = Result{}
 		}
 	}()
-	grants, err := lease.List(ctx)
+	grants, coverage, err := s.selectGrants(ctx, lease, scopes)
 	if err != nil {
 		return Result{}, err
 	}
 	items := make([]model.Unread, 0, len(grants))
 	for _, grant := range grants {
-		if err := grant.CheckCurrent(s.now()); err != nil {
+		if err := s.checkGrantsCurrent(ctx, grants); err != nil {
 			return Result{}, err
 		}
 		bounded, stop := context.WithTimeout(ctx, grant.ExpiresAt.Sub(s.now()))
@@ -185,18 +202,14 @@ func (s *Service) ListUnread(ctx context.Context, requestID string) (result Resu
 			items = append(items, unread)
 		}
 	}
-	for _, grant := range grants {
-		if err := grant.CheckCurrent(s.now()); err != nil {
-			return Result{}, err
-		}
-	}
-	if err := ctx.Err(); err != nil {
+	if err := s.checkGrantsCurrent(ctx, grants); err != nil {
 		return Result{}, err
 	}
-	if !s.Ready() {
-		return Result{}, model.TextError(model.ErrorFreshnessDegraded, nil)
+	if coverage != nil {
+		coverage.QueriedPeers = len(grants)
+		coverage.CompletedPeers = len(grants)
 	}
-	result, err = prepare(requestID, items, s.now(), false, model.NoReadEffect(), nil)
+	result, err = prepare(requestID, items, s.now(), coverage != nil && coverage.ExcludedPeers > 0, model.NoReadEffect(), nil, coverage)
 	if err != nil {
 		return Result{}, err
 	}

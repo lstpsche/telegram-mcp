@@ -48,7 +48,7 @@ func New(backend Backend, repository *policy.Repository, now func() time.Time, c
 
 func (s *Service) Ready() bool { return s != nil && s.backend.Ready() }
 
-func (s *Service) ListChats(ctx context.Context, requestID string, limit int) (result Result, resultErr error) {
+func (s *Service) ListChats(ctx context.Context, requestID string, limit int, scopes ...model.ScopeID) (result Result, resultErr error) {
 	if err := model.ValidatePageSize(limit); err != nil {
 		return Result{}, model.TextError(model.ErrorInvalidInput, err)
 	}
@@ -68,18 +68,19 @@ func (s *Service) ListChats(ctx context.Context, requestID string, limit int) (r
 			result = Result{}
 		}
 	}()
-	grants, err := lease.List(ctx)
+	grants, coverage, err := s.selectGrants(ctx, lease, scopes)
 	if err != nil {
 		return Result{}, err
 	}
+	selected := grants
 	items := make([]model.Chat, 0, len(grants))
 	partial := len(grants) > limit
 	if partial {
 		grants = grants[:limit]
 	}
 	for _, grant := range grants {
-		if !grant.Eligible || !grant.ExpiresAt.After(s.now()) {
-			return Result{}, model.TextError(model.ErrorConsentRequired, nil)
+		if err := s.checkGrantsCurrent(ctx, selected); err != nil {
+			return Result{}, err
 		}
 		grantContext, stop := context.WithTimeout(ctx, grant.ExpiresAt.Sub(s.now()))
 		chat, err := s.backend.Chat(grantContext, grant.Peer)
@@ -92,15 +93,15 @@ func (s *Service) ListChats(ctx context.Context, requestID string, limit int) (r
 		}
 		items = append(items, chat)
 	}
-	for _, grant := range grants {
-		if !grant.ExpiresAt.After(s.now()) {
-			return Result{}, model.TextError(model.ErrorConsentRequired, nil)
-		}
+	if err := s.checkGrantsCurrent(ctx, selected); err != nil {
+		return Result{}, err
 	}
-	if !s.Ready() {
-		return Result{}, model.TextError(model.ErrorFreshnessDegraded, nil)
+	if coverage != nil {
+		coverage.QueriedPeers = len(grants)
+		coverage.CompletedPeers = len(grants)
+		partial = partial || coverage.ExcludedPeers > 0
 	}
-	result, err = prepare(requestID, items, s.now(), partial, model.NoReadEffect(), nil)
+	result, err = prepare(requestID, items, s.now(), partial, model.NoReadEffect(), nil, coverage)
 	if err != nil {
 		return Result{}, err
 	}
@@ -230,7 +231,7 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 		}
 		effect = model.ReadEffect{Kind: model.ReadEffectHistoryMarkedRead, ThroughMessageID: &boundary}
 	}
-	result, err = prepare(requestID, items, s.now(), partial, effect, nil)
+	result, err = prepare(requestID, items, s.now(), partial, effect, nil, nil)
 	if err != nil {
 		return Result{}, err
 	}
@@ -263,8 +264,12 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 	return result, nil
 }
 
-func prepare[T any](requestID string, items []T, now time.Time, partial bool, effect model.ReadEffect, next *string) (Result, error) {
-	freshness, err := model.NewFreshness(model.FreshnessLive, now)
+func prepare[T any](requestID string, items []T, now time.Time, partial bool, effect model.ReadEffect, next *string, coverage *model.ScopeCoverage) (Result, error) {
+	state := model.FreshnessLive
+	if coverage != nil && coverage.QueriedPeers == 0 {
+		state = model.FreshnessUnavailable
+	}
+	freshness, err := model.NewFreshness(state, now)
 	if err != nil {
 		return Result{}, err
 	}
@@ -272,12 +277,17 @@ func prepare[T any](requestID string, items []T, now time.Time, partial bool, ef
 	if err != nil {
 		return Result{}, err
 	}
+	envelope.Scope = coverage
 	envelope.Partial = partial
 	envelope.ReadEffect = effect
 	envelope.NextCursor = next
 	if partial {
 		envelope.Warnings = append(envelope.Warnings, model.WarningPartialResult)
 	}
+	return serializeEnvelope(envelope)
+}
+
+func serializeEnvelope[T any](envelope model.Envelope[T]) (Result, error) {
 	encoded, err := json.Marshal(envelope)
 	if err != nil {
 		return Result{}, model.TextError(model.ErrorResultTooLarge, err)
