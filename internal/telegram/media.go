@@ -38,7 +38,7 @@ func normalizeImage(message *tg.Message) *imageLocation {
 	switch media := message.Media.(type) {
 	case *tg.MessageMediaPhoto:
 		photo, ok := media.Photo.(*tg.Photo)
-		if !ok || photo == nil || media.Spoiler || media.LivePhoto || media.Video != nil || media.TTLSeconds != 0 || media.Flags.Has(2) || photo.HasStickers || len(photo.VideoSizes) != 0 || photo.ID == 0 || photo.AccessHash == 0 || len(photo.FileReference) == 0 || len(photo.FileReference) > 4096 || photo.DCID < 1 || photo.DCID > 3 || len(photo.Sizes) > 20 {
+		if !ok || photo == nil || media.Spoiler || media.LivePhoto || media.Video != nil || media.TTLSeconds != 0 || media.Flags.Has(2) || photo.HasStickers || len(photo.VideoSizes) != 0 || photo.ID == 0 || photo.AccessHash == 0 || len(photo.FileReference) == 0 || len(photo.FileReference) > 4096 || photo.DCID < 1 || len(photo.Sizes) > 20 {
 			return nil
 		}
 		var sizes []photoRendition
@@ -86,7 +86,7 @@ func normalizeImage(message *tg.Message) *imageLocation {
 		return &imageLocation{source: source, dc: photo.DCID, location: &tg.InputPhotoFileLocation{ID: photo.ID, AccessHash: photo.AccessHash, FileReference: photo.FileReference, ThumbSize: size.kind}}
 	case *tg.MessageMediaDocument:
 		document, ok := media.Document.(*tg.Document)
-		if !ok || document == nil || media.Spoiler || media.Video || media.Round || media.Voice || media.Nopremium || media.TTLSeconds != 0 || media.Flags.Has(2) || len(media.AltDocuments) != 0 || media.VideoCover != nil || media.VideoTimestamp != 0 || document.ID == 0 || document.AccessHash == 0 || len(document.FileReference) == 0 || len(document.FileReference) > 4096 || document.DCID < 1 || document.DCID > 3 || len(document.VideoThumbs) != 0 || (document.MimeType != "image/jpeg" && document.MimeType != "image/png") || len(document.Attributes) > 2 {
+		if !ok || document == nil || media.Spoiler || media.Video || media.Round || media.Voice || media.Nopremium || media.TTLSeconds != 0 || media.Flags.Has(2) || len(media.AltDocuments) != 0 || media.VideoCover != nil || media.VideoTimestamp != 0 || document.ID == 0 || document.AccessHash == 0 || len(document.FileReference) == 0 || len(document.FileReference) > 4096 || document.DCID < 1 || len(document.VideoThumbs) != 0 || (document.MimeType != "image/jpeg" && document.MimeType != "image/png") || len(document.Attributes) > 2 {
 			return nil
 		}
 		var dimensions *tg.DocumentAttributeImageSize
@@ -187,8 +187,10 @@ func (a *Account) exactImage(ctx context.Context, expected model.Candidate) (*im
 	return location, nil
 }
 
+// The SDK resolves DC IDs against the selected environment's current DC options.
+// Media metadata supplies an ID, never an endpoint or a Test-DC-only range.
 func (a *Account) imageAPI(ctx context.Context, dc int) (*tg.Client, gotdtelegram.CloseInvoker, error) {
-	if dc < 1 || dc > 3 || a.openImageDC == nil {
+	if dc < 1 || a.openImageDC == nil {
 		return nil, nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	pool, err := a.openImageDC(ctx, dc)

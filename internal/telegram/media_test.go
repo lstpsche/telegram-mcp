@@ -92,7 +92,7 @@ func TestUnsafeImagesNeverExposeCaptionsOrDescriptors(t *testing.T) {
 		"oversized image": func(m *tg.Message) {
 			m.Media.(*tg.MessageMediaPhoto).Photo.(*tg.Photo).Sizes[0].(*tg.PhotoSize).Size = model.MaximumImageBytes + 1
 		},
-		"unknown dc": func(m *tg.Message) { m.Media.(*tg.MessageMediaPhoto).Photo.(*tg.Photo).DCID = 4 },
+		"invalid dc": func(m *tg.Message) { m.Media.(*tg.MessageMediaPhoto).Photo.(*tg.Photo).DCID = 0 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			message := testPhotoMessage()
@@ -377,7 +377,7 @@ func TestImageRemoteDCUsesSharedMiddlewareAndClosesPool(t *testing.T) {
 	for _, closeFails := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "close failure"}[closeFails], func(t *testing.T) {
 			message := testDocumentMessage()
-			message.Media.(*tg.MessageMediaDocument).Document.(*tg.Document).DCID = 3
+			message.Media.(*tg.MessageMediaDocument).Document.(*tg.Document).DCID = 5
 			account := imageTestAccount(t, func() *tg.Message { return message }, func(*tg.UploadGetFileRequest) (tg.UploadFileClass, error) { t.Fatal("wrong DC"); return nil, nil })
 			calls, middlewareCalls := 0, 0
 			pool := &imageTestPool{InvokeFunc: func(ctx context.Context, input bin.Encoder, out bin.Decoder) error {
@@ -393,7 +393,7 @@ func TestImageRemoteDCUsesSharedMiddlewareAndClosesPool(t *testing.T) {
 				pool.closeErr = cause
 			}
 			account.openImageDC = func(ctx context.Context, dc int) (gotdtelegram.CloseInvoker, error) {
-				if dc != 3 {
+				if dc != 5 {
 					t.Fatal("wrong pool DC")
 				}
 				return pool, nil
@@ -416,5 +416,31 @@ func TestImageRemoteDCUsesSharedMiddlewareAndClosesPool(t *testing.T) {
 				t.Fatalf("remote image failed: %v", err)
 			}
 		})
+	}
+}
+
+func TestCaptionlessImagesSupportProductionDataCenters(t *testing.T) {
+	for _, dc := range []int{4, 5} {
+		for _, message := range []*tg.Message{testPhotoMessage(), testDocumentMessage()} {
+			message.Message = ""
+			switch media := message.Media.(type) {
+			case *tg.MessageMediaPhoto:
+				media.Photo.(*tg.Photo).DCID = dc
+			case *tg.MessageMediaDocument:
+				media.Document.(*tg.Document).DCID = dc
+			}
+			candidate := imageCandidate(t, message)
+			if candidate.Message.Text != "" || candidate.Image == nil {
+				t.Fatal("production captionless image rejected")
+			}
+		}
+	}
+}
+
+func TestImageDataCenterResolutionFailureReleasesNoPool(t *testing.T) {
+	account, _ := newReadTestAccount(t, func(context.Context, bin.Encoder, bin.Decoder) error { t.Fatal("unexpected RPC"); return nil })
+	api, pool, err := account.imageAPI(context.Background(), 99)
+	if err == nil || api != nil || pool != nil {
+		t.Fatal("unknown data center was accepted")
 	}
 }

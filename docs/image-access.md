@@ -59,6 +59,10 @@ must still permit release. Any failure after a possible acknowledgment returns
 `read_effect_uncertain` with no image. Telegram can change after a remote
 check; these checks do not provide an atomic remote snapshot.
 
+Image DC IDs are resolved through the selected environment's current SDK DC
+options. Production media is not restricted to the three Test DCs. Unknown DCs
+fail during pool resolution; message metadata never supplies a network endpoint.
+
 Downloads use aligned sequential 64 KiB file requests, at most 17 application
 file calls including one expired-reference renewal. Renewal refetches the same
 message, requires unchanged image identity, and resumes the same offset.
