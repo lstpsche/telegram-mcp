@@ -49,7 +49,35 @@ func ordinaryUser(user *tg.User) bool {
 	return user != nil && user.ID > 0 && !user.Bot && !user.Deleted && !user.Min && !user.Restricted
 }
 func ordinaryChat(chat *tg.Chat) bool {
-	return chat != nil && chat.ID > 0 && !chat.Deactivated && !chat.Left && chat.MigratedTo.Zero() && !chat.Noforwards
+	return chat != nil && chat.ID > 0 && !chat.Deactivated && !chat.Left && chat.MigratedTo == nil && !chat.Flags.Has(6) && !chat.Noforwards
+}
+
+func validateDialogEntities(peer model.PeerID, users []tg.UserClass, chats []tg.ChatClass) error {
+	// Revalidate the entity accompanying the result, including empty/forbidden
+	// constructors, instead of relying on the earlier metadata lookup.
+	matched := peer.Kind() == model.PeerKindSelf
+	for _, value := range users {
+		if peer.Kind() == model.PeerKindUser && value.GetID() == peer.TelegramID() {
+			user, ok := value.(*tg.User)
+			if !ok || !ordinaryUser(user) {
+				return model.TextError(model.ErrorUnsupportedPeer, nil)
+			}
+			matched = true
+		}
+	}
+	for _, value := range chats {
+		if peer.Kind() == model.PeerKindChat && value.GetID() == peer.TelegramID() {
+			chat, ok := value.(*tg.Chat)
+			if !ok || !ordinaryChat(chat) {
+				return model.TextError(model.ErrorUnsupportedPeer, nil)
+			}
+			matched = true
+		}
+	}
+	if !matched {
+		return model.TextError(model.ErrorUnsupportedPeer, nil)
+	}
+	return nil
 }
 
 func (a *Account) Chat(ctx context.Context, peer model.PeerID) (model.Chat, error) {
@@ -156,10 +184,8 @@ func (r *readRuntime) normalizePage(ctx context.Context, peer model.PeerID, resu
 		}
 	}
 	authors[r.self.Load()] = true
-	for _, value := range page.GetChats() {
-		if chat, ok := value.(*tg.Chat); ok && peer.Kind() == model.PeerKindChat && chat.ID == peer.TelegramID() && !ordinaryChat(chat) {
-			return nil, model.TextError(model.ErrorProtectedContent, nil)
-		}
+	if err := validateDialogEntities(peer, page.GetUsers(), page.GetChats()); err != nil {
+		return nil, err
 	}
 	candidates := make([]model.Candidate, 0, len(page.GetMessages()))
 	seen := map[int]bool{}

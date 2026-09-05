@@ -359,7 +359,13 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 				_ = lifecycle.Transition(daemon.StateFailed)
 				return err
 			}
-			textService, err = reader.New(backend, policies, a.now)
+			cursorKey, keyErr := a.cursorKey(ctx)
+			if keyErr != nil {
+				_ = lifecycle.Transition(daemon.StateFailed)
+				return keyErr
+			}
+			textService, err = reader.New(backend, policies, a.now, cursorKey)
+			clear(cursorKey)
 			if err != nil {
 				_ = lifecycle.Transition(daemon.StateFailed)
 				return err

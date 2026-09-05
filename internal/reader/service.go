@@ -22,6 +22,8 @@ type Backend interface {
 	Chat(context.Context, model.PeerID) (model.Chat, error)
 	History(context.Context, model.HistoryQuery) ([]model.Candidate, error)
 	Acknowledge(context.Context, model.PeerID, int32) error
+	Search(context.Context, model.SearchQuery) ([]model.Candidate, error)
+	Unread(context.Context, model.PeerID) (model.Unread, error)
 }
 
 // Result is serialized before the upstream effect. JSON is also used verbatim
@@ -29,16 +31,19 @@ type Backend interface {
 type Result struct{ JSON json.RawMessage }
 
 type Service struct {
-	backend Backend
-	policy  *policy.Repository
-	now     func() time.Time
+	backend   Backend
+	policy    *policy.Repository
+	now       func() time.Time
+	cursorKey [32]byte
 }
 
-func New(backend Backend, repository *policy.Repository, now func() time.Time) (*Service, error) {
-	if backend == nil || repository == nil || now == nil {
+func New(backend Backend, repository *policy.Repository, now func() time.Time, cursorKey []byte) (*Service, error) {
+	if backend == nil || repository == nil || now == nil || len(cursorKey) != 32 {
 		return nil, errors.New("text service dependencies are required")
 	}
-	return &Service{backend: backend, policy: repository, now: now}, nil
+	s := &Service{backend: backend, policy: repository, now: now}
+	copy(s.cursorKey[:], cursorKey)
+	return s, nil
 }
 
 func (s *Service) Ready() bool { return s != nil && s.backend.Ready() }
@@ -95,7 +100,7 @@ func (s *Service) ListChats(ctx context.Context, requestID string, limit int) (r
 	if !s.Ready() {
 		return Result{}, model.TextError(model.ErrorFreshnessDegraded, nil)
 	}
-	result, err = prepare(requestID, items, s.now(), partial, model.NoReadEffect())
+	result, err = prepare(requestID, items, s.now(), partial, model.NoReadEffect(), nil)
 	if err != nil {
 		return Result{}, err
 	}
@@ -225,7 +230,7 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 		}
 		effect = model.ReadEffect{Kind: model.ReadEffectHistoryMarkedRead, ThroughMessageID: &boundary}
 	}
-	result, err = prepare(requestID, items, s.now(), partial, effect)
+	result, err = prepare(requestID, items, s.now(), partial, effect, nil)
 	if err != nil {
 		return Result{}, err
 	}
@@ -258,7 +263,7 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 	return result, nil
 }
 
-func prepare[T any](requestID string, items []T, now time.Time, partial bool, effect model.ReadEffect) (Result, error) {
+func prepare[T any](requestID string, items []T, now time.Time, partial bool, effect model.ReadEffect, next *string) (Result, error) {
 	freshness, err := model.NewFreshness(model.FreshnessLive, now)
 	if err != nil {
 		return Result{}, err
@@ -269,6 +274,7 @@ func prepare[T any](requestID string, items []T, now time.Time, partial bool, ef
 	}
 	envelope.Partial = partial
 	envelope.ReadEffect = effect
+	envelope.NextCursor = next
 	if partial {
 		envelope.Warnings = append(envelope.Warnings, model.WarningPartialResult)
 	}

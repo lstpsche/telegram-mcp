@@ -26,6 +26,11 @@ type fakeBackend struct {
 	onHistory                         func()
 	onAck                             func()
 	notReady                          bool
+	searchQuery                       model.SearchQuery
+	unreadCalls                       int
+	unread                            model.Unread
+	unreadError                       error
+	onUnread                          func()
 }
 
 func (f *fakeBackend) Ready() bool          { return !f.notReady }
@@ -82,7 +87,7 @@ func testService(t *testing.T) (*Service, *fakeBackend, *policy.Repository, *sql
 	author, _ := model.NewPeerID(model.PeerKindUser, 7)
 	grant := policy.Grant{Peer: peer, Author: author, MinID: 10, MaxID: 30, ReadThrough: 30, Profile: policy.ProfileSelfAuthored, ExpiresAt: now.Add(time.Hour), Eligible: true}
 	f := &fakeBackend{self: author}
-	s, err := New(f, p, func() time.Time { return now })
+	s, err := New(f, p, func() time.Time { return now }, []byte(strings.Repeat("k", 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,4 +317,20 @@ func TestListChatsOnlyFetchesCurrentGrants(t *testing.T) {
 	if err != nil || !strings.Contains(string(result.JSON), g.Peer.String()) || f.chatCalls != 1 || f.ackCalls != 0 {
 		t.Fatalf("granted chat lookup failed: %v", err)
 	}
+}
+
+func (f *fakeBackend) Search(ctx context.Context, q model.SearchQuery) ([]model.Candidate, error) {
+	f.searchQuery = q
+	return f.History(ctx, model.HistoryQuery{Peer: q.Peer, Before: q.Before, MinID: q.MinID, MaxID: q.MaxID, Limit: q.Limit})
+}
+func (f *fakeBackend) Unread(_ context.Context, peer model.PeerID) (model.Unread, error) {
+	f.unreadCalls++
+	if f.onUnread != nil {
+		f.onUnread()
+	}
+	value := f.unread
+	if value.Peer.String() == "" {
+		value.Peer = peer
+	}
+	return value, f.unreadError
 }

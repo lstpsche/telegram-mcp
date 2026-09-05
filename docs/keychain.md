@@ -26,9 +26,10 @@ fail-closed CLI path. Release qualification must reevaluate this against the
 minimum supported macOS version and a signed application identity; do not
 silently replace it with an implicit or synchronizing store.
 
-The account runtime uses one service, `dev.telegram-mcp.gateway`, with two
+The account runtime uses one service, `dev.telegram-mcp.gateway`, with three
 fixed accounts: `default.session` for gotd sessions and `default.credentials`
-for a versioned bundle containing the API ID, API hash, and Test DC. Keychain
+for a versioned bundle containing the API ID, API hash, and Test DC;
+`default.cursor-integrity` holds an independent 32-byte search-cursor key. Keychain
 replaces the credential bundle atomically. SQLite stores only non-secret
 API ID/DC metadata. Before creating a Telegram client, the application verifies
 that the two stores agree and uses the complete Keychain bundle as input.
@@ -41,7 +42,12 @@ The implementation does not claim that SQLite and Keychain share a transaction.
 
 Login codes, phone numbers, 2FA passwords, and QR tokens are never stored.
 Logout deletes the session item; the credential bundle remains available for
-explicit reauthentication.
+explicit reauthentication. The cursor key also survives logout and restart;
+authorization-epoch binding invalidates old cursors after account changes.
+The daemon loads or initializes this key under the account lock only after a
+recorded epoch exists. A missing item initializes a new key and invalidates old
+cursors; malformed or inaccessible items fail without replacement. No key is
+stored in SQLite or files.
 
 gotd's client constructor requires the API hash as a Go string and retains it
 for that client's lifetime. Telegram MCP performs this unavoidable immutable copy

@@ -2,7 +2,8 @@
 
 These transport-independent contracts define the MCP input and output boundary.
 The daemon registers a static inventory: `status`, `list_chats`, `list_messages`,
-and `get_message_context`. Authentication and policy mutations are human-only.
+`get_message_context`, `search_messages`, and `list_unread`. Authentication and
+policy mutations are human-only.
 
 ## Available MCP behavior
 
@@ -32,7 +33,7 @@ peer metadata; at most 20 grants exist. `list_messages` requires `peer` and
 accepts an optional typed exclusive `before` message and `limit`.
 `get_message_context` requires `message` and accepts `before`/`after` neighbor
 counts from 0 through 49, both defaulting to zero. A denied or absent target
-returns no neighbors. No opaque cursor is issued: `next_cursor` is null;
+returns no neighbors. History/context issue no cursor: `next_cursor` is null;
 an explicit `before` selection is reauthorized on every call.
 
 Text results contain typed string IDs, author IDs, UTC message dates and
@@ -92,7 +93,8 @@ Read effects are `none`, `history_marked_read`, or `content_marked_read`.
 State-affecting effects require the message reference through which the state
 was acknowledged. History/context authorize and assemble the bounded result,
 perform the hooked acknowledgment, wait for its durable checkpoint, and only
-then release bodies. Search and unread metadata remain unimplemented.
+then release bodies. Search snippets and unread metadata issue no acknowledgment;
+opening a search hit with context enters the history acknowledgment flow.
 
 ### Authorization for history side effects
 
@@ -146,6 +148,7 @@ cancellation, and a sanitized internal error.
   concurrency/rate/flood bounds apply to transport attempts and recovery.
 - Client-supplied limits never raise server count, byte, RPC, concurrency, or
   duration caps.
-- Cursors and media handles will be opaque, signed, expiring,
+- Search cursors are signed, expiring and reauthorized. Future media handles
+  must also be opaque, signed, expiring,
   operation/query/authorization-epoch/policy-revision-bound, content-free, and
   reauthorized on every use. They never grant authority by themselves.

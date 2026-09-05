@@ -67,7 +67,7 @@ policy mutation.
 
 Controls: deterministic static read-tool inventory; no control-plane MCP tools;
 strict unknown-field rejection; typed IDs; no `resolve_peer` tool; hard budgets;
-no dynamic write flag. Only status and the three bounded text tools are registered.
+no dynamic write flag. Only status and the five bounded text/metadata tools are registered.
 
 ### Mutable alias or confused-deputy authorization
 
@@ -185,3 +185,24 @@ workflow. They do not establish live account acceptance, production eligibility,
 signing across upgrades or release readiness. Production DC construction remains
 absent. Channel recovery is unsupported and degrades the text runtime; ordinary
 user/basic-group synchronization is the supported boundary.
+
+## Search continuation and unread disclosure
+
+Search is scoped to one authorized peer before Telegram I/O and post-filtered
+with the existing author/range/eligibility/content checks. Only bounded snippets
+leave this path, with no history receipt. Following a result into full context
+requires the independent whole-prefix acknowledgment authorization.
+
+Search cursors use domain-separated HMAC-SHA256 and a distinct native Keychain
+key. Their query digest is also keyed, preventing offline dictionary checks
+against a visible cursor payload. Version, signature, canonical encoding,
+expiry, operation, peer, query, item limit, epoch and policy revision are checked
+before fetching. Persistent grant-change triggers prevent revoke/regrant from
+reviving earlier tokens. Cursors contain no message or query text; no search
+state or content is stored in SQLite. Valid replay is navigation, not authority.
+
+Unread metadata describes the whole granted dialog, including messages outside
+the body's author/range. The operator contract explicitly grants this metadata
+scope. Responses expose only IDs, counts and manual flags; incidental upstream
+top messages/drafts are discarded. Missing or failed peer lookups never become
+invented zero counts or successful partial results.

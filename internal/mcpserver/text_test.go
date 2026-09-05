@@ -90,7 +90,7 @@ func wireService(t *testing.T) (*reader.Service, *wireBackend) {
 	}
 	l.Close()
 	f := &wireBackend{peer: peer, author: author}
-	s, err := reader.New(f, p, time.Now)
+	s, err := reader.New(f, p, time.Now, []byte(strings.Repeat("k", 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestAuthorizedTextWorkflowOverStdioRelay(t *testing.T) {
 	for _, tool := range inventory.Tools {
 		names[tool.Name] = tool
 	}
-	if len(names) != 4 || names["status"] == nil || names["list_chats"] == nil || names["list_messages"] == nil || names["get_message_context"] == nil {
+	if len(names) != 6 || names["status"] == nil || names["list_chats"] == nil || names["list_messages"] == nil || names["get_message_context"] == nil {
 		t.Fatal("unexpected tool inventory")
 	}
 	if names["list_messages"].Annotations.ReadOnlyHint || names["get_message_context"].Annotations.ReadOnlyHint {
@@ -221,4 +221,26 @@ func TestOversizedEscapedRPCIDRejectedBeforeRead(t *testing.T) {
 	if backend.fetches.Load() != 0 || backend.acks.Load() != 0 {
 		t.Fatal("oversized ID reached text workflow")
 	}
+}
+
+func (f *wireBackend) Search(_ context.Context, q model.SearchQuery) ([]model.Candidate, error) {
+	f.fetches.Add(1)
+	if q.Peer != f.peer {
+		return nil, errors.New("unexpected search peer")
+	}
+	ids := []int32{20, 18}
+	if q.Before > 0 {
+		ids = []int32{15}
+	}
+	result := make([]model.Candidate, 0, len(ids))
+	for _, id := range ids {
+		ref, _ := model.NewMessageID(q.Peer, id)
+		result = append(result, model.Candidate{Message: model.Message{ID: ref, Author: f.author, Date: "2026-09-05T12:00:00Z", Text: "synthetic search snippet"}})
+	}
+	return result, nil
+}
+
+func (f *wireBackend) Unread(_ context.Context, peer model.PeerID) (model.Unread, error) {
+	f.fetches.Add(1)
+	return model.Unread{Peer: peer, Count: 1}, nil
 }

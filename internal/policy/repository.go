@@ -232,7 +232,7 @@ func (l *Lease) Revoke(ctx context.Context, peer model.PeerID) error {
 }
 
 func (l *Lease) Audit(ctx context.Context, requestID, operation string, category model.ErrorCategory, count int, uncertain bool) error {
-	if !model.IsValidRequestID(requestID) || (operation != "list_chats" && operation != "list_messages" && operation != "get_message_context") ||
+	if !model.IsValidRequestID(requestID) || (operation != "list_chats" && operation != "list_messages" && operation != "get_message_context" && operation != "search_messages" && operation != "list_unread") ||
 		(category != "" && !category.IsValid()) || count < 0 || count > model.MaximumPageSize ||
 		(category != "" && count != 0) || (category == "" && uncertain) {
 		return model.TextError(model.ErrorInvalidInput, errors.New("invalid text audit record"))
@@ -252,3 +252,20 @@ func (l *Lease) Audit(ctx context.Context, requestID, operation string, category
 }
 
 func internalError(cause error) error { return model.TextError(model.ErrorInternal, cause) }
+
+// Binding returns durable authority coordinates while the policy lease is held.
+func (l *Lease) Binding(ctx context.Context) (epoch string, revision int64, err error) {
+	err = l.transaction(ctx, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, "SELECT revision FROM policy_revision WHERE singleton = 1").Scan(&revision); err != nil {
+			return internalError(err)
+		}
+		if revision <= 0 {
+			return internalError(errors.New("invalid policy revision"))
+		}
+		return nil
+	})
+	if err != nil {
+		return "", 0, err
+	}
+	return l.epoch, revision, nil
+}

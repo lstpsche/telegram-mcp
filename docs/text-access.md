@@ -76,7 +76,8 @@ after the in-flight operation completes. Revocation succeeds only after any
 request holding the lock has finished and the grant is removed. It cannot undo
 a previous read acknowledgment or recall a previously delivered response.
 
-The MCP tools `list_chats`, `list_messages` and `get_message_context` use the same
+The MCP tools `list_chats`, `list_messages`, `get_message_context`,
+`search_messages` and `list_unread` use the same
 policy boundary. Lists expose only granted peers. History and context recheck
 author, range, expiry and eligibility after normalization. Protected, expiring,
 forwarded, imported, quoted, media and service content is excluded. Filtering
@@ -94,3 +95,47 @@ prompts; there are no credential-bearing command-line options.
 Implementation tests use synthetic data. Live Test-DC content access and agent
 acceptance require a separately authorized human-run check and are not implied
 by a successful local build or test suite.
+
+## Search and unread metadata
+
+`search_messages` accepts one exact `peer`, a `query`, optional `limit` (default
+20, maximum 100), and optional `cursor`. Query whitespace is trimmed; the
+remaining text must contain 1–256 Unicode characters. The original input must
+occupy at most 1024 UTF-8 bytes. The tool returns safe authorized snippets of at
+most 240 Unicode characters, typed message/author IDs, UTC dates and
+`snippet_truncated`.
+It does not acknowledge history. Follow a returned message ID with
+`get_message_context` to request the full body under the existing receipt
+contract. There is no account-wide search or named-scope fan-out.
+
+Repeat the same peer, normalized query and limit with `next_cursor` to continue
+searching older messages. A full fetched window can return an empty filtered
+page with a continuation; follow the cursor instead of assuming no matches.
+The cursor advances past all fetched messages, including excluded bodies.
+It anchors the upper ID at the first page and expires within 15 minutes or at
+grant expiry, whichever is earlier. Each continuation retains that expiry.
+Results remain live: edits, deletions and changing search matches are not a
+snapshot, and a full last window may require one final empty request.
+
+Cursors are versioned, signed with an independent Keychain key, and bound to
+operation, peer, keyed query digest, item limit, authorization epoch and durable
+policy revision. They contain no query or body text and are not permission.
+Any grant insert, replacement or removal invalidates earlier search cursors,
+even when the same grant is recreated. Reusing a valid cursor is permitted;
+expired, modified or mismatched cursors fail before Telegram search I/O.
+
+`list_unread` accepts no arguments and inspects all current grants (at most 20).
+It returns `peer`, `unread_count` and `unread_mark` for dialogs with a positive
+count or a manual unread flag. These are **whole-dialog metadata**, including
+messages outside the grant's body-author/range restriction. No bodies, titles,
+top-message IDs or inferred dates are exposed. Existing grants authorize this
+peer metadata as well as their scoped text. The read-through ceiling is not
+needed for search or unread metadata because neither acknowledges history.
+
+Each unread lookup targets one granted peer. Telegram's response can contain an
+incidental top message or draft; the adapter discards it. Any peer, freshness,
+expiry, cancellation or required-audit failure rejects the entire result rather
+than returning incomplete counts. With at most 20 grants, unread listing needs
+no pagination. Search and unread retain the 20-second operation deadline and
+complete 256 KiB response budget; unread uses at most 80 application RPCs before
+bounded transport retries. Required update recovery is independently bounded.

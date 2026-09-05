@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 )
 
 // MaximumRPCIDBytes bounds the normalized JSON encoding of a reflected ID.
@@ -72,4 +74,38 @@ func TextErrorCategory(err error) ErrorCategory {
 		return ErrorCancelled
 	}
 	return ErrorInternal
+}
+
+// SearchQuery is adapter input. Query text is transient and must never be logged.
+type SearchQuery struct {
+	Peer                 PeerID
+	Query                string
+	MinID, MaxID, Before int32
+	Limit                int
+}
+
+type SearchHit struct {
+	ID               MessageID `json:"id"`
+	Author           PeerID    `json:"author"`
+	Date             string    `json:"date"`
+	Snippet          string    `json:"snippet"`
+	SnippetTruncated bool      `json:"snippet_truncated"`
+}
+
+// Unread describes the entire granted dialog, not just its authorized body range.
+type Unread struct {
+	Peer   PeerID `json:"peer"`
+	Count  int    `json:"unread_count"`
+	Marked bool   `json:"unread_mark"`
+}
+
+func NormalizeSearchQuery(query string) (string, error) {
+	if !utf8.ValidString(query) || len(query) > 1024 {
+		return "", TextError(ErrorInvalidInput, nil)
+	}
+	query = strings.TrimSpace(query)
+	if query == "" || utf8.RuneCountInString(query) > 256 {
+		return "", TextError(ErrorInvalidInput, nil)
+	}
+	return query, nil
 }

@@ -815,7 +815,7 @@ func TestUnconfiguredDaemonServesStaticToolsWithoutReadingSecrets(t *testing.T) 
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 4 {
+	if err != nil || len(tools.Tools) != 6 {
 		t.Fatalf("tools=%v error=%v", tools, err)
 	}
 	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "status"}); err != nil {
@@ -824,4 +824,11 @@ func TestUnconfiguredDaemonServesStaticToolsWithoutReadingSecrets(t *testing.T) 
 	if secrets.readCount() != 0 {
 		t.Fatal("unconfigured status read Keychain")
 	}
+}
+
+func (f *fakeRuntime) Search(ctx context.Context, q model.SearchQuery) ([]model.Candidate, error) {
+	return f.History(ctx, model.HistoryQuery{Peer: q.Peer, Before: q.Before, MinID: q.MinID, MaxID: q.MaxID, Limit: q.Limit})
+}
+func (f *fakeRuntime) Unread(_ context.Context, peer model.PeerID) (model.Unread, error) {
+	return model.Unread{Peer: peer, Count: 1}, nil
 }
