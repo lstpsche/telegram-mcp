@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/gotd/td/bin"
@@ -12,65 +13,70 @@ import (
 
 func TestEmptySearchRevalidatesPeerWithoutRequiringResultEntities(t *testing.T) {
 	for _, kind := range []model.PeerKind{model.PeerKindUser, model.PeerKindChat, model.PeerKindChannel} {
-		for _, mode := range []string{"valid", "changed", "recheck_error", "upstream", "checkpoint", "nonempty_missing_entity"} {
-			t.Run(string(kind)+"/"+mode, func(t *testing.T) {
-				searched := false
-				checks := 0
-				account, _ := newReadTestAccount(t, func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
-					switch in.(type) {
-					case *tg.UpdatesGetStateRequest:
-						if searched && mode == "checkpoint" {
-							return errors.New("synthetic checkpoint failure")
-						}
-						return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
-					case *tg.MessagesSearchRequest:
-						searched = true
-						if mode == "upstream" {
-							return errors.New("synthetic search failure")
-						}
-						page := &tg.MessagesMessages{}
-						if mode == "nonempty_missing_entity" {
-							page.Messages = []tg.MessageClass{testMessage(20)}
-						}
-						return encodeReadResponse(out, page)
-					case *tg.UsersGetUsersRequest, *tg.MessagesGetChatsRequest, *tg.ChannelsGetChannelsRequest:
-						checks++
-						if searched && mode == "recheck_error" {
-							return errors.New("synthetic peer lookup failure")
-						}
-						changed := searched && mode == "changed"
-						switch kind {
-						case model.PeerKindUser:
-							return encodeReadResponse(out, &tg.UserClassVector{Elems: []tg.UserClass{&tg.User{ID: 42, Bot: changed}}})
-						case model.PeerKindChat:
-							return encodeReadResponse(out, &tg.MessagesChats{Chats: []tg.ChatClass{&tg.Chat{ID: 42, Noforwards: changed, Photo: &tg.ChatPhotoEmpty{}}}})
+		for _, sliced := range []bool{false, true} {
+			for _, mode := range []string{"valid", "changed", "recheck_error", "upstream", "checkpoint", "nonempty_missing_entity"} {
+				t.Run(fmt.Sprintf("%s/sliced=%t/%s", kind, sliced, mode), func(t *testing.T) {
+					searched := false
+					checks := 0
+					account, _ := newReadTestAccount(t, func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
+						switch in.(type) {
+						case *tg.UpdatesGetStateRequest:
+							if searched && mode == "checkpoint" {
+								return errors.New("synthetic checkpoint failure")
+							}
+							return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
+						case *tg.MessagesSearchRequest:
+							searched = true
+							if mode == "upstream" {
+								return errors.New("synthetic search failure")
+							}
+							page := &tg.MessagesMessages{}
+							if mode == "nonempty_missing_entity" {
+								page.Messages = []tg.MessageClass{testMessage(20)}
+							}
+							if sliced {
+								return encodeReadResponse(out, &tg.MessagesMessagesSlice{Count: 10, Messages: page.Messages})
+							}
+							return encodeReadResponse(out, page)
+						case *tg.UsersGetUsersRequest, *tg.MessagesGetChatsRequest, *tg.ChannelsGetChannelsRequest:
+							checks++
+							if searched && mode == "recheck_error" {
+								return errors.New("synthetic peer lookup failure")
+							}
+							changed := searched && mode == "changed"
+							switch kind {
+							case model.PeerKindUser:
+								return encodeReadResponse(out, &tg.UserClassVector{Elems: []tg.UserClass{&tg.User{ID: 42, Bot: changed}}})
+							case model.PeerKindChat:
+								return encodeReadResponse(out, &tg.MessagesChats{Chats: []tg.ChatClass{&tg.Chat{ID: 42, Noforwards: changed, Photo: &tg.ChatPhotoEmpty{}}}})
+							default:
+								group := syntheticSupergroup()
+								group.Broadcast = changed
+								return encodeReadResponse(out, &tg.MessagesChats{Chats: []tg.ChatClass{group}})
+							}
 						default:
-							group := syntheticSupergroup()
-							group.Broadcast = changed
-							return encodeReadResponse(out, &tg.MessagesChats{Chats: []tg.ChatClass{group}})
+							t.Fatalf("unexpected RPC %T", in)
+							return nil
 						}
-					default:
-						t.Fatalf("unexpected RPC %T", in)
-						return nil
+					})
+					ctx := context.Background()
+					if err := account.reads.storage.SetUserAccessHash(ctx, 1, 42, 12345); err != nil {
+						t.Fatal(err)
+					}
+					if err := account.reads.storage.SetChannelAccessHash(ctx, 1, 42, 12345); err != nil {
+						t.Fatal(err)
+					}
+					peer, _ := model.NewPeerID(kind, 42)
+					rows, err := account.Search(ctx, model.SearchQuery{Peer: peer, Query: "synthetic", MinID: 1, MaxID: 100, Limit: 5})
+					if mode == "valid" {
+						if err != nil || rows == nil || len(rows) != 0 || checks != 2 {
+							t.Fatal("legitimate empty result rejected", err, checks)
+						}
+					} else if err == nil || rows != nil {
+						t.Fatal("failed search became empty success", mode, err)
 					}
 				})
-				ctx := context.Background()
-				if err := account.reads.storage.SetUserAccessHash(ctx, 1, 42, 12345); err != nil {
-					t.Fatal(err)
-				}
-				if err := account.reads.storage.SetChannelAccessHash(ctx, 1, 42, 12345); err != nil {
-					t.Fatal(err)
-				}
-				peer, _ := model.NewPeerID(kind, 42)
-				rows, err := account.Search(ctx, model.SearchQuery{Peer: peer, Query: "synthetic", MinID: 1, MaxID: 100, Limit: 5})
-				if mode == "valid" {
-					if err != nil || rows == nil || len(rows) != 0 || checks != 2 {
-						t.Fatal("legitimate empty result rejected", err, checks)
-					}
-				} else if err == nil || rows != nil {
-					t.Fatal("failed search became empty success", mode, err)
-				}
-			})
+			}
 		}
 	}
 }

@@ -225,7 +225,9 @@ It does not acknowledge history. Follow a returned message ID with
 contract. Each lookup targets one currently authorized exact peer; there is no
 account-wide Telegram search.
 
-Telegram may return a terminal empty search result without any peer entities.
+Telegram may return an empty search window without any peer entities, using
+either the complete or sliced response constructor even when matches exist
+outside the requested ID window.
 The adapter accepts this result only after rechecking the exact peer's current
 eligibility and synchronizing updates. Failed lookups and nonempty responses
 with missing peer entities remain errors.
