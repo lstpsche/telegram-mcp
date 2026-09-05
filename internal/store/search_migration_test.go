@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"io/fs"
-	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -19,7 +18,7 @@ func TestSearchMigrationPreservesExistingAuditAndGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "0005_") {
+		if entry.Name() >= "0005_" {
 			continue
 		}
 		data, err := fs.ReadFile(migrations.Files, entry.Name())
