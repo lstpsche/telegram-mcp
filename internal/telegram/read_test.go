@@ -511,3 +511,49 @@ func TestAuthorizationFailureTakesPrecedenceOverUpdateLogFailure(t *testing.T) {
 		t.Fatal("generic update error hid authorization loss")
 	}
 }
+
+func TestOwnSavedDialogMessagesNormalizeWithoutForwardedAuthority(t *testing.T) {
+	for _, message := range []*tg.Message{testMessage(10), testPhotoMessage(), testDocumentMessage()} {
+		message.SavedPeerID = &tg.PeerUser{UserID: 1}
+		message.FromID = nil
+		if message.Media != nil {
+			message.Message = ""
+		}
+		candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true})
+		if err != nil || candidate.Unsupported || candidate.Forwarded || candidate.Message.Author.String() != "tgpeer:v1:user:1" || candidate.Message.Date == "" {
+			t.Fatal("own saved message rejected", err)
+		}
+		if message.Media != nil && candidate.Image == nil {
+			t.Fatal("captionless saved image lost descriptor")
+		}
+		message.Flags.Set(2)
+		candidate, err = normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true})
+		if err != nil || !candidate.Forwarded || candidate.Image != nil || candidate.Message.Text != "" {
+			t.Fatal("saved dialog bypassed forwarded-content exclusion", err)
+		}
+	}
+}
+
+func TestSavedDialogMetadataCannotAuthorizeOtherOrigins(t *testing.T) {
+	for _, saved := range []tg.PeerClass{&tg.PeerUser{UserID: 2}, &tg.PeerChat{ChatID: 1}, &tg.PeerChannel{ChannelID: 1}} {
+		message := testPhotoMessage()
+		message.SavedPeerID = saved
+		candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true})
+		if err != nil || !candidate.Unsupported || candidate.Image != nil || candidate.Message.Text != "" {
+			t.Fatal("other saved origin released content", err)
+		}
+	}
+	for _, kind := range []model.PeerKind{model.PeerKindSelf, model.PeerKindUser, model.PeerKindChat} {
+		peer, _ := model.NewPeerID(kind, 2)
+		message := testPhotoMessage()
+		message.PeerID = &tg.PeerUser{UserID: 2}
+		if kind == model.PeerKindChat {
+			message.PeerID = &tg.PeerChat{ChatID: 2}
+		}
+		message.SavedPeerID = message.PeerID
+		candidate, err := normalizeMessage(peer, 1, message, map[int64]bool{1: true})
+		if err != nil || !candidate.Unsupported || candidate.Image != nil || candidate.Message.Text != "" {
+			t.Fatal("non-self dialog released saved content", err)
+		}
+	}
+}

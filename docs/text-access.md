@@ -38,6 +38,11 @@ require channel recovery. Common recovery budgets apply before this projection;
 common gaps and checkpoint failures still block reads. Bot chats, Secret Chats
 and topics are unsupported.
 
+Direct messages to the authenticated account may carry a `saved_peer_id`
+pointing back to that same account. This ordinary Saved Messages grouping is
+supported. Other saved-dialog origins and forwarded content remain excluded;
+the grouping metadata never replaces the exact peer, author, or range grant.
+
 For the newest Saved Messages item, stop the daemon and run
 `telegram-mcpctl saved-message`. It queries only the authenticated account's
 Saved Messages dialog and prints one JSON string such as

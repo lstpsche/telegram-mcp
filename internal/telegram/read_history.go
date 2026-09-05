@@ -228,7 +228,10 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 			candidate.Quoted = true
 		}
 	}
-	candidate.Unsupported = message.Post || message.Legacy || message.Offline || message.FromScheduled || message.SavedPeerID != nil || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.ReplyMarkup != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
+	// Direct notes to ourselves also carry SavedPeerID. Other saved origins
+	// and topic-bearing dialogs remain outside the supported content boundary.
+	unsupportedSavedDialog := message.SavedPeerID != nil && (peer.Kind() != model.PeerKindSelf || peer.TelegramID() != self || !matchesPeer(peer, message.SavedPeerID))
+	candidate.Unsupported = message.Post || message.Legacy || message.Offline || message.FromScheduled || unsupportedSavedDialog || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.ReplyMarkup != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
 	var image *model.ImageSource
 	if message.Media != nil {
 		if _, empty := message.Media.(*tg.MessageMediaEmpty); !empty {
