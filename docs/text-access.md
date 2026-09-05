@@ -1,4 +1,4 @@
-# Text access
+# Message access
 
 Telegram MCP is an unofficial client using Telegram's API. Text tools are
 available only with an authorized local Test-DC account and an explicit human
@@ -115,10 +115,12 @@ created by scope management. Grant revocation retains the member as excluded;
 logout or an authorization epoch change removes scopes and membership.
 
 The MCP tools `list_chats`, `list_messages`, `get_message_context`,
-`search_messages`, `list_unread` and `list_scopes` use the same
+`search_messages`, `list_unread`, `list_scopes` and `open_image` use the same
 policy boundary. Lists expose only granted peers. History and context recheck
 author, range, expiry and eligibility after normalization. Protected, expiring,
-forwarded, imported, quoted, media and service content is excluded. Filtering
+forwarded, imported, quoted, unsupported media and service content is excluded.
+Photos and static JPEG/PNG attachments require `--allow-images`; see
+[image access](image-access.md) for supported variants and delivery. Filtering
 and bounded truncation are reported as partial. Context never returns unrelated
 neighbors when its target is unavailable or unauthorized. Every history/context
 response describes its read effect; message bodies are released only after the
@@ -141,7 +143,7 @@ by a successful local build or test suite.
 remaining text must contain 1–256 Unicode characters. The original input must
 occupy at most 1024 UTF-8 bytes. The tool returns safe authorized snippets of at
 most 240 Unicode characters, typed message/author IDs, UTC dates and
-`snippet_truncated`.
+`snippet_truncated`, plus permitted image descriptors when available.
 It does not acknowledge history. Follow a returned message ID with
 `get_message_context` to request the full body under the existing receipt
 contract. Each lookup targets one currently granted exact peer; there is no

@@ -1,6 +1,6 @@
 # Telegram MCP threat model
 
-- Status: account runtime and authorized text MCP implemented; live acceptance separate
+- Status: account runtime and authorized text/image MCP implemented; live acceptance separate
 - Date: 2026-09-05
 - Scope: local single-account macOS v1 architecture
 
@@ -67,7 +67,7 @@ policy mutation.
 
 Controls: deterministic static read-tool inventory; no control-plane MCP tools;
 strict unknown-field rejection; typed IDs; no `resolve_peer` tool; hard budgets;
-no dynamic write flag. Only status and the six bounded text/metadata tools are registered.
+no dynamic write flag. Only status, six bounded text/metadata tools, and explicit image opening are registered.
 
 ### Mutable alias or confused-deputy authorization
 
@@ -219,3 +219,26 @@ authorization rotation or logout deletes all scopes. A scoped cursor also binds
 the eligible membership digest and earliest selected grant expiry. Traversal
 is bounded by 20 peers and 100 fetched candidates, including filtered entries,
 under the existing operation deadline and complete response byte budget.
+
+## Image disclosure and hostile encodings
+
+Images require an explicit grant bit, default false for migrated and new grants.
+Discovery exposes safe metadata only after the existing author/range/content
+checks. Signed five-minute handles contain a keyed image identity digest and
+exact message reference; policy revision and epoch changes invalidate them.
+No raw file location, reference, filename, or access hash crosses the adapter.
+
+Opening reauthorizes before I/O, refetches the exact source before downloading,
+and checks it again after download and after the hooked receipt. Replaced,
+deleted, newly protected, or unsupported sources release no bytes. A single
+reference renewal must preserve the same source identity; a failed rendition
+is never replaced by another. Explicit DC pools use the shared request controls;
+unexpected migration and CDN responses fail. See [image access](image-access.md).
+
+Byte limits precede allocation and pixel limits precede full decoding. Exact
+JPEG/PNG framing rejects trailing content; animated PNG chunks are denied.
+Captionless images do not bypass permission. Unread media mentions and variants
+requiring additional effects are excluded. The complete native result budget
+is checked before acknowledgment, then expiry/readiness/cancellation are checked
+through the final audit boundary. A possible effect followed by failure returns
+no image and reports uncertainty. No remote snapshot or human-view claim is made.

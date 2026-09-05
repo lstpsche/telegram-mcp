@@ -2,7 +2,7 @@
 
 These transport-independent contracts define the MCP input and output boundary.
 The daemon registers a static inventory: `status`, `list_chats`, `list_messages`,
-`get_message_context`, `search_messages`, `list_unread`, and `list_scopes`. Authentication and
+`get_message_context`, `search_messages`, `list_unread`, `list_scopes`, and `open_image`. Authentication and
 policy mutations are human-only.
 
 ## Available MCP behavior
@@ -170,7 +170,14 @@ cancellation, and a sanitized internal error.
   concurrency/rate/flood bounds apply to transport attempts and recovery.
 - Client-supplied limits never raise server count, byte, RPC, concurrency, or
   duration caps.
-- Search cursors are signed, expiring and reauthorized. Future media handles
-  must also be opaque, signed, expiring,
-  operation/query/authorization-epoch/policy-revision-bound, content-free, and
-  reauthorized on every use. They never grant authority by themselves.
+- Search cursors and image handles are signed, expiring, epoch/revision-bound,
+  and reauthorized on every use. Search binds its query; image handles bind
+  the exact message and keyed image identity. Neither grants authority.
+- `open_image` accepts only a handle string (1–4096 characters). Its single
+  metadata item contains `id`, `author`, `date`, and `image`; an additional
+  native image block carries the original JPEG/PNG bytes. Permitted history
+  and search items optionally include the same descriptor. See
+  [image access](image-access.md) for fields and receipt semantics.
+- Images are limited to 1 MiB and 4 million pixels, with each dimension at
+  most 4096. The complete image result is bounded to 2 MiB before receipt,
+  while metadata mirrors retain the 256 KiB limit. No input limit is raised.

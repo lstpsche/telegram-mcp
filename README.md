@@ -8,11 +8,12 @@ context, and searching chats on one user account, initially on macOS.
 ## Available now
 
 The MCP server exposes **`status`**, **`list_chats`**, **`list_messages`**,
-**`get_message_context`**, **`search_messages`**, **`list_unread`**, and
-**`list_scopes`**.
+**`get_message_context`**, **`search_messages`**, **`list_unread`**,
+**`list_scopes`**, and **`open_image`**.
 No Telegram credentials are needed to connect and
 inspect status. Text operations require a ready Test-DC account and an explicit
-human grant. Media and production login are not implemented.
+human grant. Photos and static JPEG/PNG attachments require a separate image
+opt-in on that grant. Production login remains unavailable.
 
 The account runtime supports interactive Test-DC phone/2FA and QR
 authentication, native login-Keychain session and credential storage, exclusive
@@ -100,9 +101,10 @@ See [authentication](docs/authentication.md),
 See [text access](docs/text-access.md) for grant commands, eligibility
 prerequisites, supported peers, and recovery behavior. Ordinary Saved Messages,
 non-bot users, and basic groups are supported. Supergroups, topics, forwarded,
-quoted, protected, expiring, and media content are excluded. The automated
+quoted, protected, expiring, and unsupported media content are excluded. The automated
 workflow uses synthetic fixtures; live Test-DC content acceptance remains a
-separate human check. Image delivery remains future work.
+separate human check. See [image access](docs/image-access.md) for discovery,
+native image delivery, permission, and byte/pixel limits.
 
 Authentication and access grants belong to the human operator. Sending,
 editing, deleting, and account administration are outside the read-first MCP

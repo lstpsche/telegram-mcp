@@ -57,7 +57,7 @@ Passing both method checks does not enable production login. Production remains
 a separate, explicit authorization and implementation decision.
 
 MCP consumer acceptance additionally requires registering the built relay in a
-real agent client, discovering the six static tools, and verifying unavailable
+real agent client, discovering the eight static tools, and verifying unavailable
 message access before login. After separately establishing eligibility and a
 scoped grant, discover the allowed chat, read history and zero-neighbor context,
 and verify the actual read receipt in another Telegram client. Revoke the grant
@@ -82,7 +82,22 @@ restart. Corrupt checkpoints fail without replacement RPCs.
 
 Reader and stdio tests additionally verify live search continuation after
 service reconstruction, edited/protected/deleted context targets, account
-rotation/logout invalidation, and readiness transitions for all six tools.
+rotation/logout invalidation, and readiness transitions for the text and metadata tools.
 Unavailable data tools release no result and cause no fetch or receipt. These
 fixtures establish local behavior, not real network reconnect or Telegram
 client acceptance.
+
+Synthetic image tests cover explicit permission, safe captionless metadata,
+source-bound handle invalidation, exact-source replacement/deletion, bounded
+reference renewal and DC pools, JPEG/PNG corruption and pixel/byte limits,
+receipt and audit failures, and native image content through the stdio relay.
+The client test opens a scoped photo and a no-caption PNG larger than the input
+frame limit while preserving source identity and exact delivered bytes.
+
+Combined human acceptance additionally requires a named scope with at least two
+eligible dialogs, scoped text continuation, exact context, a permitted photo
+and JPEG/PNG attachment, and a known visual question answered by the actual
+agent. Check declared receipts in another client and verify denial after scope
+edits, image revocation, source replacement/deletion, and restart with changed
+authority. Synthetic native blocks alone do not prove visual interpretation.
+See [image access](image-access.md).
