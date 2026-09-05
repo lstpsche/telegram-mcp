@@ -7,6 +7,7 @@ type DialogPosition struct {
 	Peer      string `json:"peer"`
 	MessageID int32  `json:"message_id"`
 	Date      int32  `json:"date"`
+	Pinned    bool   `json:"pinned,omitempty"`
 }
 
 func (p DialogPosition) Valid() bool {
@@ -14,7 +15,7 @@ func (p DialogPosition) Valid() bool {
 		return false
 	}
 	if p.Peer == "" {
-		return p.MessageID == 0 && p.Date == 0
+		return p.MessageID == 0 && p.Date == 0 && !p.Pinned
 	}
 	_, err := ParsePeerID(p.Peer)
 	return err == nil && p.MessageID > 0 && p.Date > 0

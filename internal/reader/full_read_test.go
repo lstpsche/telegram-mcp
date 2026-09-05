@@ -148,7 +148,7 @@ func TestFullReadDialogPaginationBindingAndRevocation(t *testing.T) {
 			s, f, p, _, g := testService(t)
 			ctx := context.Background()
 			setFullRead(t, p, true)
-			position := model.DialogPosition{Peer: g.Peer.String(), MessageID: 20, Date: 100}
+			position := model.DialogPosition{Peer: g.Peer.String(), MessageID: 20, Date: 100, Pinned: true}
 			backend := &fullReadBackend{fakeBackend: f}
 			backend.dialog = func(_ context.Context, pos model.DialogPosition, limit int) (model.DialogPage, error) {
 				if pos == (model.DialogPosition{}) {

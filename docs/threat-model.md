@@ -292,6 +292,15 @@ Tokens bind operation, page size, epoch, revision and a fixed expiry and are
 checked again after audit. No failed page becomes empty success. Pagination is
 live and can shift when Telegram dialogs change.
 
+Telegram's requested dialog limit is not a response-size guarantee. The adapter
+caps each returned dialog/message/user/chat vector at 200 before metadata writes,
+validates dialog identities and pinned ordering, then consumes at most the
+requested page size. Continuation uses the last consumed dialog, including an
+excluded one, so overfetch does not skip entries. The signed pinned-boundary bit
+distinguishes refetching a pinned prefix from date-based ordinary pagination;
+ordinary requests exclude already visited pins. A missing or unpinned
+boundary fails explicitly. No response or pinned-list cache is introduced.
+
 Supergroup lookups validate `Megagroup` and reject broadcast/forum/minimal,
 forbidden, left, restricted and protected entities both before content fetch and
 on the returned page. Bot and anonymous/channel authors remain excluded.

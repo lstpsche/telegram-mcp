@@ -3,12 +3,66 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/gotd/td/bin"
 	"github.com/gotd/td/tg"
 	"github.com/lstpsche/telegram-mcp/internal/model"
 )
+
+func TestDialogPagesBoundOverfetchedPinnedResults(t *testing.T) {
+	calls := 0
+	account, _ := newReadTestAccount(t, func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
+		if _, ok := in.(*tg.UpdatesGetStateRequest); ok {
+			return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
+		}
+		q, ok := in.(*tg.MessagesGetDialogsRequest)
+		if !ok || q.Limit != 1 {
+			return errors.New("unexpected RPC")
+		}
+		calls++
+		ids := []int64{1, 2, 3, 4, 5}
+		if calls <= 4 {
+			if q.ExcludePinned || q.OffsetID != 0 {
+				t.Fatal("pinned continuation must start from the live pinned list")
+			}
+		} else {
+			if !q.ExcludePinned || q.OffsetID != 4 {
+				t.Fatal("ordinary continuation must exclude already delivered pins")
+			}
+			ids = []int64{5}
+		}
+		page := &tg.MessagesDialogs{}
+		for _, id := range ids {
+			top := int(id)
+			date := 100 - int(id)
+			// New messages do not change pin order.
+			if id <= 3 {
+				top += calls * 10
+				date = 100 + top
+			}
+			page.Dialogs = append(page.Dialogs, &tg.Dialog{Pinned: id <= 3, Peer: &tg.PeerChat{ChatID: id}, TopMessage: top})
+			page.Chats = append(page.Chats, &tg.Chat{ID: id, Title: "synthetic", Photo: &tg.ChatPhotoEmpty{}, Date: 100})
+			page.Messages = append(page.Messages, &tg.Message{ID: top, PeerID: &tg.PeerChat{ChatID: id}, Date: date, Message: "incidental body"})
+		}
+		return encodeReadResponse(out, page)
+	})
+	position := model.DialogPosition{}
+	for id := 1; id <= 5; id++ {
+		page, err := account.Dialogs(context.Background(), position, 1)
+		if err != nil {
+			t.Fatal("overfetched page failed", err)
+		}
+		if page.Scanned != 1 || len(page.Items) != 1 || page.Items[0].Chat.ID.String() != fmt.Sprintf("tgpeer:v1:chat:%d", id) || page.Next == nil {
+			t.Fatal("page skipped or repeated a dialog", page)
+		}
+		position = *page.Next
+	}
+	if position != (model.DialogPosition{Folder: 1}) || calls != 5 {
+		t.Fatal("folder ended before buffered dialogs were consumed")
+	}
+}
 
 func TestDialogPagesTraverseExcludedBoundaryAndArchivedFolder(t *testing.T) {
 	calls := 0
@@ -62,7 +116,7 @@ func TestDialogPagesTraverseExcludedBoundaryAndArchivedFolder(t *testing.T) {
 }
 
 func TestDialogPagesRejectMalformedOrNonprogressingResults(t *testing.T) {
-	for _, failure := range []string{"oversized", "missing_date", "duplicate", "wrong_message_peer", "not_modified", "repeat", "bad_count"} {
+	for _, failure := range []string{"oversized", "messages_oversized", "missing_date", "duplicate", "wrong_message_peer", "not_modified", "repeat", "bad_count", "missing_pin", "unpinned_boundary", "misordered_pin", "unexpected_pin"} {
 		t.Run(failure, func(t *testing.T) {
 			account, _ := newReadTestAccount(t, func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
 				if _, ok := in.(*tg.MessagesGetDialogsRequest); !ok {
@@ -74,7 +128,14 @@ func TestDialogPagesRejectMalformedOrNonprogressingResults(t *testing.T) {
 				page := &tg.MessagesDialogsSlice{Count: 2, Dialogs: []tg.DialogClass{&tg.Dialog{Peer: &tg.PeerChat{ChatID: 42}, TopMessage: 7}}, Chats: []tg.ChatClass{&tg.Chat{ID: 42, Title: "synthetic", Photo: &tg.ChatPhotoEmpty{}, Date: 100}}, Messages: []tg.MessageClass{&tg.Message{ID: 7, PeerID: &tg.PeerChat{ChatID: 42}, Date: 90}}}
 				switch failure {
 				case "oversized":
-					page.Dialogs = append(page.Dialogs, &tg.Dialog{Peer: &tg.PeerChat{ChatID: 43}, TopMessage: 8})
+					for len(page.Dialogs) < 201 {
+						page.Dialogs = append(page.Dialogs, page.Dialogs[0])
+					}
+					page.Count = 201
+				case "messages_oversized":
+					for len(page.Messages) < 201 {
+						page.Messages = append(page.Messages, page.Messages[0])
+					}
 				case "missing_date":
 					page.Messages = nil
 				case "duplicate":
@@ -83,6 +144,10 @@ func TestDialogPagesRejectMalformedOrNonprogressingResults(t *testing.T) {
 					page.Messages[0].(*tg.Message).PeerID = &tg.PeerChat{ChatID: 43}
 				case "bad_count":
 					page.Count = 0
+				case "unexpected_pin":
+					page.Dialogs[0].(*tg.Dialog).Pinned = true
+				case "misordered_pin":
+					page.Dialogs = append(page.Dialogs, &tg.Dialog{Pinned: true, Peer: &tg.PeerChat{ChatID: 43}, TopMessage: 8})
 				}
 				return encodeReadResponse(out, page)
 			})
@@ -91,12 +156,31 @@ func TestDialogPagesRejectMalformedOrNonprogressingResults(t *testing.T) {
 			if failure == "repeat" {
 				position = model.DialogPosition{Peer: "tgpeer:v1:chat:42", MessageID: 7, Date: 90}
 			}
+			if failure == "missing_pin" {
+				position = model.DialogPosition{Peer: "tgpeer:v1:chat:43", MessageID: 7, Date: 90, Pinned: true}
+			}
+			if failure == "unpinned_boundary" {
+				position = model.DialogPosition{Peer: "tgpeer:v1:chat:42", MessageID: 6, Date: 90, Pinned: true}
+			}
+			if failure == "unexpected_pin" {
+				position = model.DialogPosition{Peer: "tgpeer:v1:chat:43", MessageID: 6, Date: 90}
+			}
 			if failure == "duplicate" {
 				limit = 2
 			}
 			page, err := account.Dialogs(context.Background(), position, limit)
 			if err == nil || len(page.Items) != 0 || page.Next != nil {
 				t.Fatal("malformed page returned", page, err)
+			}
+			expected := model.ErrorInvalidReference
+			if failure == "oversized" || failure == "messages_oversized" {
+				expected = model.ErrorResultTooLarge
+			}
+			if failure == "missing_pin" || failure == "unpinned_boundary" {
+				expected = model.ErrorCursorInvalid
+			}
+			if model.TextErrorCategory(err) != expected {
+				t.Fatal("wrong failure boundary", err)
 			}
 		})
 	}

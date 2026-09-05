@@ -28,7 +28,8 @@ func (r *readRuntime) peerID(value tg.PeerClass) (model.PeerID, error) {
 }
 
 // Dialogs requires account-wide authority or explicit human peer discovery. A page consumes at
-// most limit remote dialogs, including unsupported entries. No bodies escape.
+// most limit remote dialogs, including unsupported entries. Telegram may return
+// more candidates; bound that response separately and resume after the consumed window.
 func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, limit int) (model.DialogPage, error) {
 	if !a.Ready() {
 		return model.DialogPage{}, model.TextError(model.ErrorNotReady, nil)
@@ -39,7 +40,7 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 	bounded, cancel := context.WithTimeout(ctx, readDeadline)
 	defer cancel()
 	var input tg.InputPeerClass = &tg.InputPeerEmpty{}
-	if position.Peer != "" {
+	if position.Peer != "" && !position.Pinned {
 		peer, err := model.ParsePeerID(position.Peer)
 		if err != nil {
 			return model.DialogPage{}, err
@@ -49,7 +50,11 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 			return model.DialogPage{}, err
 		}
 	}
-	request := &tg.MessagesGetDialogsRequest{OffsetPeer: input, OffsetID: int(position.MessageID), OffsetDate: int(position.Date), Limit: limit}
+	request := &tg.MessagesGetDialogsRequest{OffsetPeer: input, Limit: limit}
+	if !position.Pinned {
+		request.OffsetID, request.OffsetDate = int(position.MessageID), int(position.Date)
+		request.ExcludePinned = position.Peer != ""
+	}
 	request.SetFolderID(position.Folder)
 	response, err := a.reads.api.MessagesGetDialogs(bounded, request)
 	if err != nil {
@@ -73,9 +78,44 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 	default:
 		return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
 	}
-	if len(dialogs) > limit || len(messages) > limit || len(users) > 200 || len(groups) > 200 {
+	if len(dialogs) > 200 || len(messages) > 200 || len(users) > 200 || len(groups) > 200 {
 		return model.DialogPage{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
+	// Pinned order is independent of message dates. While a page ends inside
+	// that prefix, refetch it and resume after the exact pinned peer. Once an
+	// ordinary dialog is consumed, use Telegram's offset triple and exclude pins.
+	start := 0
+	seen := make(map[model.PeerID]bool)
+	ordinary := false
+	for i, value := range dialogs {
+		dialog, ok := value.(*tg.Dialog)
+		if !ok {
+			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		id, err := a.reads.peerID(dialog.Peer)
+		if err != nil || seen[id] || dialog.TopMessage <= 0 || dialog.TopMessage > math.MaxInt32 || dialog.UnreadCount < 0 || dialog.UnreadCount > math.MaxInt32 {
+			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, err)
+		}
+		seen[id] = true
+		if dialog.Pinned && (ordinary || request.ExcludePinned) {
+			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		ordinary = ordinary || !dialog.Pinned
+		if position.Pinned && id.String() == position.Peer {
+			if !dialog.Pinned {
+				return model.DialogPage{}, model.TextError(model.ErrorCursorInvalid, nil)
+			}
+			start = i + 1
+		}
+	}
+	if position.Pinned && start == 0 {
+		return model.DialogPage{}, model.TextError(model.ErrorCursorInvalid, nil)
+	}
+	end := min(start+limit, len(dialogs))
+	if end < len(dialogs) {
+		complete = false
+	}
+	dialogs = dialogs[start:end]
 	if err := a.reads.saveUsers(bounded, users); err != nil {
 		return model.DialogPage{}, err
 	}
@@ -130,18 +170,13 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 		supported[id] = title
 	}
 	result := model.DialogPage{Items: make([]model.DialogEntry, 0, len(dialogs)), Scanned: len(dialogs)}
-	seen := make(map[model.PeerID]bool)
 	var last *tg.Dialog
 	for _, value := range dialogs {
-		dialog, ok := value.(*tg.Dialog)
-		if !ok {
-			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
-		}
+		dialog := value.(*tg.Dialog) // Validated before selecting the bounded window.
 		id, err := a.reads.peerID(dialog.Peer)
-		if err != nil || seen[id] || dialog.TopMessage <= 0 || dialog.TopMessage > math.MaxInt32 || dialog.UnreadCount < 0 || dialog.UnreadCount > math.MaxInt32 {
-			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, err)
+		if err != nil {
+			return model.DialogPage{}, err
 		}
-		seen[id] = true
 		last = dialog
 		title, ok := supported[id]
 		if !ok {
@@ -174,7 +209,7 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 		if date <= 0 || date > math.MaxInt32 {
 			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
-		next := model.DialogPosition{Folder: position.Folder, Peer: peer.String(), MessageID: int32(last.TopMessage), Date: int32(date)}
+		next := model.DialogPosition{Folder: position.Folder, Peer: peer.String(), MessageID: int32(last.TopMessage), Date: int32(date), Pinned: last.Pinned}
 		if next == position {
 			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
 		}

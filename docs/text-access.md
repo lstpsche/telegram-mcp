@@ -40,7 +40,13 @@ cursor even when a page is empty: unsupported or read dialogs can consume the
 page. These are live pages, not a snapshot; concurrent dialog changes can move
 entries between pages. Tokens retain a fixed 15-minute expiry and bind the tool,
 page size, account epoch and policy revision. The signed position contains only
-folder, typed peer, top-message ID and date; no title, body or access hash.
+folder, typed peer, top-message ID, date and whether the boundary is pinned;
+no title, body or access hash. Telegram can return more dialogs than requested.
+The adapter accepts at most 200 entries in each response vector, consumes only
+the requested candidate window, and resumes after its last dialog. Pinned
+continuations refetch the live pinned prefix; ordinary continuations exclude
+pinned dialogs. A missing or unpinned boundary invalidates the
+cursor. Unconsumed entries are neither cached nor treated as delivered.
 Scoped lists still inspect only their bounded membership and accept no cursor.
 
 The daemon requires an existing local authorization epoch before opening the
