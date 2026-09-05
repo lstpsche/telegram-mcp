@@ -137,3 +137,16 @@ func (a *Application) withPolicy(ctx context.Context, operation func(*policy.Lea
 	defer func() { resultError = errors.Join(resultError, lease.Close()) }()
 	return operation(lease)
 }
+
+// FullRead inspects the current account's explicit read-access mode.
+func (a *Application) FullRead(ctx context.Context) (enabled bool, err error) {
+	err = a.withPolicy(ctx, func(lease *policy.Lease) error {
+		enabled, err = lease.FullRead(ctx)
+		return err
+	})
+	return enabled, err
+}
+
+func (a *Application) SetFullRead(ctx context.Context, enabled bool) error {
+	return a.withPolicy(ctx, func(lease *policy.Lease) error { return lease.SetFullRead(ctx, enabled) })
+}

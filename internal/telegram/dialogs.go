@@ -1,0 +1,193 @@
+package telegram
+
+import (
+	"context"
+	"math"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/gotd/td/tg"
+	"github.com/lstpsche/telegram-mcp/internal/model"
+)
+
+func (r *readRuntime) peerID(value tg.PeerClass) (model.PeerID, error) {
+	switch p := value.(type) {
+	case *tg.PeerUser:
+		kind := model.PeerKindUser
+		if p.UserID == r.self.Load() {
+			kind = model.PeerKindSelf
+		}
+		return model.NewPeerID(kind, p.UserID)
+	case *tg.PeerChat:
+		return model.NewPeerID(model.PeerKindChat, p.ChatID)
+	case *tg.PeerChannel:
+		return model.NewPeerID(model.PeerKindChannel, p.ChannelID)
+	default:
+		return model.PeerID{}, model.TextError(model.ErrorInvalidReference, nil)
+	}
+}
+
+// Dialogs requires account-wide authority or explicit human peer discovery. A page consumes at
+// most limit remote dialogs, including unsupported entries. No bodies escape.
+func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, limit int) (model.DialogPage, error) {
+	if !a.Ready() {
+		return model.DialogPage{}, model.TextError(model.ErrorNotReady, nil)
+	}
+	if !position.Valid() || model.ValidatePageSize(limit) != nil {
+		return model.DialogPage{}, model.TextError(model.ErrorInvalidInput, nil)
+	}
+	bounded, cancel := context.WithTimeout(ctx, readDeadline)
+	defer cancel()
+	var input tg.InputPeerClass = &tg.InputPeerEmpty{}
+	if position.Peer != "" {
+		peer, err := model.ParsePeerID(position.Peer)
+		if err != nil {
+			return model.DialogPage{}, err
+		}
+		input, err = a.reads.inputPeer(bounded, peer)
+		if err != nil {
+			return model.DialogPage{}, err
+		}
+	}
+	request := &tg.MessagesGetDialogsRequest{OffsetPeer: input, OffsetID: int(position.MessageID), OffsetDate: int(position.Date), Limit: limit}
+	request.SetFolderID(position.Folder)
+	response, err := a.reads.api.MessagesGetDialogs(bounded, request)
+	if err != nil {
+		return model.DialogPage{}, readError(err)
+	}
+	var dialogs []tg.DialogClass
+	var users []tg.UserClass
+	var groups []tg.ChatClass
+	var messages []tg.MessageClass
+	complete := false
+	switch page := response.(type) {
+	case *tg.MessagesDialogs:
+		dialogs, users, groups, messages = page.Dialogs, page.Users, page.Chats, page.Messages
+		complete = true
+	case *tg.MessagesDialogsSlice:
+		dialogs, users, groups, messages = page.Dialogs, page.Users, page.Chats, page.Messages
+		if page.Count < len(dialogs) {
+			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		complete = len(dialogs) == 0
+	default:
+		return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+	}
+	if len(dialogs) > limit || len(messages) > limit || len(users) > 200 || len(groups) > 200 {
+		return model.DialogPage{}, model.TextError(model.ErrorResultTooLarge, nil)
+	}
+	if err := a.reads.saveUsers(bounded, users); err != nil {
+		return model.DialogPage{}, err
+	}
+	if err := a.reads.saveChannels(bounded, groups); err != nil {
+		return model.DialogPage{}, err
+	}
+	supported := make(map[model.PeerID]string)
+	self, err := model.NewPeerID(model.PeerKindSelf, a.reads.self.Load())
+	if err != nil {
+		return model.DialogPage{}, err
+	}
+	supported[self] = "Saved Messages"
+	for _, value := range users {
+		user, ok := value.(*tg.User)
+		if !ok || !ordinaryUser(user) || user.ID == self.TelegramID() {
+			continue
+		}
+		if hash, ok := user.GetAccessHash(); !ok || hash == 0 {
+			continue
+		}
+		id, err := model.NewPeerID(model.PeerKindUser, user.ID)
+		if err != nil {
+			return model.DialogPage{}, err
+		}
+		supported[id] = strings.TrimSpace(user.FirstName + " " + user.LastName)
+	}
+	for _, value := range groups {
+		var id model.PeerID
+		var title string
+		switch group := value.(type) {
+		case *tg.Chat:
+			if !ordinaryChat(group) {
+				continue
+			}
+			id, err = model.NewPeerID(model.PeerKindChat, group.ID)
+			title = group.Title
+		case *tg.Channel:
+			if !ordinarySupergroup(group) {
+				continue
+			}
+			if hash, ok := group.GetAccessHash(); !ok || hash == 0 {
+				continue
+			}
+			id, err = model.NewPeerID(model.PeerKindChannel, group.ID)
+			title = group.Title
+		default:
+			continue
+		}
+		if err != nil {
+			return model.DialogPage{}, err
+		}
+		supported[id] = title
+	}
+	result := model.DialogPage{Items: make([]model.DialogEntry, 0, len(dialogs)), Scanned: len(dialogs)}
+	seen := make(map[model.PeerID]bool)
+	var last *tg.Dialog
+	for _, value := range dialogs {
+		dialog, ok := value.(*tg.Dialog)
+		if !ok {
+			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		id, err := a.reads.peerID(dialog.Peer)
+		if err != nil || seen[id] || dialog.TopMessage <= 0 || dialog.TopMessage > math.MaxInt32 || dialog.UnreadCount < 0 || dialog.UnreadCount > math.MaxInt32 {
+			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, err)
+		}
+		seen[id] = true
+		last = dialog
+		title, ok := supported[id]
+		if !ok {
+			continue
+		}
+		if !utf8.ValidString(title) || len(title) > 4096 {
+			return model.DialogPage{}, model.TextError(model.ErrorResultTooLarge, nil)
+		}
+		result.Items = append(result.Items, model.DialogEntry{Chat: model.Chat{ID: id, Title: title}, Unread: model.Unread{Peer: id, Count: dialog.UnreadCount, Marked: dialog.UnreadMark}})
+	}
+	if !complete {
+		if last == nil {
+			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		peer, err := a.reads.peerID(last.Peer)
+		if err != nil {
+			return model.DialogPage{}, err
+		}
+		var date int
+		for _, value := range messages {
+			// Service messages also provide a valid pagination boundary.
+			message, ok := value.AsNotEmpty()
+			if ok && message.GetID() == last.TopMessage && matchesPeer(peer, message.GetPeerID()) {
+				if date != 0 {
+					return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+				}
+				date = message.GetDate()
+			}
+		}
+		if date <= 0 || date > math.MaxInt32 {
+			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		next := model.DialogPosition{Folder: position.Folder, Peer: peer.String(), MessageID: int32(last.TopMessage), Date: int32(date)}
+		if next == position {
+			return model.DialogPage{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		// Prove that continuation can be resolved without exposing an access hash.
+		if _, err := a.reads.inputPeer(bounded, peer); err != nil {
+			return model.DialogPage{}, err
+		}
+		result.Next = &next
+	} else if position.Folder == 0 {
+		result.Next = &model.DialogPosition{Folder: 1}
+	}
+	if err := a.reads.synchronize(bounded); err != nil {
+		return model.DialogPage{}, model.TextError(model.ErrorFreshnessDegraded, err)
+	}
+	return result, nil
+}

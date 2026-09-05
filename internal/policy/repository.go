@@ -135,7 +135,17 @@ func scanGrant(row interface{ Scan(...any) error }) (Grant, error) {
 func (l *Lease) Grant(ctx context.Context, peer model.PeerID) (Grant, error) {
 	var grant Grant
 	err := l.transaction(ctx, func(tx *sql.Tx) error {
-		var err error
+		full, err := fullReadEnabled(ctx, tx, l.epoch)
+		if err != nil {
+			return err
+		}
+		if full {
+			if peer.String() == "" {
+				return model.TextError(model.ErrorInvalidReference, nil)
+			}
+			grant = fullReadGrant(peer)
+			return nil
+		}
 		grant, err = scanGrant(tx.QueryRowContext(ctx, "SELECT "+grantColumns+" FROM text_grants WHERE peer = ? AND authorization_epoch = ?", peer.String(), l.epoch))
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.TextError(model.ErrorPolicyDenied, ErrDenied)

@@ -51,7 +51,11 @@ func New(backend Backend, repository *policy.Repository, now func() time.Time, c
 
 func (s *Service) Ready() bool { return s != nil && s.backend.Ready() }
 
-func (s *Service) ListChats(ctx context.Context, requestID string, limit int, scopes ...model.ScopeID) (result Result, resultErr error) {
+func (s *Service) ListChats(ctx context.Context, requestID string, limit int, scopes ...model.ScopeID) (Result, error) {
+	return s.Chats(ctx, requestID, limit, scopes, "")
+}
+
+func (s *Service) Chats(ctx context.Context, requestID string, limit int, scopes []model.ScopeID, token string) (result Result, resultErr error) {
 	if err := model.ValidatePageSize(limit); err != nil {
 		return Result{}, model.TextError(model.ErrorInvalidInput, err)
 	}
@@ -65,12 +69,26 @@ func (s *Service) ListChats(ctx context.Context, requestID string, limit int, sc
 		return Result{}, err
 	}
 	count := 0
+	var dialogExpiry int64
 	defer func() {
-		resultErr = s.finish(ctx, lease, requestID, "list_chats", count, false, resultErr)
+		resultErr = s.finish(ctx, lease, requestID, "list_chats", count, false, resultErr, func() error {
+			return s.checkDialogRelease(ctx, dialogExpiry)
+		})
 		if resultErr != nil {
 			result = Result{}
 		}
 	}()
+	full, err := lease.FullRead(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	if full && len(scopes) == 0 {
+		result, count, err = s.fullDialogs(ctx, lease, requestID, "list_chats", limit, token, &dialogExpiry)
+		return result, err
+	}
+	if token != "" {
+		return Result{}, model.TextError(model.ErrorCursorInvalid, nil)
+	}
 	grants, coverage, err := s.selectGrants(ctx, lease, scopes)
 	if err != nil {
 		return Result{}, err
@@ -85,7 +103,7 @@ func (s *Service) ListChats(ctx context.Context, requestID string, limit int, sc
 		if err := s.checkGrantsCurrent(ctx, selected); err != nil {
 			return Result{}, err
 		}
-		grantContext, stop := context.WithTimeout(ctx, grant.ExpiresAt.Sub(s.now()))
+		grantContext, stop := context.WithTimeout(ctx, grant.Deadline(s.now().Add(OperationTimeout)).Sub(s.now()))
 		chat, err := s.backend.Chat(grantContext, grant.Peer)
 		stop()
 		if err != nil {
@@ -151,7 +169,7 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 	if err != nil {
 		return Result{}, err
 	}
-	ctx, expires := context.WithTimeout(ctx, grant.ExpiresAt.Sub(s.now()))
+	ctx, expires := context.WithTimeout(ctx, grant.Deadline(s.now().Add(OperationTimeout)).Sub(s.now()))
 	defer expires()
 	if query.Target > 0 && (query.Target < grant.MinID || query.Target > grant.MaxID) {
 		return Result{}, model.TextError(model.ErrorPolicyDenied, nil)

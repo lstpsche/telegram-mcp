@@ -53,7 +53,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if grant.Profile == policy.ProfileSelfAuthored && grant.Author != s.backend.SelfID() {
 		return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
 	}
-	ctx, expires := context.WithTimeout(ctx, grant.ExpiresAt.Sub(s.now()))
+	ctx, expires := context.WithTimeout(ctx, grant.Deadline(s.now().Add(OperationTimeout)).Sub(s.now()))
 	defer expires()
 	epoch, revision, err := lease.Binding(ctx)
 	if err != nil {
@@ -61,16 +61,14 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	}
 	binding := cursorBinding{Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(query), Limit: limit, Epoch: epoch, Revision: revision}
 	deadline := s.now().Add(cursorLifetime)
-	if grant.ExpiresAt.Before(deadline) {
-		deadline = grant.ExpiresAt
-	}
+	deadline = grant.Deadline(deadline)
 	cursor = searchCursor{Binding: binding, Ceiling: grant.MaxID, Expires: deadline.Unix()}
 	if token != "" {
 		cursor, err = s.decodeCursor(token, binding)
 		if err != nil {
 			return Result{}, err
 		}
-		if cursor.Before <= grant.MinID || cursor.Ceiling > grant.MaxID || cursor.Expires > grant.ExpiresAt.Unix() {
+		if cursor.Before <= grant.MinID || cursor.Ceiling > grant.MaxID || cursor.Expires > grant.Deadline(s.now().Add(cursorLifetime)).Unix() {
 			return Result{}, model.TextError(model.ErrorCursorInvalid, nil)
 		}
 	}
@@ -177,9 +175,13 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 	return searchWindow{items: items, lowest: lowest, highest: highest, partial: partial}, nil
 }
 
-// ListUnread returns whole-dialog counts for the bounded set of current grants.
+// ListUnread returns the first page of authorized whole-dialog counts.
 // It never substitutes a partial result when any required peer lookup fails.
-func (s *Service) ListUnread(ctx context.Context, requestID string, scopes ...model.ScopeID) (result Result, resultErr error) {
+func (s *Service) ListUnread(ctx context.Context, requestID string, scopes ...model.ScopeID) (Result, error) {
+	return s.UnreadPage(ctx, requestID, scopes, "")
+}
+
+func (s *Service) UnreadPage(ctx context.Context, requestID string, scopes []model.ScopeID, token string) (result Result, resultErr error) {
 	if !s.Ready() {
 		return Result{}, model.TextError(model.ErrorNotReady, nil)
 	}
@@ -190,12 +192,26 @@ func (s *Service) ListUnread(ctx context.Context, requestID string, scopes ...mo
 		return Result{}, err
 	}
 	count := 0
+	var dialogExpiry int64
 	defer func() {
-		resultErr = s.finish(ctx, lease, requestID, "list_unread", count, false, resultErr)
+		resultErr = s.finish(ctx, lease, requestID, "list_unread", count, false, resultErr, func() error {
+			return s.checkDialogRelease(ctx, dialogExpiry)
+		})
 		if resultErr != nil {
 			result = Result{}
 		}
 	}()
+	full, err := lease.FullRead(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	if full && len(scopes) == 0 {
+		result, count, err = s.fullDialogs(ctx, lease, requestID, "list_unread", model.MaximumPageSize, token, &dialogExpiry)
+		return result, err
+	}
+	if token != "" {
+		return Result{}, model.TextError(model.ErrorCursorInvalid, nil)
+	}
 	grants, coverage, err := s.selectGrants(ctx, lease, scopes)
 	if err != nil {
 		return Result{}, err
@@ -205,7 +221,7 @@ func (s *Service) ListUnread(ctx context.Context, requestID string, scopes ...mo
 		if err := s.checkGrantsCurrent(ctx, grants); err != nil {
 			return Result{}, err
 		}
-		bounded, stop := context.WithTimeout(ctx, grant.ExpiresAt.Sub(s.now()))
+		bounded, stop := context.WithTimeout(ctx, grant.Deadline(s.now().Add(OperationTimeout)).Sub(s.now()))
 		unread, err := s.backend.Unread(bounded, grant.Peer)
 		stop()
 		if err != nil {

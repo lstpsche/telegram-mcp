@@ -63,9 +63,7 @@ func (s *Service) imageDescriptor(candidate model.Candidate, grant policy.Grant,
 		return nil, err
 	}
 	deadline := s.now().Add(imageLifetime)
-	if grant.ExpiresAt.Before(deadline) {
-		deadline = grant.ExpiresAt
-	}
+	deadline = grant.Deadline(deadline)
 	handle := imageHandle{Operation: "open_image", Message: candidate.Message.ID, Digest: s.imageDigest(source), Authority: authority, Expires: deadline.Unix()}
 	encoded, err := json.Marshal(handle)
 	if err != nil {
@@ -158,7 +156,7 @@ func (s *Service) OpenImage(ctx context.Context, requestID, token string) (resul
 	if err != nil {
 		return Result{}, err
 	}
-	if !grant.Images || (grant.Profile == policy.ProfileSelfAuthored && grant.Author != s.backend.SelfID()) || handle.Authority != (imageAuthority{epoch, revision}) || handle.Expires > grant.ExpiresAt.Unix() {
+	if !grant.Images || (grant.Profile == policy.ProfileSelfAuthored && grant.Author != s.backend.SelfID()) || handle.Authority != (imageAuthority{epoch, revision}) || handle.Expires > grant.Deadline(s.now().Add(imageLifetime)).Unix() {
 		return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
 	}
 	check := func() error {

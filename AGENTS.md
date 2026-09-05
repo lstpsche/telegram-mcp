@@ -17,8 +17,9 @@
 - Test-DC authentication, production login, real-data use, publication,
   deployment, and acceptance are separate decisions. Production configuration
   requires explicit human eligibility attestation; Test DC selection is explicit.
-  Credentials remain interactive and local. Text access requires separate exact
-  grants, and image access requires an additional opt-in. Automated acceptance
+  Credentials remain interactive and local. Text access requires exact restricted
+  grants or human-enabled Full read access. Restricted images require an additional
+  opt-in; Full read access includes supported images and read acknowledgments. Automated acceptance
   uses synthetic local fixtures; implementation does not authorize real-data use.
 
 ## Trust and data rules

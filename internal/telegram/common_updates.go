@@ -3,8 +3,8 @@ package telegram
 import "github.com/gotd/td/tg"
 
 // commonUpdates excludes independent channel pts streams while retaining the
-// enclosing seq/date and all common pts/qts events. Channel content is never
-// readable by this adapter, so it must not start channel recovery workers.
+// enclosing seq/date and all common pts/qts events. Supergroup reads use live
+// RPC responses and receipt readback, not channel subscriptions or cached bodies.
 func commonUpdates(value tg.UpdatesClass) (tg.UpdatesClass, error) {
 	switch value := value.(type) {
 	case *tg.Updates:

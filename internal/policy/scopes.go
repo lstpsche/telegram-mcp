@@ -31,7 +31,7 @@ func validateScope(name string, peers []model.PeerID) error {
 	}
 	seen := make(map[model.PeerID]struct{}, len(peers))
 	for _, peer := range peers {
-		if peer.String() == "" || peer.Kind() == model.PeerKindChannel {
+		if peer.String() == "" {
 			return model.TextError(model.ErrorInvalidInput, ErrInvalidScope)
 		}
 		if _, exists := seen[peer]; exists {

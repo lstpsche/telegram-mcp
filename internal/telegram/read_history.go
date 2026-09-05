@@ -28,6 +28,15 @@ func (r *readRuntime) inputPeer(ctx context.Context, peer model.PeerID) (tg.Inpu
 			return nil, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		return &tg.InputPeerChat{ChatID: peer.TelegramID()}, nil
+	case model.PeerKindChannel:
+		hash, found, err := r.storage.GetChannelAccessHash(ctx, r.self.Load(), peer.TelegramID())
+		if err != nil {
+			return nil, model.TextError(model.ErrorFreshnessDegraded, err)
+		}
+		if !found || hash == 0 {
+			return nil, model.TextError(model.ErrorNotReady, errors.New("Telegram peer metadata is missing"))
+		}
+		return &tg.InputPeerChannel{ChannelID: peer.TelegramID(), AccessHash: hash}, nil
 	case model.PeerKindUser:
 		if peer.TelegramID() == r.self.Load() {
 			return nil, model.TextError(model.ErrorUnsupportedPeer, nil)
@@ -66,6 +75,13 @@ func validateDialogEntities(peer model.PeerID, users []tg.UserClass, chats []tg.
 		}
 	}
 	for _, value := range chats {
+		if peer.Kind() == model.PeerKindChannel && value.GetID() == peer.TelegramID() {
+			group, ok := value.(*tg.Channel)
+			if !ok || !ordinarySupergroup(group) {
+				return model.TextError(model.ErrorUnsupportedPeer, nil)
+			}
+			matched = true
+		}
 		if peer.Kind() == model.PeerKindChat && value.GetID() == peer.TelegramID() {
 			chat, ok := value.(*tg.Chat)
 			if !ok || !ordinaryChat(chat) {
@@ -108,6 +124,23 @@ func (a *Account) Chat(ctx context.Context, peer model.PeerID) (model.Chat, erro
 		}
 		title = strings.TrimSpace(user.FirstName + " " + user.LastName)
 		if err := a.reads.saveUsers(bounded, users); err != nil {
+			return model.Chat{}, err
+		}
+	case *tg.InputPeerChannel:
+		result, err := a.reads.api.ChannelsGetChannels(bounded, []tg.InputChannelClass{&tg.InputChannel{ChannelID: input.ChannelID, AccessHash: input.AccessHash}})
+		if err != nil {
+			return model.Chat{}, readError(err)
+		}
+		groups := result.GetChats()
+		if len(groups) != 1 {
+			return model.Chat{}, model.TextError(model.ErrorUnsupportedPeer, nil)
+		}
+		group, ok := groups[0].(*tg.Channel)
+		if !ok || group.ID != peer.TelegramID() || !ordinarySupergroup(group) {
+			return model.Chat{}, model.TextError(model.ErrorUnsupportedPeer, nil)
+		}
+		title = group.Title
+		if err := a.reads.saveChannels(bounded, groups); err != nil {
 			return model.Chat{}, err
 		}
 	case *tg.InputPeerChat:
@@ -165,8 +198,19 @@ func (r *readRuntime) normalizePage(ctx context.Context, peer model.PeerID, resu
 	var page messagePage
 	switch value := result.(type) {
 	case *tg.MessagesMessages:
+		if peer.Kind() == model.PeerKindChannel {
+			return nil, model.TextError(model.ErrorInvalidReference, nil)
+		}
 		page = value
 	case *tg.MessagesMessagesSlice:
+		if peer.Kind() == model.PeerKindChannel {
+			return nil, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		page = value
+	case *tg.MessagesChannelMessages:
+		if peer.Kind() != model.PeerKindChannel || value.Pts <= 0 {
+			return nil, model.TextError(model.ErrorInvalidReference, nil)
+		}
 		page = value
 	default:
 		return nil, model.TextError(model.ErrorUnsupportedPeer, nil)
@@ -284,6 +328,8 @@ func matchesPeer(peer model.PeerID, value tg.PeerClass) bool {
 	switch value := value.(type) {
 	case *tg.PeerUser:
 		return (peer.Kind() == model.PeerKindUser || peer.Kind() == model.PeerKindSelf) && peer.TelegramID() == value.UserID
+	case *tg.PeerChannel:
+		return peer.Kind() == model.PeerKindChannel && peer.TelegramID() == value.ChannelID
 	case *tg.PeerChat:
 		return peer.Kind() == model.PeerKindChat && peer.TelegramID() == value.ChatID
 	default:
@@ -396,94 +442,25 @@ func (a *Account) History(ctx context.Context, q model.HistoryQuery) ([]model.Ca
 	return candidates, nil
 }
 
-// Discover is a bounded human control-plane operation. Dialog RPCs may carry
-// top-message bodies; only supported dialog names and IDs leave this adapter.
+// Discover is a bounded human control-plane operation. It returns supported
+// metadata from the first main-folder page, never bodies or read acknowledgments.
 func (a *Account) Discover(ctx context.Context) ([]model.Chat, error) {
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	var chats []model.Chat
 	err := a.Observe(bounded, func(ctx context.Context, status AuthorizationStatus) error {
-		if !status.Authorized || !a.Ready() {
+		if !status.Authorized {
 			return model.TextError(model.ErrorNotReady, nil)
 		}
-		result, err := a.reads.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{OffsetPeer: &tg.InputPeerEmpty{}, Limit: 100})
+		page, err := a.Dialogs(ctx, model.DialogPosition{}, 100)
 		if err != nil {
-			return readError(err)
-		}
-		var users []tg.UserClass
-		var groups []tg.ChatClass
-		var dialogs []tg.DialogClass
-		switch value := result.(type) {
-		case *tg.MessagesDialogs:
-			users = value.Users
-			groups = value.Chats
-			dialogs = value.Dialogs
-		case *tg.MessagesDialogsSlice:
-			users = value.Users
-			groups = value.Chats
-			dialogs = value.Dialogs
-		default:
-			return model.TextError(model.ErrorTelegramUnavailable, nil)
-		}
-		if len(dialogs) > 100 || len(groups) > 200 {
-			return model.TextError(model.ErrorResultTooLarge, nil)
-		}
-		if err := a.reads.saveUsers(ctx, users); err != nil {
 			return err
 		}
-		supported := map[model.PeerID]string{}
-		self, _ := model.NewPeerID(model.PeerKindSelf, a.reads.self.Load())
-		supported[self] = "Saved Messages"
-		for _, value := range users {
-			user, ok := value.(*tg.User)
-			if !ok || !ordinaryUser(user) || user.ID == a.reads.self.Load() {
-				continue
-			}
-			if hash, ok := user.GetAccessHash(); !ok || hash == 0 {
-				continue
-			}
-			id, _ := model.NewPeerID(model.PeerKindUser, user.ID)
-			supported[id] = strings.TrimSpace(user.FirstName + " " + user.LastName)
+		chats = make([]model.Chat, 0, len(page.Items))
+		for _, entry := range page.Items {
+			chats = append(chats, entry.Chat)
 		}
-		for _, value := range groups {
-			group, ok := value.(*tg.Chat)
-			if !ok || !ordinaryChat(group) {
-				continue
-			}
-			id, _ := model.NewPeerID(model.PeerKindChat, group.ID)
-			supported[id] = group.Title
-		}
-		chats = make([]model.Chat, 0, len(dialogs))
-		seen := map[model.PeerID]bool{}
-		for _, value := range dialogs {
-			dialog, ok := value.(*tg.Dialog)
-			if !ok {
-				continue
-			}
-			var id model.PeerID
-			switch peer := dialog.Peer.(type) {
-			case *tg.PeerUser:
-				kind := model.PeerKindUser
-				if peer.UserID == a.reads.self.Load() {
-					kind = model.PeerKindSelf
-				}
-				id, _ = model.NewPeerID(kind, peer.UserID)
-			case *tg.PeerChat:
-				id, _ = model.NewPeerID(model.PeerKindChat, peer.ChatID)
-			default:
-				continue
-			}
-			title, ok := supported[id]
-			if !ok || seen[id] {
-				continue
-			}
-			seen[id] = true
-			if !utf8.ValidString(title) || len(title) > 4096 {
-				return model.TextError(model.ErrorResultTooLarge, nil)
-			}
-			chats = append(chats, model.Chat{ID: id, Title: title})
-		}
-		return a.reads.synchronize(ctx)
+		return nil
 	})
 	if err != nil {
 		return nil, err

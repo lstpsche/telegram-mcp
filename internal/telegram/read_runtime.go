@@ -307,8 +307,8 @@ func (r *readRuntime) UpdatesGetDifference(ctx context.Context, q *tg.UpdatesGet
 	return result, nil
 }
 func (r *readRuntime) UpdatesGetChannelDifference(ctx context.Context, q *tg.UpdatesGetChannelDifferenceRequest) (tg.UpdatesChannelDifferenceClass, error) {
-	// Channel content is outside the supported text contract. Stop rather than
-	// allowing the updates manager to fetch unsupported channel history.
+	// The adapter does not subscribe to channel updates or maintain a channel
+	// cache. An unexpected recovery request must fail, never fabricate state.
 	err := errors.New("Telegram channel recovery is unsupported")
 	r.fail(err)
 	return nil, err
@@ -365,6 +365,9 @@ func (a *Account) Acknowledge(ctx context.Context, peer model.PeerID, through in
 	input, err := a.reads.inputPeer(bounded, peer)
 	if err != nil {
 		return err
+	}
+	if channel, ok := input.(*tg.InputPeerChannel); ok {
+		return a.acknowledgeSupergroup(bounded, peer, channel, through)
 	}
 	result, err := a.reads.api.MessagesReadHistory(bounded, &tg.MessagesReadHistoryRequest{Peer: input, MaxID: int(through)})
 	if err != nil {

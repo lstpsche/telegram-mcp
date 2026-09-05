@@ -31,8 +31,12 @@ as a fixed `invalid_input` tool error without echoing request fields.
 
 Text tools validate their static JSON schemas, reject duplicate or unknown
 fields, and reject null where a string or integer is required. `list_chats`
-accepts optional `scope` and `limit` (default 20, maximum 100) and returns only granted
-peer metadata; at most 20 grants exist. `list_messages` requires `peer` and
+accepts optional `scope`, `limit` (default 20, maximum 100), and `cursor`.
+Restricted mode lists granted metadata (at most 20 grants); Full read access
+paginates supported dialogs across main and archive, including filtered pages.
+Unscoped `list_unread` in Full mode scans 100 dialogs per page. Both return
+`next_cursor`; scopes and restricted lists reject cursors. Discovery tokens are
+signed, fixed-expiry (15 minutes), and tool/limit/epoch/revision bound. `list_messages` requires `peer` and
 accepts an optional typed exclusive `before` message and `limit`.
 `get_message_context` requires `message` and accepts `before`/`after` neighbor
 counts from 0 through 49, both defaulting to zero. A denied or absent target
@@ -47,8 +51,8 @@ tools advertise read side effects rather than `readOnlyHint: true`.
 
 `list_scopes` accepts an empty object and returns local scope IDs, names, and
 eligible/excluded peer counts without Telegram I/O. Its freshness is
-`unavailable`. Scope membership narrows existing grants; it cannot authorize
-content or receipt effects. `list_unread` also accepts optional `scope`.
+`unavailable`. Scope membership narrows current access authority; it cannot authorize
+content or receipt effects. `list_unread` also accepts optional `scope` and `cursor`.
 `search_messages` requires `query` and exactly one of `peer` or `scope`, with
 optional `limit` and `cursor`. Neither search nor unread acknowledges history.
 Scoped search visits canonical peer IDs in ascending bytewise order and returns
@@ -164,11 +168,12 @@ cancellation, and a sanitized internal error.
 - Hard serialized textual result maximum: 256 KiB, including structured/text
   mirrors, escaping, a bounded request ID and framing overhead. Preparation
   precedes acknowledgment.
-- Text operations have a 20-second deadline, further shortened to grant expiry.
-  Policy leases serialize requests against grant mutations without holding a
+- Text operations have a 20-second deadline, further shortened to restricted-grant expiry.
+  Policy leases serialize requests against access-mode, grant and scope mutations without holding a
   database write transaction across Telegram I/O. A busy lease fails explicitly.
-- A chat listing makes at most 40 application RPCs (metadata and state for each
-  of 20 grants). History/context and receipt paths have fixed bounded RPC
+- A restricted/scoped chat listing makes at most 40 application RPCs (metadata
+  and state for each of 20 peers). Account-wide discovery uses one bounded
+  dialog RPC and common state synchronization per page. History/context and receipt paths have fixed bounded RPC
   sequences; adapter calls additionally have 15-second deadlines. The existing
   concurrency/rate/flood bounds apply to transport attempts and recovery.
 - Client-supplied limits never raise server count, byte, RPC, concurrency, or
@@ -184,3 +189,19 @@ cancellation, and a sanitized internal error.
 - Images are limited to 1 MiB and 4 million pixels, with each dimension at
   most 4096. The complete image result is bounded to 2 MiB before receipt,
   while metadata mirrors retain the 256 KiB limit. No input limit is raised.
+
+Full read access is a human-only, authorization-epoch-bound policy setting.
+It authorizes all supported authors and positive message IDs, images, and
+whole-prefix read effects in supported dialogs. It has no expiry; transient
+requests, cursors and handles retain their deadlines. Absence means restricted
+mode. Disablement restores preserved exact grants. Every mode change increments
+the existing policy revision; logout and epoch rotation clear the setting.
+
+Ordinary non-forum supergroups use channel-kind IDs. Broadcasts, forums and
+inaccessible/protected groups remain excluded. Live history/search responses
+must include the exact permitted entity and a positive channel pts, but channel
+pts is not stored or used as proof of continuous channel updates. Supergroup
+receipts require a true `channels.readHistory` result, exact dialog readback at
+or beyond the requested boundary, and common checkpoint synchronization before
+release. This is a live RPC/readback contract, not a channel subscription or
+atomic remote snapshot.

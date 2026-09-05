@@ -12,8 +12,8 @@ The MCP server exposes **`status`**, **`list_chats`**, **`list_messages`**,
 **`list_scopes`**, and **`open_image`**.
 No Telegram credentials are needed to connect and
 inspect status. Text operations require a ready authorized account and an explicit
-human grant. Photos and static JPEG/PNG attachments require a separate image
-opt-in on that grant. Production configuration requires explicit eligibility
+human authorization: restricted grants or Full read access. Restricted grants
+require a separate image opt-in; Full read access includes supported images. Production configuration requires explicit eligibility
 attestation; configuring an account grants no content access.
 
 The account runtime supports interactive production and Test-DC phone/2FA and QR
@@ -61,7 +61,7 @@ Ask the agent to call `status`. An unconfigured account reports
 `account_state: reauth_required`, `message_reads: false`, and
 `production_login: true`. This is a static capability, not evidence of login or
 eligibility. `message_reads` reports text-engine readiness;
-individual reads still require current grants. Status itself reports Telegram
+individual reads still require current human authorization. Status itself reports Telegram
 freshness as `unavailable` because it does not perform a freshness check.
 
 The relay never starts a daemon automatically. If the daemon is absent, it
@@ -101,22 +101,27 @@ See [authentication](docs/authentication.md),
 
 ## Authorized text workflows
 
-- Use the human `peers` command to select immutable conversation IDs, then
+- Enable Full read access with `telegram-mcpctl access full --accept-full-read`
+  to discover and read supported conversations without per-chat or per-author
+  grants. Inspect with `access`; disable with `access restricted`. It includes
+  images and read acknowledgments until disabled or account authorization changes.
+- In restricted mode, use the human `peers` command to select immutable conversation IDs, then
   create exact author/range/expiry grants with separate read-prefix authority.
   `saved-message` discovers just the newest Saved Messages reference without
   returning content or granting access.
-- Discover granted chats with `list_chats` and retrieve bounded text with
+- Discover authorized chats with `list_chats` and retrieve bounded text with
   `list_messages` or `get_message_context`.
 - Group exact peers into human-managed named scopes and discover them with
   `list_scopes`; narrow chat discovery, unread counts, and search by scope ID.
-- Search one granted peer or scope for bounded snippets, continue with a signed cursor,
+- Search one authorized peer or scope for bounded snippets, continue with a signed cursor,
   and open a result with the existing context tool.
-- Inspect whole-dialog unread counts and manual unread flags for granted peers.
+- Inspect whole-dialog unread counts and manual unread flags for authorized peers.
 - Receive explicit freshness, partial-result, and read-receipt information.
 
 See [text access](docs/text-access.md) for grant commands, eligibility
 prerequisites, supported peers, and recovery behavior. Ordinary Saved Messages,
-non-bot users, and basic groups are supported. Supergroups, topics, forwarded,
+non-bot users, basic groups, and ordinary non-forum supergroups are supported.
+Broadcast channels, topics, bot/anonymous authors, forwarded,
 quoted, protected, expiring, and unsupported media content are excluded. The automated
 workflow uses synthetic fixtures; live account content acceptance remains a
 separate human check. See [image access](docs/image-access.md) for discovery,

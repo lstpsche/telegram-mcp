@@ -43,6 +43,28 @@ func (s *Service) selectGrants(ctx context.Context, lease *policy.Lease, scopes 
 			return nil, nil, err
 		}
 	}
+	full, err := lease.FullRead(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if full {
+		if len(scopes) == 0 {
+			return nil, nil, model.TextError(model.ErrorInvalidInput, nil)
+		}
+		grants := make([]policy.Grant, 0, len(scope.Peers))
+		for _, peer := range scope.Peers {
+			grant, err := lease.Grant(ctx, peer)
+			if err != nil {
+				return nil, nil, err
+			}
+			if peer.Kind() == model.PeerKindSelf && peer.TelegramID() != s.backend.SelfID().TelegramID() {
+				continue
+			}
+			grants = append(grants, grant)
+		}
+		selected, coverage := s.scopeGrants(scope, grants)
+		return selected, coverage, nil
+	}
 	grants, err := lease.List(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -76,17 +98,16 @@ func (s *Service) ListScopes(ctx context.Context, requestID string) (result Resu
 	if err != nil {
 		return Result{}, err
 	}
-	grants, err := lease.List(ctx)
-	if err != nil {
-		return Result{}, err
-	}
 	items := make([]scopeInfo, 0, len(scopes))
 	for _, scope := range scopes {
-		_, coverage := s.scopeGrants(scope, grants)
+		grants, coverage, err := s.selectGrants(ctx, lease, []model.ScopeID{scope.ID})
+		if err != nil {
+			return Result{}, err
+		}
+		if err := s.checkGrantsCurrent(ctx, grants); err != nil {
+			return Result{}, err
+		}
 		items = append(items, scopeInfo{ID: scope.ID, Name: scope.Name, TotalPeers: coverage.TotalPeers, EligiblePeers: coverage.EligiblePeers, ExcludedPeers: coverage.ExcludedPeers})
-	}
-	if err := s.checkGrantsCurrent(ctx, grants); err != nil {
-		return Result{}, err
 	}
 	freshness, err := model.NewFreshness(model.FreshnessUnavailable, s.now())
 	if err != nil {
@@ -168,9 +189,7 @@ func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID mod
 	binding := scopeCursorBinding{Operation: "search_messages", Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(query), Limit: limit, Epoch: epoch, Revision: revision}
 	deadline := s.now().Add(cursorLifetime)
 	for _, grant := range grants {
-		if grant.ExpiresAt.Before(deadline) {
-			deadline = grant.ExpiresAt
-		}
+		deadline = grant.Deadline(deadline)
 	}
 	cursor = scopeSearchCursor{Binding: binding, Expires: deadline.Unix()}
 	if len(grants) > 0 {

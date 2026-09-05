@@ -2,6 +2,7 @@ package policy
 
 import (
 	"errors"
+	"math"
 	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/model"
@@ -22,8 +23,8 @@ var (
 	ErrClosed       = errors.New("policy lease is closed")
 )
 
-// Grant authorizes exact content and, separately, the dialog prefix affected by
-// read acknowledgments. Eligible is an affirmative human attestation.
+// Grant is resolved under a policy lease from an exact human grant or explicit
+// Full read access. Eligible belongs only to persisted restricted grants.
 type Grant struct {
 	Peer        model.PeerID
 	Author      model.PeerID
@@ -34,6 +35,7 @@ type Grant struct {
 	ExpiresAt   time.Time
 	Eligible    bool
 	Images      bool
+	fullRead    bool
 }
 
 func (g Grant) validateFields() error {
@@ -56,7 +58,26 @@ func (g Grant) Validate(now time.Time) error {
 	return nil
 }
 
+// Deadline caps transient work without inventing an expiry for account authority.
+func (g Grant) Deadline(limit time.Time) time.Time {
+	if !g.fullRead && g.ExpiresAt.Before(limit) {
+		return g.ExpiresAt
+	}
+	return limit
+}
+
+func fullReadGrant(peer model.PeerID) Grant {
+	return Grant{Peer: peer, MinID: 1, MaxID: math.MaxInt32, ReadThrough: math.MaxInt32, Images: true, fullRead: true}
+}
+
 func (g Grant) CheckCurrent(now time.Time) error {
+	if g.fullRead {
+		if g.Peer.String() == "" || now.IsZero() {
+			return model.TextError(model.ErrorPolicyDenied, ErrDenied)
+		}
+		return nil
+	}
+
 	if err := g.Validate(now); err != nil {
 		return model.TextError(model.ErrorPolicyDenied, ErrDenied)
 	}
@@ -68,8 +89,8 @@ func (g Grant) CheckMessage(candidate model.Candidate, self model.PeerID, now ti
 		return err
 	}
 	message := candidate.Message
-	if message.ID.Peer() != g.Peer || message.ID.TelegramID() < g.MinID ||
-		message.ID.TelegramID() > g.MaxID || message.Author != g.Author ||
+	if message.Author.Kind() != model.PeerKindUser || message.ID.Peer() != g.Peer || message.ID.TelegramID() < g.MinID ||
+		message.ID.TelegramID() > g.MaxID || (!g.fullRead && message.Author != g.Author) ||
 		(g.Profile == ProfileSelfAuthored && (self.Kind() != model.PeerKindUser || message.Author != self)) {
 		return model.TextError(model.ErrorPolicyDenied, ErrDenied)
 	}

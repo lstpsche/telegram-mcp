@@ -200,7 +200,8 @@ reconfiguration. Logout removes only the selected session. Legacy credential
 bundles are accepted only as test credentials. No MCP tool can change these
 controls.
 
-Channel content remains excluded. Telegram defines channel pts independently
+Ordinary non-forum supergroups are read through live RPCs; broadcast channel
+content remains excluded. Telegram defines channel pts independently
 from common pts/qts and outer seq. The adapter removes channel pts events and
 channel entities before the pinned updates manager sees live batches or validated
 common differences, retaining the accepted common checkpoint and enclosing
@@ -211,7 +212,7 @@ recovery responses. Common recovery failures still fail closed. See Telegram's
 ## Search continuation and unread disclosure
 
 Search targets one authorized peer, or a human-managed scope intersected with
-current grants, before Telegram I/O and is post-filtered
+current authority, before Telegram I/O and is post-filtered
 with the existing author/range/eligibility/content checks. Only bounded snippets
 leave this path, with no history receipt. Following a result into full context
 requires the independent whole-prefix acknowledgment authorization.
@@ -220,7 +221,7 @@ Search cursors use domain-separated HMAC-SHA256 and a distinct native Keychain
 key. Their query digest is also keyed, preventing offline dictionary checks
 against a visible cursor payload. Version, signature, canonical encoding,
 expiry, operation, peer or scope, query, item limit, epoch and policy revision are checked
-before fetching. Persistent grant and scope change triggers prevent revoke/regrant from
+before fetching. Persistent access-mode, grant and scope change triggers prevent revoke/regrant from
 reviving earlier tokens. Cursors contain no message or query text; no search
 state or content is stored in SQLite. Valid replay is navigation, not authority.
 
@@ -244,7 +245,8 @@ under the existing operation deadline and complete response byte budget.
 
 ## Image disclosure and hostile encodings
 
-Images require an explicit grant bit, default false for migrated and new grants.
+Images require Full read access or an explicit grant bit, default false for
+migrated and new restricted grants.
 Discovery exposes safe metadata only after the existing author/range/content
 checks. Signed five-minute handles contain a keyed image identity digest and
 exact message reference; policy revision and epoch changes invalidate them.
@@ -264,3 +266,45 @@ requiring additional effects are excluded. The complete native result budget
 is checked before acknowledgment, then expiry/readiness/cancellation are checked
 through the final audit boundary. A possible effect followed by failure returns
 no image and reports uncertainty. No remote snapshot or human-view claim is made.
+
+## Account-wide authority and supergroup reads
+
+Full read access trades per-author/range isolation for a single explicit human
+opt-in. It includes supported future conversations/messages, images, and the
+whole dialog prefix affected by receipts. Only the local control plane can
+change it; there is no access-mode MCP tool or participant consent workflow.
+The setting records account authority, not rights over others' content. Existing
+content, resource, and peer-subtype exclusions still apply after normalization.
+
+Absence of the epoch-bound singleton means restricted mode; migration never
+creates broad authority. Epoch mismatch and storage failure fail closed.
+Mode changes share the content lease through final audit and release and advance
+the existing policy revision. Disable/re-enable cannot revive earlier handles
+or cursors. Exact grants remain available after disablement. Previously delivered
+content and completed receipts cannot be recalled. Connected agents/providers
+can retain results outside this process's boundary.
+
+Discovery fetches one bounded main/archive dialog page, discards incidental
+bodies and drafts, and emits only supported typed IDs, titles or unread counts.
+Excluded dialogs may form a signed continuation position; their access hashes
+stay in adapter-owned epoch metadata. Empty filtered pages can have continuation.
+Tokens bind operation, page size, epoch, revision and a fixed expiry and are
+checked again after audit. No failed page becomes empty success. Pagination is
+live and can shift when Telegram dialogs change.
+
+Supergroup lookups validate `Megagroup` and reject broadcast/forum/minimal,
+forbidden, left, restricted and protected entities both before content fetch and
+on the returned page. Bot and anonymous/channel authors remain excluded.
+`channels.readHistory` does not return common affected pts. A positive RPC result
+alone is insufficient: an exact subsequent dialog must report an inbox read
+position at least as high as requested. Common checkpoint synchronization is
+also required. A possible effect followed by any failure returns
+`read_effect_uncertain` without bodies or media.
+
+Supergroup content is not cached, indexed or subscribed to. Independent channel
+pts is not persisted or represented as gap-free. The common updates projection
+continues to discard channel events/entities without manufacturing recovery
+success. Live page validation and receipt readback establish the narrower
+freshness contract; Telegram may edit/delete content after the last observation.
+Synthetic adapter and MCP tests prove routing, subtype rejection, readback,
+revocation and native-image delivery. Live account acceptance remains separate.

@@ -65,7 +65,6 @@ func TestScopeArgumentsRejectAmbiguityBeforeController(t *testing.T) {
 		{"scope", "--name", "work", "--name", "work"},
 		{"scope", "--name", "work", "--id", testScopeID, "--id", testScopeID},
 		{"scope", "--name", "work", "--id", "null"},
-		{"scope", "--name", "work", "--peer", "tgpeer:v1:channel:123"},
 		{"scope", "--name", "work", "--peer", "tgpeer:v1:chat:0123"},
 		{"scope", "--name", "work", "--peer", "tgpeer:v1:chat:123", "--peer", "tgpeer:v1:chat:123"},
 		{"scope", "--name", "work", "--unknown", "value"},

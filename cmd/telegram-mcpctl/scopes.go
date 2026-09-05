@@ -108,7 +108,7 @@ func parseScope(args []string) (model.ScopeID, string, []model.PeerID, bool) {
 			}
 		case "--peer":
 			peer, err := model.ParsePeerID(value)
-			if err != nil || peer.Kind() == model.PeerKindChannel || seenPeers[peer] || len(peers) >= policy.MaximumScopePeers {
+			if err != nil || seenPeers[peer] || len(peers) >= policy.MaximumScopePeers {
 				return "", "", nil, false
 			}
 			seenPeers[peer] = true

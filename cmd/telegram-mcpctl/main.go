@@ -79,6 +79,8 @@ func runContext(
 		return 1
 	}
 	switch args[0] {
+	case "access":
+		return runAccessCommand(ctx, args, stdout, stderr, control)
 	case "scopes", "scope", "unscope":
 		return runScopeCommand(ctx, args, stdout, stderr, control)
 	case "peers", "saved-message", "grants", "grant", "revoke":
@@ -207,13 +209,18 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcpctl logout")
 	fmt.Fprintln(writer, "  telegram-mcpctl peers")
 	fmt.Fprintln(writer, "  telegram-mcpctl saved-message")
+	fmt.Fprintln(writer, "  telegram-mcpctl access")
+	fmt.Fprintln(writer, "  telegram-mcpctl access full --accept-full-read")
+	fmt.Fprintln(writer, "  telegram-mcpctl access restricted")
+	fmt.Fprintln(writer, "Full read access includes supported conversations, all supported message authors and history, images, and read acknowledgments until revoked.")
+	fmt.Fprintln(writer, "Content is disclosed to the connected agent and its model provider. Enabling access does not establish permission under Telegram terms.")
 	fmt.Fprintln(writer, "  telegram-mcpctl grants")
 	fmt.Fprintln(writer, "  telegram-mcpctl grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible [--allow-images]")
 	fmt.Fprintln(writer, "  telegram-mcpctl revoke --peer PEER")
 	fmt.Fprintln(writer, "  telegram-mcpctl scopes")
 	fmt.Fprintln(writer, "  telegram-mcpctl scope --name NAME [--id ID] [--peer PEER ...]")
 	fmt.Fprintln(writer, "  telegram-mcpctl unscope --id ID")
-	fmt.Fprintln(writer, "Authentication is interactive through /dev/tty; content access requires exact human grants.")
+	fmt.Fprintln(writer, "Authentication is interactive through /dev/tty; content access requires human grants or explicit Full read access.")
 }
 
 func writeStatus(writer io.Writer, status app.Status) {

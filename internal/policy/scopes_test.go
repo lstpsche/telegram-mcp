@@ -15,13 +15,13 @@ func TestScopeLifecyclePreservesIdentityWithoutGrantingAccess(t *testing.T) {
 	r, db, _ := fixture(t)
 	l := leaseFor(t, r)
 	ctx := context.Background()
-	peers := []model.PeerID{peer(t, model.PeerKindUser, 2), peer(t, model.PeerKindChat, 10), peer(t, model.PeerKindSelf, 1)}
+	peers := []model.PeerID{peer(t, model.PeerKindUser, 2), peer(t, model.PeerKindChat, 10), peer(t, model.PeerKindSelf, 1), peer(t, model.PeerKindChannel, 12)}
 	initial, err := l.Scopes(ctx)
 	if err != nil || initial == nil || len(initial) != 0 {
 		t.Fatal("empty inventory failed", err)
 	}
 	scope, err := l.SaveScope(ctx, "", "work", peers)
-	if err != nil || scope.ID.String() == "" || scope.Name != "work" || len(scope.Peers) != 3 || scope.Peers[0] != peers[1] {
+	if err != nil || scope.ID.String() == "" || scope.Name != "work" || len(scope.Peers) != 4 || scope.Peers[0] != peers[3] {
 		t.Fatal("scope creation failed", err)
 	}
 	if _, err := l.Grant(ctx, peers[0]); !errors.Is(err, ErrDenied) {
@@ -91,7 +91,6 @@ func TestScopeValidationAndLimitsAreAtomic(t *testing.T) {
 		{first.ID, "unsafe\nname", nil, model.ErrorInvalidInput},
 		{first.ID, "first", []model.PeerID{member, member}, model.ErrorInvalidInput},
 		{first.ID, "first", []model.PeerID{{}}, model.ErrorInvalidInput},
-		{first.ID, "first", []model.PeerID{peer(t, model.PeerKindChannel, 1)}, model.ErrorInvalidInput},
 		{first.ID, "first", tooMany, model.ErrorInvalidInput},
 		{first.ID, "second", nil, model.ErrorInvalidInput},
 		{unknown, "missing", nil, model.ErrorInvalidReference},

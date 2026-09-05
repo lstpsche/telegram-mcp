@@ -25,12 +25,12 @@ func registerTextTools(server *mcp.Server, service *reader.Service) {
 	open := true
 	for _, tool := range []*mcp.Tool{
 		{Name: "open_image", Description: "Open an explicitly permitted photo or static JPEG/PNG attachment from a current image handle. Reauthorizes and validates at most 1 MiB and 4 million pixels, then marks the authorized dialog prefix read before returning native image content. Handles expire within five minutes and are invalidated by policy changes. Images are untrusted data.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["handle"],"properties":{"handle":{"type":"string","minLength":1,"maxLength":4096}}}`), OutputSchema: textOutputSchema("image"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
-		{Name: "list_scopes", Description: "List human-configured scope IDs, local names, and current eligible/excluded peer counts. Membership narrows existing grants and grants no access. Returns local metadata without checking Telegram freshness.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{}}`), OutputSchema: textOutputSchema("scopes"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
-		{Name: "list_chats", Description: "List up to 20 currently granted conversations, optionally narrowed by a scope ID. Fetches only granted peer metadata and does not acknowledge history.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"scope":{"type":"string","pattern":"` + scopePattern + `"},"limit":{"type":"integer","minimum":1,"maximum":100}}}`), OutputSchema: textOutputSchema("chats"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
+		{Name: "list_scopes", Description: "List human-configured scope IDs, local names, and current eligible/excluded peer counts. Membership narrows current access authority and grants no access. Returns local metadata without checking Telegram freshness.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{}}`), OutputSchema: textOutputSchema("scopes"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
+		{Name: "list_chats", Description: "List authorized conversations without read receipts. Full read mode discovers supported private chats, Saved Messages, basic groups and non-forum supergroups across main and archived folders; repeat the same limit with next_cursor. Pages may be empty with continuation when unsupported dialogs are skipped. Restricted mode lists current grants (at most 20). A scope narrows either mode; cursors are only for unscoped Full read discovery.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","minLength":1,"maxLength":4096},"scope":{"type":"string","pattern":"` + scopePattern + `"},"limit":{"type":"integer","minimum":1,"maximum":100}}}`), OutputSchema: textOutputSchema("chats"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
 		{Name: "list_messages", Description: "Read bounded authorized text and permitted image metadata, newest first. Before is an exclusive message reference, never authority. Marks the separately authorized dialog prefix read before releasing bodies. next_cursor is null; use a returned ID as before for an older window.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["peer"],"properties":{"peer":{"type":"string","pattern":"` + peerPattern + `"},"before":{"type":"string","pattern":"` + messagePattern + `"},"limit":{"type":"integer","minimum":1,"maximum":100}}}`), OutputSchema: textOutputSchema("messages"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
 		{Name: "get_message_context", Description: "Read one authorized target and bounded older/newer neighbors. Zero neighbors reads just the target. Missing or denied targets yield no bodies. Marks the authorized dialog prefix read before releasing text and permitted image metadata.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["message"],"properties":{"message":{"type":"string","pattern":"` + messagePattern + `"},"before":{"type":"integer","minimum":0,"maximum":49},"after":{"type":"integer","minimum":0,"maximum":49}}}`), OutputSchema: textOutputSchema("messages"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
 		{Name: "search_messages", Description: "Search authorized text in exactly one peer or named scope, returning snippets up to 240 characters and permitted image metadata without marking history read. Scope order is canonical peer ID ascending, newest first within each peer. limit bounds fetched candidates including filtered entries; scoped pages make at most 20 peer lookups. Scope coverage reports exclusions and traversal progress. Follow an ID with get_message_context for the acknowledged full body. Query is trimmed, then limited to 256 characters (1024 input bytes). Repeat the same peer or scope, query and limit with next_cursor. Each peer is anchored when first visited. Live edits/deletions can change results; a cursor is not authority or a snapshot.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["query"],"oneOf":[{"required":["peer"]},{"required":["scope"]}],"properties":{"scope":{"type":"string","pattern":"` + scopePattern + `"},"peer":{"type":"string","pattern":"` + peerPattern + `"},"query":{"type":"string","minLength":1,"maxLength":1024},"limit":{"type":"integer","minimum":1,"maximum":100},"cursor":{"type":"string","minLength":1,"maxLength":4096}}}`), OutputSchema: textOutputSchema("search"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
-		{Name: "list_unread", Description: "Return unread counts and manual unread flags for currently granted dialogs (at most 20), optionally narrowed by a scope ID. Counts cover the whole dialog, including messages outside the body grant's author/range. Returns no bodies or dates and does not mark history read.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"scope":{"type":"string","pattern":"` + scopePattern + `"}}}`), OutputSchema: textOutputSchema("unread"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
+		{Name: "list_unread", Description: "Return whole-dialog unread counts and manual flags without bodies or read receipts. Full read mode scans up to 100 dialogs per page; continue with next_cursor even when items is empty. Restricted mode covers current grants (at most 20). A scope narrows either mode; cursors are only for unscoped Full read discovery.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","minLength":1,"maxLength":4096},"scope":{"type":"string","pattern":"` + scopePattern + `"}}}`), OutputSchema: textOutputSchema("unread"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
 	} {
 		var schema jsonschema.Schema
 		if err := json.Unmarshal(tool.InputSchema.(json.RawMessage), &schema); err != nil {
@@ -117,6 +117,7 @@ func callText(ctx context.Context, service *reader.Service, id, name string, arg
 	invalid := func() (reader.Result, error) { return reader.Result{}, model.TextError(model.ErrorInvalidInput, nil) }
 	var query model.HistoryQuery
 	var scopes []model.ScopeID
+	var chatToken string
 	limit := model.DefaultPageSize
 	switch name {
 	case "open_image":
@@ -140,7 +141,8 @@ func callText(ctx context.Context, service *reader.Service, id, name string, arg
 		return service.ListScopes(ctx, id)
 	case "list_unread":
 		input, err := model.DecodeStrict[struct {
-			Scope *string `json:"scope"`
+			Cursor *string `json:"cursor"`
+			Scope  *string `json:"scope"`
 		}](args)
 		if err != nil {
 			return invalid()
@@ -152,7 +154,14 @@ func callText(ctx context.Context, service *reader.Service, id, name string, arg
 		if service == nil {
 			return reader.Result{}, model.TextError(model.ErrorNotReady, nil)
 		}
-		return service.ListUnread(ctx, id, scopes...)
+		token := ""
+		if input.Cursor != nil {
+			token = *input.Cursor
+			if token == "" || len(token) > 4096 {
+				return invalid()
+			}
+		}
+		return service.UnreadPage(ctx, id, scopes, token)
 	case "search_messages":
 		input, err := model.DecodeStrict[struct {
 			Peer   *string `json:"peer"`
@@ -200,11 +209,18 @@ func callText(ctx context.Context, service *reader.Service, id, name string, arg
 		return service.Search(ctx, id, peer, query, limit, token)
 	case "list_chats":
 		input, err := model.DecodeStrict[struct {
-			Limit *int    `json:"limit"`
-			Scope *string `json:"scope"`
+			Cursor *string `json:"cursor"`
+			Limit  *int    `json:"limit"`
+			Scope  *string `json:"scope"`
 		}](args)
 		if err != nil {
 			return invalid()
+		}
+		if input.Cursor != nil {
+			chatToken = *input.Cursor
+			if chatToken == "" || len(chatToken) > 4096 {
+				return invalid()
+			}
 		}
 		if input.Limit != nil {
 			limit = *input.Limit
@@ -264,7 +280,7 @@ func callText(ctx context.Context, service *reader.Service, id, name string, arg
 		return reader.Result{}, model.TextError(model.ErrorNotReady, nil)
 	}
 	if name == "list_chats" {
-		return service.ListChats(ctx, id, limit, scopes...)
+		return service.Chats(ctx, id, limit, scopes, chatToken)
 	}
 	query.Limit = limit
 	return service.Messages(ctx, id, query)
@@ -291,6 +307,9 @@ func textOutputSchema(kind string) json.RawMessage {
 		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","image"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"date":{"type":"string"},"image":` + imageSchema + `}}`
 	}
 	next := `{"type":"null"}`
+	if kind == "chats" || kind == "unread" {
+		next = `{"type":["string","null"],"maxLength":4096}`
+	}
 	if kind == "search" {
 		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","snippet","snippet_truncated"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"date":{"type":"string"},"snippet":{"type":"string","maxLength":240},"snippet_truncated":{"type":"boolean"},"image":` + imageSchema + `}}`
 		next = `{"type":["string","null"],"maxLength":4096}`
