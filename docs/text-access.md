@@ -225,6 +225,11 @@ It does not acknowledge history. Follow a returned message ID with
 contract. Each lookup targets one currently authorized exact peer; there is no
 account-wide Telegram search.
 
+Telegram may return a terminal empty search result without any peer entities.
+The adapter accepts this result only after rechecking the exact peer's current
+eligibility and synchronizing updates. Failed lookups and nonempty responses
+with missing peer entities remain errors.
+
 Repeat the same peer or scope, normalized query and limit with `next_cursor` to continue
 searching older messages. A full fetched window can return an empty filtered
 page with a continuation; follow the cursor instead of assuming no matches.

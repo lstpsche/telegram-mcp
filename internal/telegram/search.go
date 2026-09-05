@@ -41,6 +41,15 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	if err != nil {
 		return nil, readError(err)
 	}
+	// Telegram's terminal no-match result can omit every auxiliary entity,
+	// including for supergroups. Recheck the exact peer and synchronize after
+	// that successful response; nonempty pages still require their own entities.
+	if page, ok := response.(*tg.MessagesMessages); ok && len(page.Messages) == 0 && len(page.Users) == 0 && len(page.Chats) == 0 && len(page.Topics) == 0 {
+		if _, err := a.Chat(bounded, q.Peer); err != nil {
+			return nil, err
+		}
+		return []model.Candidate{}, nil
+	}
 	candidates, err := a.reads.normalizePage(bounded, q.Peer, response, q.Limit)
 	if err != nil {
 		return nil, err
