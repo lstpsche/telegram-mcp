@@ -25,9 +25,10 @@ type wireBackend struct {
 	peer, author model.PeerID
 	acks         atomic.Int32
 	fetches      atomic.Int32
+	notReady     atomic.Bool
 }
 
-func (f *wireBackend) Ready() bool          { return true }
+func (f *wireBackend) Ready() bool          { return !f.notReady.Load() }
 func (f *wireBackend) SelfID() model.PeerID { return f.author }
 func (f *wireBackend) Chat(_ context.Context, peer model.PeerID) (model.Chat, error) {
 	f.fetches.Add(1)

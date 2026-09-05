@@ -139,3 +139,27 @@ than returning incomplete counts. With at most 20 grants, unread listing needs
 no pagination. Search and unread retain the 20-second operation deadline and
 complete 256 KiB response budget; unread uses at most 80 application RPCs before
 bounded transport retries. Required update recovery is independently bounded.
+
+The runtime becomes available only after startup update recovery and a live
+checkpoint comparison complete. Later reads also wait for the durable common
+checkpoint to catch up with a live state observation. Status reports whether
+startup completed and the runtime remains healthy; it does not promise an
+instant response while a later gap is being recovered.
+
+Recovery allows at most eight application difference RPCs per completed chain,
+with a 15-second deadline per RPC. Each response allows at most 100 new and
+encrypted messages combined, 100 other updates, 200 users and 200 chats.
+Unrecoverable gaps, invalid states, regressing sequences, non-progressing slices
+and oversized responses stop the runtime before their metadata is accepted.
+Complete recovered user entities refresh existing access hashes; minimal
+entities and zero hashes cannot replace them. Incidental content is discarded.
+
+A checkpoint or recovery failure makes the runtime unavailable for the rest of
+that process. Stop and restart the daemon after resolving the cause. Restart
+resumes the last accepted durable checkpoint with the same authorization; it
+does not skip an unrecoverable gap or replace a corrupt checkpoint with current
+remote state. Subsequent metadata writes after a latched failure are rejected.
+Logout or authorization rotation clears checkpoints, hashes and grants.
+Unexpired search cursors survive an ordinary restart only while the signing
+key, epoch and policy binding remain unchanged; context still refetches and
+reauthorizes its target, including any edits or deletion.

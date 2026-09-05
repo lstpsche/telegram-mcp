@@ -25,6 +25,9 @@ func (s *readStorage) capture(err error) error {
 }
 
 func (s *readStorage) checkEpoch(ctx context.Context) error {
+	if err := s.runtime.err(); err != nil {
+		return err
+	}
 	var epoch string
 	if err := s.db.QueryRowContext(ctx, `SELECT epoch FROM authorization_state WHERE singleton = 1`).Scan(&epoch); err != nil {
 		return s.capture(err)
@@ -45,7 +48,7 @@ func (s *readStorage) exec(ctx context.Context, query string, args ...any) error
 	}
 	n, err := result.RowsAffected()
 	if err == nil && n != 1 {
-		err = errors.New("Telegram checkpoint row is missing")
+		err = errors.New("Telegram metadata write was not accepted")
 	}
 	return s.capture(err)
 }
@@ -59,25 +62,45 @@ func (s *readStorage) GetState(ctx context.Context, user int64) (updates.State, 
 	if errors.Is(err, sql.ErrNoRows) {
 		return updates.State{}, false, nil
 	}
+	if err == nil && state.Date <= 0 {
+		err = errors.New("Telegram checkpoint date is invalid")
+	}
 	return state, err == nil, s.capture(err)
 }
 func (s *readStorage) SetState(ctx context.Context, user int64, state updates.State) error {
-	return s.exec(ctx, `INSERT INTO telegram_update_state(epoch,user_id,pts,qts,date,seq) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM authorization_state WHERE epoch=?) ON CONFLICT(epoch,user_id) DO UPDATE SET pts=excluded.pts,qts=excluded.qts,date=excluded.date,seq=excluded.seq`, s.epoch, user, state.Pts, state.Qts, state.Date, state.Seq, s.epoch)
+	if state.Date <= 0 {
+		return s.capture(errors.New("Telegram checkpoint date is invalid"))
+	}
+	return s.exec(ctx, `
+		INSERT INTO telegram_update_state(epoch,user_id,pts,qts,date,seq)
+		SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM authorization_state WHERE epoch=?)
+		ON CONFLICT(epoch,user_id) DO UPDATE SET
+			pts=excluded.pts, qts=excluded.qts, date=excluded.date, seq=excluded.seq
+		WHERE excluded.pts>=telegram_update_state.pts
+			AND excluded.qts>=telegram_update_state.qts
+			AND excluded.seq>=telegram_update_state.seq
+	`, s.epoch, user, state.Pts, state.Qts, state.Date, state.Seq, s.epoch)
 }
 func (s *readStorage) SetPts(ctx context.Context, user int64, value int) error {
-	return s.exec(ctx, `UPDATE telegram_update_state SET pts=? WHERE epoch=? AND user_id=?`, value, s.epoch, user)
+	return s.exec(ctx, `UPDATE telegram_update_state SET pts=? WHERE epoch=? AND user_id=? AND pts<=?`, value, s.epoch, user, value)
 }
 func (s *readStorage) SetQts(ctx context.Context, user int64, value int) error {
-	return s.exec(ctx, `UPDATE telegram_update_state SET qts=? WHERE epoch=? AND user_id=?`, value, s.epoch, user)
+	return s.exec(ctx, `UPDATE telegram_update_state SET qts=? WHERE epoch=? AND user_id=? AND qts<=?`, value, s.epoch, user, value)
 }
 func (s *readStorage) SetDate(ctx context.Context, user int64, value int) error {
+	if value <= 0 {
+		return s.capture(errors.New("Telegram checkpoint date is invalid"))
+	}
 	return s.exec(ctx, `UPDATE telegram_update_state SET date=? WHERE epoch=? AND user_id=?`, value, s.epoch, user)
 }
 func (s *readStorage) SetSeq(ctx context.Context, user int64, value int) error {
-	return s.exec(ctx, `UPDATE telegram_update_state SET seq=? WHERE epoch=? AND user_id=?`, value, s.epoch, user)
+	return s.exec(ctx, `UPDATE telegram_update_state SET seq=? WHERE epoch=? AND user_id=? AND seq<=?`, value, s.epoch, user, value)
 }
 func (s *readStorage) SetDateSeq(ctx context.Context, user int64, date, seq int) error {
-	return s.exec(ctx, `UPDATE telegram_update_state SET date=?,seq=? WHERE epoch=? AND user_id=?`, date, seq, s.epoch, user)
+	if date <= 0 {
+		return s.capture(errors.New("Telegram checkpoint date is invalid"))
+	}
+	return s.exec(ctx, `UPDATE telegram_update_state SET date=?,seq=? WHERE epoch=? AND user_id=? AND seq<=?`, date, seq, s.epoch, user, seq)
 }
 func (s *readStorage) GetChannelPts(ctx context.Context, user, channel int64) (int, bool, error) {
 	if err := s.checkEpoch(ctx); err != nil {

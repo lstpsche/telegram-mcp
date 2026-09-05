@@ -71,3 +71,18 @@ query/peer/limit/epoch/policy mismatch, regrant invalidation, and preservation
 of audit records during migration. The human acceptance workflow should search
 a known eligible message, open its context, observe the resulting receipt, and
 check unread metadata separately. Search/unread calls must not issue receipts.
+
+Synthetic recovery tests run the pinned updates manager against encoded RPC
+fixtures and SQLite metadata. They cover sliced startup and restart from the
+last accepted checkpoint; post-start gap completion, failure and cancellation;
+unrecoverable, malformed, non-progressing and oversized differences; failed
+hash/checkpoint writes; rejection of later writes after failure; bounded
+recovery calls; and complete versus minimal or zero hash refresh across
+restart. Corrupt checkpoints fail without replacement RPCs.
+
+Reader and stdio tests additionally verify live search continuation after
+service reconstruction, edited/protected/deleted context targets, account
+rotation/logout invalidation, and readiness transitions for all six tools.
+Unavailable data tools release no result and cause no fetch or receipt. These
+fixtures establish local behavior, not real network reconnect or Telegram
+client acceptance.

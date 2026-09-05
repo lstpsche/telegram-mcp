@@ -231,6 +231,9 @@ func (l readUpdateLog) Log(_ context.Context, level log.Level, _ string, _ ...lo
 }
 
 func (r *readRuntime) UpdatesGetState(ctx context.Context) (*tg.UpdatesState, error) {
+	if err := r.err(); err != nil {
+		return nil, err
+	}
 	bounded, cancel := context.WithTimeout(ctx, readDeadline)
 	defer cancel()
 	result, err := r.api.UpdatesGetState(bounded)
@@ -263,7 +266,25 @@ func (r *readRuntime) UpdatesGetDifference(ctx context.Context, q *tg.UpdatesGet
 	copy.SetQtsLimit(100)
 	result, err := r.api.UpdatesGetDifference(bounded, &copy)
 	if err == nil {
-		err = validateDifference(result)
+		var checkpoint updates.State
+		var found bool
+		checkpoint, found, err = r.storage.GetState(bounded, r.self.Load())
+		if err == nil && !found {
+			err = errors.New("Telegram update checkpoint is missing")
+		}
+		if err == nil {
+			err = validateDifference(q, checkpoint.Seq, result)
+		}
+	}
+	if err == nil {
+		// The manager skips hashes it already knows. A recovered full entity
+		// must also replace an older hash before the checkpoint can advance.
+		switch value := result.(type) {
+		case *tg.UpdatesDifference:
+			err = r.saveUsers(bounded, value.Users)
+		case *tg.UpdatesDifferenceSlice:
+			err = r.saveUsers(bounded, value.Users)
+		}
 	}
 	if err != nil {
 		r.fail(err)
@@ -404,20 +425,33 @@ func validRemoteState(state *tg.UpdatesState) bool {
 	return state != nil && state.Pts >= 0 && state.Qts >= 0 && state.Seq >= 0 && state.Date > 0
 }
 
-func validateDifference(result tg.UpdatesDifferenceClass) error {
-	valid := false
+func validateDifference(request *tg.UpdatesGetDifferenceRequest, seq int, result tg.UpdatesDifferenceClass) error {
+	var state *tg.UpdatesState
+	var messages, other, users, chats int
 	switch value := result.(type) {
 	case *tg.UpdatesDifference:
-		valid = validRemoteState(&value.State)
+		state = &value.State
+		messages, other, users, chats = len(value.NewMessages)+len(value.NewEncryptedMessages), len(value.OtherUpdates), len(value.Users), len(value.Chats)
 	case *tg.UpdatesDifferenceSlice:
-		valid = validRemoteState(&value.IntermediateState)
+		state = &value.IntermediateState
+		messages, other, users, chats = len(value.NewMessages)+len(value.NewEncryptedMessages), len(value.OtherUpdates), len(value.Users), len(value.Chats)
+		if state.Pts == request.Pts && state.Qts == request.Qts && state.Date <= request.Date {
+			return errors.New("Telegram update difference made no progress")
+		}
 	case *tg.UpdatesDifferenceEmpty:
-		valid = value.Date > 0 && value.Seq >= 0
+		if value.Date > 0 && value.Seq >= seq {
+			return nil
+		}
 	case *tg.UpdatesDifferenceTooLong:
-		valid = value.Pts >= 0
+		// gotd saves this pts before invoking OnTooLong. Never let an
+		// unrecovered gap become the starting checkpoint of the next process.
+		return errors.New("Telegram common update gap is unrecoverable")
 	}
-	if !valid {
+	if !validRemoteState(state) || state.Pts < request.Pts || state.Qts < request.Qts || state.Seq < seq {
 		return errors.New("Telegram update difference state is invalid")
+	}
+	if messages > 100 || other > 100 || users > 200 || chats > 200 {
+		return errors.New("Telegram update difference exceeds the item budget")
 	}
 	return nil
 }
