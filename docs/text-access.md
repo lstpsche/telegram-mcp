@@ -3,7 +3,7 @@
 Telegram MCP is an unofficial client using Telegram's API. Text tools are
 available only with an authorized local Test-DC account and an explicit human
 grant. Production login is disabled. Authentication, peer discovery, eligibility
-decisions and grant mutations belong to `telegram-mcpctl`; they are never MCP
+decisions, grant and named-scope mutations belong to `telegram-mcpctl`; they are never MCP
 tools.
 
 The daemon requires an existing local authorization epoch before opening the
@@ -76,8 +76,46 @@ after the in-flight operation completes. Revocation succeeds only after any
 request holding the lock has finished and the grant is removed. It cannot undo
 a previous read acknowledgment or recall a previously delivered response.
 
+Named scopes group exact supported peers without granting access. Use:
+
+```sh
+telegram-mcpctl scope --name work --peer tgpeer:v1:chat:123
+telegram-mcpctl scopes
+# Use the returned stable ID to rename or replace membership:
+telegram-mcpctl scope --id tgscope:v1:0123456789abcdef0123456789abcdef --name work --peer tgpeer:v1:chat:123
+telegram-mcpctl unscope --id tgscope:v1:0123456789abcdef0123456789abcdef
+```
+
+Replace the example scope ID with the actual returned ID. Names start with a
+lowercase ASCII letter and contain up to 32 lowercase letters, digits,
+underscores or hyphens. At most 20 scopes and 20 unique peers per scope are
+stored. Saving the same name replaces membership while retaining its ID;
+`--id` can also rename an existing scope. Omitting all `--peer` options creates
+or replaces with an empty membership. Unknown IDs and conflicting names fail
+explicitly. Deleting and recreating a name yields a new ID. These commands use
+the same policy lock and can run while the daemon is alive.
+
+`list_scopes` accepts no arguments and returns local names, stable IDs, and
+`total_peers`, `eligible_peers`, and `excluded_peers` counts. It requires the
+ready text runtime but does no Telegram lookup, so its freshness is
+`unavailable`. It never exposes ungranted member IDs or titles. `list_chats`
+and `list_unread` accept an optional `scope` ID; omission retains all current
+grants. An empty scope stays empty. Unknown IDs fail instead of broadening the
+selection. Members without current grants, including expired/revoked grants
+or a mismatched self-authored identity, are excluded before Telegram I/O.
+
+Scoped chat, unread and search results include a `scope` object with those
+three counts plus `id`, `queried_peers` (this request) and `completed_peers`.
+For search, completed peers are the cumulatively exhausted prefix across pages;
+for chat/unread they are the peers processed in this request. Exclusions set
+`partial` and `partial_result`. A required upstream failure still rejects the
+whole response. Scoped results with no peer lookups report freshness as
+`unavailable`. Scope names and members are local metadata; no grants are
+created by scope management. Grant revocation retains the member as excluded;
+logout or an authorization epoch change removes scopes and membership.
+
 The MCP tools `list_chats`, `list_messages`, `get_message_context`,
-`search_messages` and `list_unread` use the same
+`search_messages`, `list_unread` and `list_scopes` use the same
 policy boundary. Lists expose only granted peers. History and context recheck
 author, range, expiry and eligibility after normalization. Protected, expiring,
 forwarded, imported, quoted, media and service content is excluded. Filtering
@@ -98,7 +136,7 @@ by a successful local build or test suite.
 
 ## Search and unread metadata
 
-`search_messages` accepts one exact `peer`, a `query`, optional `limit` (default
+`search_messages` accepts exactly one `peer` or `scope`, a `query`, optional `limit` (default
 20, maximum 100), and optional `cursor`. Query whitespace is trimmed; the
 remaining text must contain 1–256 Unicode characters. The original input must
 occupy at most 1024 UTF-8 bytes. The tool returns safe authorized snippets of at
@@ -106,25 +144,34 @@ most 240 Unicode characters, typed message/author IDs, UTC dates and
 `snippet_truncated`.
 It does not acknowledge history. Follow a returned message ID with
 `get_message_context` to request the full body under the existing receipt
-contract. There is no account-wide search or named-scope fan-out.
+contract. Each lookup targets one currently granted exact peer; there is no
+account-wide Telegram search.
 
-Repeat the same peer, normalized query and limit with `next_cursor` to continue
+Repeat the same peer or scope, normalized query and limit with `next_cursor` to continue
 searching older messages. A full fetched window can return an empty filtered
 page with a continuation; follow the cursor instead of assuming no matches.
 The cursor advances past all fetched messages, including excluded bodies.
-It anchors the upper ID at the first page and expires within 15 minutes or at
-grant expiry, whichever is earlier. Each continuation retains that expiry.
+For a single peer, it anchors the upper ID at the first page. Scope traversal
+orders canonical peer IDs bytewise ascending, then newest messages within each
+peer. Each peer anchors its upper ID when first visited; later peers are live
+on their first visit. Message IDs from different peers are never compared.
+A scope page consumes at most `limit` candidates, including filtered ones, and
+performs at most 20 backend search lookups. Empty windows advance to the next
+peer. It expires within 15 minutes or at the earliest selected grant expiry,
+whichever is earlier. Each continuation retains that expiry.
 Results remain live: edits, deletions and changing search matches are not a
 snapshot, and a full last window may require one final empty request.
 
 Cursors are versioned, signed with an independent Keychain key, and bound to
-operation, peer, keyed query digest, item limit, authorization epoch and durable
-policy revision. They contain no query or body text and are not permission.
-Any grant insert, replacement or removal invalidates earlier search cursors,
+operation, peer or scope, keyed query digest, item limit, authorization epoch
+and durable policy revision. Scoped cursors also bind the selected membership
+and carry the current peer position and window. They contain no query or body text and are not permission.
+Any grant or scope insert, replacement or removal invalidates earlier search cursors,
 even when the same grant is recreated. Reusing a valid cursor is permitted;
 expired, modified or mismatched cursors fail before Telegram search I/O.
 
-`list_unread` accepts no arguments and inspects all current grants (at most 20).
+`list_unread` inspects all current grants (at most 20), or their intersection
+with the optional `scope` membership.
 It returns `peer`, `unread_count` and `unread_mark` for dialogs with a positive
 count or a manual unread flag. These are **whole-dialog metadata**, including
 messages outside the grant's body-author/range restriction. No bodies, titles,
@@ -159,7 +206,7 @@ that process. Stop and restart the daemon after resolving the cause. Restart
 resumes the last accepted durable checkpoint with the same authorization; it
 does not skip an unrecoverable gap or replace a corrupt checkpoint with current
 remote state. Subsequent metadata writes after a latched failure are rejected.
-Logout or authorization rotation clears checkpoints, hashes and grants.
+Logout or authorization rotation clears checkpoints, hashes, grants and scopes.
 Unexpired search cursors survive an ordinary restart only while the signing
 key, epoch and policy binding remain unchanged; context still refetches and
 reauthorizes its target, including any edits or deletion.

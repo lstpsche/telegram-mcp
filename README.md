@@ -8,7 +8,8 @@ context, and searching chats on one user account, initially on macOS.
 ## Available now
 
 The MCP server exposes **`status`**, **`list_chats`**, **`list_messages`**,
-**`get_message_context`**, **`search_messages`**, and **`list_unread`**.
+**`get_message_context`**, **`search_messages`**, **`list_unread`**, and
+**`list_scopes`**.
 No Telegram credentials are needed to connect and
 inspect status. Text operations require a ready Test-DC account and an explicit
 human grant. Media and production login are not implemented.
@@ -89,7 +90,9 @@ See [authentication](docs/authentication.md),
   create exact author/range/expiry grants with separate read-prefix authority.
 - Discover granted chats with `list_chats` and retrieve bounded text with
   `list_messages` or `get_message_context`.
-- Search one granted peer for bounded snippets, continue with a signed cursor,
+- Group exact peers into human-managed named scopes and discover them with
+  `list_scopes`; narrow chat discovery, unread counts, and search by scope ID.
+- Search one granted peer or scope for bounded snippets, continue with a signed cursor,
   and open a result with the existing context tool.
 - Inspect whole-dialog unread counts and manual unread flags for granted peers.
 - Receive explicit freshness, partial-result, and read-receipt information.
@@ -99,7 +102,7 @@ prerequisites, supported peers, and recovery behavior. Ordinary Saved Messages,
 non-bot users, and basic groups are supported. Supergroups, topics, forwarded,
 quoted, protected, expiring, and media content are excluded. The automated
 workflow uses synthetic fixtures; live Test-DC content acceptance remains a
-separate human check. Media and named-scope search remain future work.
+separate human check. Image delivery remains future work.
 
 Authentication and access grants belong to the human operator. Sending,
 editing, deleting, and account administration are outside the read-first MCP

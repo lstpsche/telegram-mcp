@@ -67,7 +67,7 @@ policy mutation.
 
 Controls: deterministic static read-tool inventory; no control-plane MCP tools;
 strict unknown-field rejection; typed IDs; no `resolve_peer` tool; hard budgets;
-no dynamic write flag. Only status and the five bounded text/metadata tools are registered.
+no dynamic write flag. Only status and the six bounded text/metadata tools are registered.
 
 ### Mutable alias or confused-deputy authorization
 
@@ -188,7 +188,8 @@ user/basic-group synchronization is the supported boundary.
 
 ## Search continuation and unread disclosure
 
-Search is scoped to one authorized peer before Telegram I/O and post-filtered
+Search targets one authorized peer, or a human-managed scope intersected with
+current grants, before Telegram I/O and is post-filtered
 with the existing author/range/eligibility/content checks. Only bounded snippets
 leave this path, with no history receipt. Following a result into full context
 requires the independent whole-prefix acknowledgment authorization.
@@ -196,8 +197,8 @@ requires the independent whole-prefix acknowledgment authorization.
 Search cursors use domain-separated HMAC-SHA256 and a distinct native Keychain
 key. Their query digest is also keyed, preventing offline dictionary checks
 against a visible cursor payload. Version, signature, canonical encoding,
-expiry, operation, peer, query, item limit, epoch and policy revision are checked
-before fetching. Persistent grant-change triggers prevent revoke/regrant from
+expiry, operation, peer or scope, query, item limit, epoch and policy revision are checked
+before fetching. Persistent grant and scope change triggers prevent revoke/regrant from
 reviving earlier tokens. Cursors contain no message or query text; no search
 state or content is stored in SQLite. Valid replay is navigation, not authority.
 
@@ -206,3 +207,15 @@ the body's author/range. The operator contract explicitly grants this metadata
 scope. Responses expose only IDs, counts and manual flags; incidental upstream
 top messages/drafts are discarded. Missing or failed peer lookups never become
 invented zero counts or successful partial results.
+
+Named scopes use local names and stable random IDs, never Telegram titles or
+aliases, and contain only exact supported peer IDs. They confer no authority.
+The policy lease covers membership resolution, current grants, each fetch,
+normalization, serialization and required audit. Missing, expired and revoked
+grants are counted as exclusions before I/O; excluded member identities are
+absent from MCP results. A required peer failure releases no earlier snippets
+or invented counts. Scope/member edits invalidate the shared policy revision;
+authorization rotation or logout deletes all scopes. A scoped cursor also binds
+the eligible membership digest and earliest selected grant expiry. Traversal
+is bounded by 20 peers and 100 fetched candidates, including filtered entries,
+under the existing operation deadline and complete response byte budget.

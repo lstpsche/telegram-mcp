@@ -2,7 +2,7 @@
 
 These transport-independent contracts define the MCP input and output boundary.
 The daemon registers a static inventory: `status`, `list_chats`, `list_messages`,
-`get_message_context`, `search_messages`, and `list_unread`. Authentication and
+`get_message_context`, `search_messages`, `list_unread`, and `list_scopes`. Authentication and
 policy mutations are human-only.
 
 ## Available MCP behavior
@@ -28,7 +28,7 @@ as a fixed `invalid_input` tool error without echoing request fields.
 
 Text tools validate their static JSON schemas, reject duplicate or unknown
 fields, and reject null where a string or integer is required. `list_chats`
-accepts an optional `limit` (default 20, maximum 100) and returns only granted
+accepts optional `scope` and `limit` (default 20, maximum 100) and returns only granted
 peer metadata; at most 20 grants exist. `list_messages` requires `peer` and
 accepts an optional typed exclusive `before` message and `limit`.
 `get_message_context` requires `message` and accepts `before`/`after` neighbor
@@ -41,6 +41,17 @@ untrusted text. Chat results contain typed IDs and untrusted titles. Filtering
 and a full bounded window set `partial` with `partial_result`; no failed
 upstream operation is replaced with a partial success. History and context
 tools advertise read side effects rather than `readOnlyHint: true`.
+
+`list_scopes` accepts an empty object and returns local scope IDs, names, and
+eligible/excluded peer counts without Telegram I/O. Its freshness is
+`unavailable`. Scope membership narrows existing grants; it cannot authorize
+content or receipt effects. `list_unread` also accepts optional `scope`.
+`search_messages` requires `query` and exactly one of `peer` or `scope`, with
+optional `limit` and `cursor`. Neither search nor unread acknowledges history.
+Scoped search visits canonical peer IDs in ascending bytewise order and returns
+newest messages first within each peer. It bounds fetched candidates, including
+filtered ones, to the requested limit and backend lookups to 20 per request.
+See [text access](text-access.md) for continuation and eligibility semantics.
 
 ## Typed references
 
@@ -64,6 +75,10 @@ Usernames, titles, invite links, and Bot API `-100...` encodings are never
 authority. Access hashes and generated gotd types remain inside
 `internal/telegram`.
 
+Local scope IDs have the form `tgscope:v1:0123456789abcdef0123456789abcdef`:
+exactly 32 lowercase hexadecimal characters after the version prefix. Human
+names are mutable labels; only the stable ID is accepted as an MCP selector.
+
 ## Success envelope
 
 Every successful result uses a versioned envelope:
@@ -84,6 +99,13 @@ Every successful result uses a versioned envelope:
   "untrusted_content": true
 }
 ```
+
+Scoped chat listing, unread and search add an optional `scope` object containing
+`id`, `total_peers`, `eligible_peers`, `excluded_peers`, `queried_peers`, and
+`completed_peers`. Counts are bounded to 20. Queried peers are this request's
+lookups; completed peers are the exhausted search prefix across pages, or the
+processed peers for chat/unread. Exclusions set `partial` with a warning; they
+do not disclose excluded peer identities. Unscoped results omit this object.
 
 Freshness is one of `live`, `recovering`, `stale`, `partial`, or `unavailable`.
 Timestamps are RFC 3339 UTC. Warning values are stable codes, not free-form
