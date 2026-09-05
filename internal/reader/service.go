@@ -28,7 +28,10 @@ type Backend interface {
 
 // Result is serialized before the upstream effect. JSON is also used verbatim
 // as the structured result, so both MCP content representations agree.
-type Result struct{ JSON json.RawMessage }
+type Result struct {
+	JSON  json.RawMessage
+	Image *ImageContent
+}
 
 type Service struct {
 	backend   Backend
@@ -134,13 +137,17 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 	}
 	count := 0
 	attemptedAck := false
+	releaseContext := ctx
+	var grant policy.Grant
 	defer func() {
-		resultErr = s.finish(ctx, lease, requestID, operation, count, attemptedAck, resultErr)
+		resultErr = s.finish(ctx, lease, requestID, operation, count, attemptedAck, resultErr, func() error {
+			return s.checkGrantsCurrent(releaseContext, []policy.Grant{grant})
+		})
 		if resultErr != nil {
 			result = Result{}
 		}
 	}()
-	grant, err := lease.Grant(ctx, query.Peer)
+	grant, err = lease.Grant(ctx, query.Peer)
 	if err != nil {
 		return Result{}, err
 	}
@@ -148,6 +155,10 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 	defer expires()
 	if query.Target > 0 && (query.Target < grant.MinID || query.Target > grant.MaxID) {
 		return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
+	}
+	epoch, revision, err := lease.Binding(ctx)
+	if err != nil {
+		return Result{}, err
 	}
 	query.MinID = grant.MinID
 	query.MaxID = grant.MaxID
@@ -210,6 +221,10 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 		}
 		if message.ID.TelegramID() > through {
 			through = message.ID.TelegramID()
+		}
+		message.Image, err = s.imageDescriptor(candidate, grant, imageAuthority{epoch, revision})
+		if err != nil {
+			return Result{}, err
 		}
 		items = append(items, message)
 	}
@@ -304,7 +319,7 @@ func serializeEnvelope[T any](envelope model.Envelope[T]) (Result, error) {
 	return Result{JSON: encoded}, nil
 }
 
-func (s *Service) finish(ctx context.Context, lease *policy.Lease, id, operation string, count int, attempted bool, err error) error {
+func (s *Service) finish(ctx context.Context, lease *policy.Lease, id, operation string, count int, attempted bool, err error, beforeRelease ...func() error) error {
 	// Audit is metadata-only and still attempted when the caller disconnected.
 	auditContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
@@ -312,8 +327,14 @@ func (s *Service) finish(ctx context.Context, lease *policy.Lease, id, operation
 		count = 0
 	}
 	auditErr := lease.Audit(auditContext, id, operation, model.TextErrorCategory(err), count, attempted && err != nil)
+	var releaseErr error
+	if err == nil && auditErr == nil {
+		for _, check := range beforeRelease {
+			releaseErr = errors.Join(releaseErr, check())
+		}
+	}
 	closeErr := lease.Close()
-	joined := errors.Join(err, auditErr, closeErr)
+	joined := errors.Join(err, auditErr, releaseErr, closeErr)
 	if attempted && joined != nil {
 		return model.TextError(model.ErrorReadEffectUncertain, joined)
 	}

@@ -139,8 +139,20 @@ func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID mod
 		return Result{}, err
 	}
 	count := 0
+	releaseContext := ctx
+	var grants []policy.Grant
+	var cursor scopeSearchCursor
+	beforeRelease := func() error {
+		if err := s.checkGrantsCurrent(releaseContext, grants); err != nil {
+			return err
+		}
+		if cursor.Expires <= s.now().Unix() {
+			return model.TextError(model.ErrorCursorExpired, nil)
+		}
+		return nil
+	}
 	defer func() {
-		resultErr = s.finish(ctx, lease, requestID, "search_messages", count, false, resultErr)
+		resultErr = s.finish(ctx, lease, requestID, "search_messages", count, false, resultErr, beforeRelease)
 		if resultErr != nil {
 			result = Result{}
 		}
@@ -160,7 +172,7 @@ func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID mod
 			deadline = grant.ExpiresAt
 		}
 	}
-	cursor := scopeSearchCursor{Binding: binding, Expires: deadline.Unix()}
+	cursor = scopeSearchCursor{Binding: binding, Expires: deadline.Unix()}
 	if len(grants) > 0 {
 		cursor.Ceiling = grants[0].MaxID
 	}
@@ -193,7 +205,7 @@ func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID mod
 			return Result{}, err
 		}
 		coverage.QueriedPeers++
-		window, err := s.normalizeSearchWindow(grant, search, candidates)
+		window, err := s.normalizeSearchWindow(grant, search, candidates, imageAuthority{epoch, revision})
 		if err != nil {
 			return Result{}, err
 		}

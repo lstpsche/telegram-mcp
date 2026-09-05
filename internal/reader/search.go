@@ -28,13 +28,25 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 		return Result{}, err
 	}
 	count := 0
+	releaseContext := ctx
+	var grant policy.Grant
+	var cursor searchCursor
+	beforeRelease := func() error {
+		if err := s.checkGrantsCurrent(releaseContext, []policy.Grant{grant}); err != nil {
+			return err
+		}
+		if cursor.Expires <= s.now().Unix() {
+			return model.TextError(model.ErrorCursorExpired, nil)
+		}
+		return nil
+	}
 	defer func() {
-		resultErr = s.finish(ctx, lease, requestID, "search_messages", count, false, resultErr)
+		resultErr = s.finish(ctx, lease, requestID, "search_messages", count, false, resultErr, beforeRelease)
 		if resultErr != nil {
 			result = Result{}
 		}
 	}()
-	grant, err := lease.Grant(ctx, peer)
+	grant, err = lease.Grant(ctx, peer)
 	if err != nil {
 		return Result{}, err
 	}
@@ -52,7 +64,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if grant.ExpiresAt.Before(deadline) {
 		deadline = grant.ExpiresAt
 	}
-	cursor := searchCursor{Binding: binding, Ceiling: grant.MaxID, Expires: deadline.Unix()}
+	cursor = searchCursor{Binding: binding, Ceiling: grant.MaxID, Expires: deadline.Unix()}
 	if token != "" {
 		cursor, err = s.decodeCursor(token, binding)
 		if err != nil {
@@ -68,7 +80,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if err != nil {
 		return Result{}, err
 	}
-	window, err := s.normalizeSearchWindow(grant, model.SearchQuery{Peer: peer, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}, candidates)
+	window, err := s.normalizeSearchWindow(grant, model.SearchQuery{Peer: peer, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}, candidates, imageAuthority{epoch, revision})
 	if err != nil {
 		return Result{}, err
 	}
@@ -112,7 +124,7 @@ type searchWindow struct {
 }
 
 // normalizeSearchWindow applies the same bounds and content policy to both selectors.
-func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQuery, candidates []model.Candidate) (searchWindow, error) {
+func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQuery, candidates []model.Candidate, authority imageAuthority) (searchWindow, error) {
 	if len(candidates) > query.Limit {
 		return searchWindow{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
@@ -143,7 +155,7 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 			}
 		}
 		date, err := time.Parse(time.RFC3339Nano, message.Date)
-		if err != nil || date.IsZero() || message.Author.Kind() != model.PeerKindUser || message.Text == "" || !utf8.ValidString(message.Text) {
+		if err != nil || date.IsZero() || message.Author.Kind() != model.PeerKindUser || (message.Text == "" && candidate.Image == nil) || !utf8.ValidString(message.Text) {
 			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		if len(message.Text) > 64*1024 {
@@ -154,7 +166,11 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		if truncated {
 			snippet = snippet[:240]
 		}
-		items = append(items, model.SearchHit{ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated})
+		descriptor, err := s.imageDescriptor(candidate, grant, authority)
+		if err != nil {
+			return searchWindow{}, err
+		}
+		items = append(items, model.SearchHit{Image: descriptor, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated})
 	}
 
 	sort.Slice(items, func(i, j int) bool { return items[i].ID.TelegramID() > items[j].ID.TelegramID() })
