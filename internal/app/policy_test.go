@@ -144,3 +144,53 @@ func (f *fakeDiscoveryRuntime) Discover(context.Context) ([]model.Chat, error) {
 	peer, _ := model.ParsePeerID("tgpeer:v1:chat:123")
 	return []model.Chat{{ID: peer, Title: "untrusted display"}}, f.discoverError
 }
+
+func (f *fakeDiscoveryRuntime) DiscoverSavedMessage(ctx context.Context) (model.MessageID, error) {
+	f.discovered = true
+	_, f.deadline = ctx.Deadline()
+	id, _ := model.ParseMessageID("tgmsg:v1:self:1:20")
+	return id, f.discoverError
+}
+
+func TestSavedMessageDiscoveryOwnsSessionAndDoesNotGrant(t *testing.T) {
+	ctx := context.Background()
+	runtime := &fakeDiscoveryRuntime{}
+	application := authorizedTextApplication(t, runtime)
+	lock, err := daemon.AcquireAccountLock(application.paths.Lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.SavedMessage(ctx); !errors.Is(err, daemon.ErrAccountLocked) {
+		t.Fatal("discovery bypassed session ownership", err)
+	}
+	if runtime.discovered {
+		t.Fatal("locked discovery reached runtime")
+	}
+	if err := lock.Release(); err != nil {
+		t.Fatal(err)
+	}
+	before := authorizationState(t, application.paths.Database)
+	id, err := application.SavedMessage(ctx)
+	if err != nil || id.String() != "tgmsg:v1:self:1:20" || !runtime.deadline || runtime.epoch != before.Epoch {
+		t.Fatal("discovery failed", err)
+	}
+	grants, err := application.Grants(ctx)
+	if err != nil || len(grants) != 0 {
+		t.Fatal("discovery created authority", err)
+	}
+	if after := authorizationState(t, application.paths.Database); before.Epoch != after.Epoch {
+		t.Fatal("discovery changed authorization epoch")
+	}
+	runtime.discoverError = errors.New("synthetic discovery failure")
+	if id, err := application.SavedMessage(ctx); !errors.Is(err, runtime.discoverError) || id.String() != "" {
+		t.Fatal("failed discovery released a reference", err)
+	}
+	runtime.discoverError = tgaccount.ErrReauthenticationRequired
+	if _, err := application.SavedMessage(ctx); !errors.Is(err, runtime.discoverError) {
+		t.Fatal("authorization cause lost", err)
+	}
+	status, err := application.Status(ctx)
+	if err != nil || status.Authorized {
+		t.Fatal("revoked session retained authority", err)
+	}
+}

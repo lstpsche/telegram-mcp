@@ -48,6 +48,29 @@ func TestParseGrantRequiresExplicitCanonicalScope(t *testing.T) {
 	}
 }
 
+func TestSavedMessageCommandReturnsOnlyReferenceWithoutTerminal(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		control := &fakeTextController{}
+		if fail {
+			control.err = errors.New("private upstream details")
+		}
+		var stdout, stderr bytes.Buffer
+		code := runContext(context.Background(), []string{"saved-message"}, &stdout, &stderr,
+			func() (controller, error) { return control, nil },
+			func() (terminal, error) {
+				t.Fatal("discovery opened credential terminal")
+				return nil, errors.New("unexpected")
+			})
+		if fail {
+			if code != 1 || stdout.Len() != 0 || strings.Contains(stderr.String(), "private") {
+				t.Fatal("unsafe discovery failure output")
+			}
+		} else if code != 0 || stdout.String() != "\"tgmsg:v1:self:456:120\"\n" || stderr.Len() != 0 {
+			t.Fatal("unexpected discovery output", code, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestGrantCommandPassesExactScopeWithoutTerminal(t *testing.T) {
 	control := &fakeTextController{}
 	var stdout, stderr bytes.Buffer
@@ -65,7 +88,7 @@ func TestGrantCommandPassesExactScopeWithoutTerminal(t *testing.T) {
 
 func TestTextCommandsDoNotEchoHostileArgumentsOrErrors(t *testing.T) {
 	const hostile = "private\x1b[31msecret"
-	for _, args := range [][]string{{"peers", hostile}, {"revoke", "--peer", hostile}, {"grant", "--peer", hostile}} {
+	for _, args := range [][]string{{"peers", hostile}, {"saved-message", hostile}, {"revoke", "--peer", hostile}, {"grant", "--peer", hostile}} {
 		var stdout, stderr bytes.Buffer
 		if code := runTextCommand(context.Background(), args, &stdout, &stderr, &fakeTextController{}); code != 2 {
 			t.Fatalf("code=%d", code)
@@ -117,6 +140,11 @@ type fakeTextController struct {
 	saved   policy.Grant
 	revoked model.PeerID
 	err     error
+}
+
+func (f *fakeTextController) SavedMessage(context.Context) (model.MessageID, error) {
+	message, _ := model.ParseMessageID("tgmsg:v1:self:456:120")
+	return message, f.err
 }
 
 func (f *fakeTextController) Peers(context.Context) ([]model.Chat, error) { return f.peers, f.err }

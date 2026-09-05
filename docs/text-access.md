@@ -38,6 +38,20 @@ require channel recovery. Common recovery budgets apply before this projection;
 common gaps and checkpoint failures still block reads. Bot chats, Secret Chats
 and topics are unsupported.
 
+For the newest Saved Messages item, stop the daemon and run
+`telegram-mcpctl saved-message`. It queries only the authenticated account's
+Saved Messages dialog and prints one JSON string such as
+`"tgmsg:v1:self:456:120"`. Incidental message and draft content stays inside the
+adapter and is discarded. The command does not return text or images, mark
+history read, or create a grant. Missing, malformed, or unavailable metadata
+fails without a reference. Normal bounded update synchronization still applies.
+
+Use the returned peer and message number for an exact grant: in this example,
+peer `tgpeer:v1:self:456`, author `tgpeer:v1:user:456`, and both message bounds
+`120`. This identifies the newest item at discovery time; a reference does not
+establish content eligibility. Explicitly authorize the read-through prefix and
+image permission separately, then restart the daemon for MCP access.
+
 Create a grant with every scope field explicit:
 
 ```sh

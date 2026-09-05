@@ -81,7 +81,7 @@ func runContext(
 	switch args[0] {
 	case "scopes", "scope", "unscope":
 		return runScopeCommand(ctx, args, stdout, stderr, control)
-	case "peers", "grants", "grant", "revoke":
+	case "peers", "saved-message", "grants", "grant", "revoke":
 		return runTextCommand(ctx, args, stdout, stderr, control)
 	case "status":
 		if len(args) != 1 {
@@ -206,6 +206,7 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcpctl status")
 	fmt.Fprintln(writer, "  telegram-mcpctl logout")
 	fmt.Fprintln(writer, "  telegram-mcpctl peers")
+	fmt.Fprintln(writer, "  telegram-mcpctl saved-message")
 	fmt.Fprintln(writer, "  telegram-mcpctl grants")
 	fmt.Fprintln(writer, "  telegram-mcpctl grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible [--allow-images]")
 	fmt.Fprintln(writer, "  telegram-mcpctl revoke --peer PEER")

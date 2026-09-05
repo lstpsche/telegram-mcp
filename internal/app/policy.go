@@ -17,51 +17,77 @@ var ErrTextControlUnsupported = errors.New("account runtime does not support tex
 
 // Peers performs bounded, human-only discovery while holding exclusive session
 // ownership. It never creates a grant or returns message bodies.
-func (a *Application) Peers(ctx context.Context) (peers []model.Chat, resultError error) {
+func (a *Application) Peers(ctx context.Context) (peers []model.Chat, err error) {
+	err = a.withDiscovery(ctx, func(ctx context.Context, discovery humanDiscovery) error {
+		var err error
+		peers, err = discovery.Discover(ctx)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return peers, nil
+}
+
+// SavedMessage discovers only the newest Saved Messages reference. It does not
+// grant access, return content, or acknowledge history.
+func (a *Application) SavedMessage(ctx context.Context) (message model.MessageID, err error) {
+	err = a.withDiscovery(ctx, func(ctx context.Context, discovery humanDiscovery) error {
+		var err error
+		message, err = discovery.DiscoverSavedMessage(ctx)
+		return err
+	})
+	if err != nil {
+		return model.MessageID{}, err
+	}
+	return message, nil
+}
+
+type humanDiscovery interface {
+	EnableReads(context.Context, *sql.DB, string) error
+	Discover(context.Context) ([]model.Chat, error)
+	DiscoverSavedMessage(context.Context) (model.MessageID, error)
+}
+
+func (a *Application) withDiscovery(ctx context.Context, operation func(context.Context, humanDiscovery) error) (resultError error) {
 	if a == nil {
-		return nil, errors.New("application is not initialized")
+		return errors.New("application is not initialized")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	lock, err := daemon.AcquireAccountLock(a.paths.Lock)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { resultError = errors.Join(resultError, lock.Release()) }()
 	database, repository, err := a.openRepository(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { resultError = errors.Join(resultError, database.Close()) }()
 	authorization, exists, err := repository.Authorization(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if !exists {
-		return nil, tgaccount.ErrReauthenticationRequired
+		return tgaccount.ErrReauthenticationRequired
 	}
 	_, account, err := a.account(ctx, repository, tgaccount.ModeRead)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	discovery, ok := account.(interface {
-		EnableReads(context.Context, *sql.DB, string) error
-		Discover(context.Context) ([]model.Chat, error)
-	})
+	discovery, ok := account.(humanDiscovery)
 	if !ok {
-		return nil, ErrTextControlUnsupported
+		return ErrTextControlUnsupported
 	}
 	if err := discovery.EnableReads(ctx, database, authorization.Epoch); err != nil {
-		return nil, err
+		return err
 	}
-	peers, err = discovery.Discover(ctx)
+	err = operation(ctx, discovery)
 	if errors.Is(err, tgaccount.ErrReauthenticationRequired) {
-		return nil, errors.Join(err, repository.InvalidateAuthorization(ctx))
+		return errors.Join(err, repository.InvalidateAuthorization(ctx))
 	}
-	if err != nil {
-		return nil, err
-	}
-	return peers, nil
+	return err
 }
 
 // Grants lists only unexpired authority from the current authorization epoch.

@@ -16,6 +16,7 @@ import (
 
 type textController interface {
 	Peers(context.Context) ([]model.Chat, error)
+	SavedMessage(context.Context) (model.MessageID, error)
 	Grants(context.Context) ([]policy.Grant, error)
 	Grant(context.Context, policy.Grant) error
 	Revoke(context.Context, model.PeerID) error
@@ -26,7 +27,7 @@ func runTextCommand(ctx context.Context, args []string, stdout, stderr io.Writer
 	var peer model.PeerID
 	var err error
 	switch args[0] {
-	case "peers", "grants":
+	case "peers", "saved-message", "grants":
 		if len(args) != 1 {
 			return textUsageError(stderr)
 		}
@@ -51,6 +52,12 @@ func runTextCommand(ctx context.Context, args []string, stdout, stderr io.Writer
 		return 1
 	}
 	switch args[0] {
+	case "saved-message":
+		var message model.MessageID
+		message, err = textControl.SavedMessage(ctx)
+		if err == nil {
+			err = writeTextJSON(stdout, message)
+		}
 	case "peers":
 		var peers []model.Chat
 		peers, err = textControl.Peers(ctx)

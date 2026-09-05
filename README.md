@@ -103,6 +103,8 @@ See [authentication](docs/authentication.md),
 
 - Use the human `peers` command to select immutable conversation IDs, then
   create exact author/range/expiry grants with separate read-prefix authority.
+  `saved-message` discovers just the newest Saved Messages reference without
+  returning content or granting access.
 - Discover granted chats with `list_chats` and retrieve bounded text with
   `list_messages` or `get_message_context`.
 - Group exact peers into human-managed named scopes and discover them with
