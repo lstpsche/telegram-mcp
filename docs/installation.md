@@ -58,6 +58,11 @@ and permissions. Install does not start a daemon in the current session;
 installed relay path. Copy that JSON into the client's configuration, or register
 the same absolute relay path with your client's stdio setup command. It does not
 edit client settings. The relay stays byte-only and never starts the daemon.
+When the daemon stops or restarts, existing relay processes exit with an error.
+Reconnect the client after `doctor` confirms the new daemon is responding.
+The relay also exits on cancellation when stdin is idle or stdout is blocked;
+it never reconnects itself or replays a request.
+
 An unconfigured daemon can answer MCP `status` with `reauth_required` and
 `message_reads: false`; credentials are not needed for this connectivity check.
 
@@ -131,5 +136,17 @@ must run while the daemon is stopped.
 Automated service verification uses temporary files, a fake process runner,
 and a local synthetic MCP server. Native synthetic Keychain checks additionally
 qualify local Apple Development signing across commands and rebuilt upgrades.
-Real GUI-session installation, disposable Test-DC workflows, production
-eligibility, and publication remain separate checks. Production login is absent.
+To verify a real GUI-session installation without credentials, use a fresh
+unconfigured account state. Start the service, check `doctor`, connect the
+installed relay from an MCP client, list tools, and call `status`. Expect all
+eight tools, `reauth_required`, and `message_reads: false`; data operations
+report `not_ready`. Keep a relay connected during restart and verify that it
+exits, then connect a new relay. Check stop, uninstall, and installation from a
+new artifact directory; `agent-config` must name the new relay. After final
+stop/uninstall, the job and socket must be absent and the account lock available.
+Retained metadata and binaries are expected. Do not run this unconfigured check
+against an account that already has configuration or authorization.
+
+GUI-session connectivity does not establish account Keychain access under
+launchd, disposable Test-DC workflows, production eligibility, or publication.
+Those remain separate checks. Production login is absent.

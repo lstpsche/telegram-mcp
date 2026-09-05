@@ -37,9 +37,10 @@ owners, and never remove an unresolved path.
 
 `telegram-mcpctl` takes that same lock and authenticates directly only
 while the daemon is stopped. This avoids adding a temporary credential-bearing
-control protocol to the Unix socket. The daemon serves the content-free MCP status tool. It can start without
-account configuration so an operator can verify client connectivity before
-authentication. Message tools are not registered.
+control protocol to the Unix socket. The daemon can start without account
+configuration so an operator can verify client connectivity through the
+content-free MCP status tool before authentication. Data tools remain
+registered and report `not_ready` until the account read runtime is ready.
 
 ## Consequences
 

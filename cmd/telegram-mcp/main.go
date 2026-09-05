@@ -37,7 +37,7 @@ func runContext(ctx context.Context, args []string, input io.ReadCloser, output 
 	}
 	paths, err := daemon.DefaultPaths()
 	if err == nil {
-		err = daemon.Relay(ctx, paths.Socket, input, output)
+		err = relayStdio(ctx, paths.Socket, input, output)
 	}
 	if err != nil {
 		category := model.ErrorNotReady
