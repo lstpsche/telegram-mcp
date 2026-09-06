@@ -99,6 +99,9 @@ func (g Grant) CheckMessage(candidate model.Candidate, self model.PeerID, now ti
 	if !message.ValidAlbum() || (message.AlbumID != "" && candidate.Image == nil && candidate.Document == nil && candidate.Voice == nil) {
 		return model.TextError(model.ErrorPolicyDenied, ErrDenied)
 	}
+	if !message.Poll.Valid() {
+		return model.TextError(model.ErrorPolicyDenied, ErrDenied)
+	}
 	if !message.ValidReply() || !message.ValidAuthor() || message.ID.Peer() != g.Peer || message.ID.TelegramID() < g.MinID ||
 		message.ID.TelegramID() > g.MaxID || (!g.fullRead && message.Author != g.Author) ||
 		(g.Profile == ProfileSelfAuthored && (self.Kind() != model.PeerKindUser || message.Author != self)) {

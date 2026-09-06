@@ -25,6 +25,7 @@ type ReplyChain struct {
 }
 
 type Message struct {
+	Poll        *Poll               `json:"poll,omitempty"`
 	AlbumID     string              `json:"album_id,omitempty"`
 	ReplyTo     *MessageID          `json:"reply_to,omitempty"`
 	ReplyChain  *ReplyChain         `json:"reply_chain,omitempty"`
@@ -107,6 +108,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	HasPoll          bool                `json:"has_poll,omitempty"`
 	AlbumID          string              `json:"album_id,omitempty"`
 	ReplyTo          *MessageID          `json:"reply_to,omitempty"`
 	ChannelPost      *ChannelPost        `json:"channel_post,omitempty"`

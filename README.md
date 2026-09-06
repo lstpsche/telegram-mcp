@@ -38,7 +38,7 @@ On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsch
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcp install --version 0.5.0 --setup
+telegram-mcp install --version 0.6.0 --setup
 ```
 
 The second command creates a private per-user installation and starts setup.
@@ -52,14 +52,14 @@ Download and inspect the script before running it if desired.
 
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
-  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.5.0/install.sh
+  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.6.0/install.sh
 sh install.sh
 ```
 
 **Windows PowerShell, without elevation**
 
 ```powershell
-Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.5.0/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.6.0/install.ps1 -OutFile install.ps1
 .\install.ps1
 ```
 
@@ -68,7 +68,7 @@ checksums. Downloads and checksums come from GitHub Releases; they establish
 integrity, not independent publisher identity. Credentials stay in your local
 interactive console.
 
-For manual installation, download an archive from [v0.5.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.5.0).
+For manual installation, download an archive from [v0.6.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.6.0).
 Archives support macOS, Linux and Windows on amd64 and arm64, and contain
 `telegram-mcp`, `telegram-mcpd`, documentation and checksums. Extract into a new
 private directory and follow the [platform instructions](docs/installation.md).
@@ -183,7 +183,7 @@ adopting an existing manual installation.
 
 PDF/plain-text attachment support is available from v0.4.0. See [document access](docs/document-access.md).
 
-Version 0.5.0 adds [forum topics](docs/topic-access.md) and [original voice notes](docs/voice-access.md). Voice delivery provides audio, without transcription.
+Version 0.5.0 added [forum topics](docs/topic-access.md) and [original voice notes](docs/voice-access.md). Voice delivery provides audio, without transcription.
 
 | Tool | Purpose |
 | --- | --- |
@@ -208,15 +208,17 @@ For paginated tools, continue while `next_cursor` is non-null, even when a page 
 
 Supported conversations are Saved Messages, private chats with people or bots, basic groups, and ordinary supergroups and individual forum topics. Supported images are ordinary JPEG/PNG photos and static document attachments. Supported documents include original PDFs without a fixed application byte cap and UTF-8 plain-text attachments up to 256 KiB. PDF interpretation requires client support; no text extraction or OCR is performed.
 
-Forwarded-message support is available in the source after 0.5.0. Consented grants
+Forwarded-message support is available from 0.6.0. Consented grants
 and Full read include supported forwarded copies; self-authored grants exclude
 them. See [forwarded messages](docs/forwarded-messages.md).
 
-Source after 0.5.0 also supports joined broadcast channels; see [channel access](docs/channel-access.md), including the outstanding sponsored-message presentation contract before release. Secret Chats and anonymous/channel authors in groups remain excluded. Bot-authored messages in supported conversations are included under the same access rules. Imported, quoted, protected, expiring, and unsupported media content is also filtered. A supported conversation can therefore contain messages that the server will not return.
+Version 0.6.0 supports joined broadcast channels; see [channel access](docs/channel-access.md). Secret Chats and anonymous/channel authors in groups remain excluded. Bot-authored messages in supported conversations are included under the same access rules. Imported, quoted, protected, expiring, and unsupported media content is also filtered. A supported conversation can therefore contain messages that the server will not return.
 
-Source after 0.5.0 also adds [reply references and bounded parent context](docs/reply-context.md). Use `reply_depth` on `get_message_context` to follow authorized parents.
+Version 0.6.0 adds [reply references and bounded parent context](docs/reply-context.md). Use `reply_depth` on `get_message_context` to follow authorized parents.
 
-Supported [media album members](docs/media-albums.md) share an `album_id` in source after 0.5.0, preserving grouping across pages while keeping captions on their original messages.
+Supported [media album members](docs/media-albums.md) share an `album_id` from 0.6.0, preserving grouping across pages while keeping captions on their original messages.
+
+Read [poll questions, text options and available aggregate counts](docs/polls.md) through history/context. Search and catch-up provide a poll marker and question snippet.
 
 The MCP surface is read-first: sending, editing, deleting, account administration, authentication, and access changes are not agent tools. See [message access](docs/text-access.md) and [image access](docs/image-access.md) for exact boundaries.
 

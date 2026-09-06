@@ -1,6 +1,6 @@
 # Media albums
 
-Source after 0.5.0 includes `album_id` on supported album members in history,
+Version 0.6.0 includes `album_id` on supported album members in history,
 context, search/catch-up and explicit attachment opens. Match this string to
 associate members across pages. IDs include the exact containing conversation
 or forum topic, so matching Telegram group numbers in different conversations

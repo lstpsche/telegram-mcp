@@ -1,6 +1,6 @@
 # Reply context
 
-Source after 0.5.0 includes optional `reply_to` references on supported messages,
+Version 0.6.0 includes optional `reply_to` references on supported messages,
 search/catch-up hits and opened attachments. Each reference identifies an older
 message in the exact containing conversation or forum topic. It is navigation,
 not permission or proof that the parent remains available. Embedded quotes,

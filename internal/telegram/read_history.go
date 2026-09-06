@@ -301,7 +301,14 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	unsupportedSavedDialog := message.SavedPeerID != nil && (peer.Kind() != model.PeerKindSelf || peer.TelegramID() != self || (!candidate.Forwarded && !matchesPeer(peer, message.SavedPeerID)))
 	candidate.Unsupported = (candidate.Forwarded && forward == nil) || (message.Post && !isBroadcast) || message.Legacy || message.Offline || message.FromScheduled || unsupportedSavedDialog || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
 	var image, document, voice *model.MediaSource
-	if message.Media != nil {
+	var poll *model.Poll
+	if media, ok := message.Media.(*tg.MessageMediaPoll); ok {
+		poll, err = normalizePoll(media)
+		if err != nil {
+			return model.Candidate{}, err
+		}
+		candidate.Unsupported = candidate.Unsupported || poll == nil || message.Mentioned && message.MediaUnread || message.VideoProcessingPending || message.PaidSuggestedPostStars || message.PaidSuggestedPostTon || message.PaidMessageStars != 0 || !message.SuggestedPost.Zero()
+	} else if message.Media != nil {
 		if _, empty := message.Media.(*tg.MessageMediaEmpty); !empty {
 			location := normalizeMedia(message)
 			if location == nil {
@@ -399,7 +406,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	} else {
 		candidate.Unsupported = candidate.Unsupported || author <= 0 || !authors[author]
 	}
-	candidate.Unsupported = candidate.Unsupported || !candidate.Message.ValidAuthor() || message.Date <= 0 || (message.Message == "" && image == nil && document == nil && voice == nil)
+	candidate.Unsupported = candidate.Unsupported || !candidate.Message.ValidAuthor() || message.Date <= 0 || (message.Message == "" && image == nil && document == nil && voice == nil && poll == nil)
 	if !utf8.ValidString(message.Message) || len(message.Message) > 64*1024 {
 		return model.Candidate{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
@@ -410,6 +417,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 				return model.Candidate{}, err
 			}
 		}
+		candidate.Message.Poll = poll
 		candidate.Message.Forward = forward
 		candidate.Message.Text = message.Message
 		candidate.Message.Date = time.Unix(int64(message.Date), 0).UTC().Format(time.RFC3339)

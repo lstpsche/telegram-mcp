@@ -1,6 +1,6 @@
 # Forwarded messages
 
-Source versions after 0.5.0 support ordinary forwarded text and supported images,
+Version 0.6.0 supports ordinary forwarded text and supported images,
 PDF/plain-text attachments and voice notes. Existing media permissions and limits
 apply. No new tool or origin lookup is needed.
 

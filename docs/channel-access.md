@@ -1,6 +1,6 @@
 # Broadcast channel access
 
-Source after 0.5.0 supports joined broadcast channels through the existing chat,
+Version 0.6.0 supports joined broadcast channels through the existing chat,
 history, context, search, catch-up, unread and attachment tools. No joining,
 username lookup, global search or writing is performed. Protected, restricted,
 left, minimal, forbidden and incompatible channel entities are rejected.
@@ -30,12 +30,6 @@ Sender/signature changes around a media download or receipt withhold the result.
 Telegram distinguishes history read state from viewport-driven view counters
 and exposure metrics. A headless MCP has no viewport; it does not fabricate
 visibility, view increments, playback, ad impressions or clicks.
-
-Telegram's API terms require sponsored-message support for applications that
-access channels. This source implementation does not yet provide sponsored
-presentation. A truthful client presentation contract must be resolved before
-publishing or deploying channel support; passing synthetic tests does not
-establish an exemption. The current published 0.5.0 does not support channels.
 
 References: [channel authors](https://core.telegram.org/api/channel),
 [read and view semantics](https://core.telegram.org/api/views),

@@ -288,3 +288,10 @@ Supported media members may include a conversation-scoped `album_id`. Captions
 remain on their original messages; grouping does not alter pagination, grants
 or attachment downloads. See [media albums](media-albums.md) for partial album
 semantics and source validation.
+
+## Poll snapshots
+
+History/context may include `poll`; search/catch-up use `has_poll` and a question
+snippet. Optional aggregate counts preserve absent versus zero. Existing text
+authority, response budgets and read receipts apply; no voter lookup or voting
+is available. See [read-only polls](polls.md).

@@ -455,3 +455,12 @@ or a reason to fetch siblings. Every member and caption follows existing policy;
 filtered members contribute no metadata, count or copied caption. Media opens
 compare membership around downloads and receipts. Page completion never proves
 album completeness. No album state is persisted. See [media albums](media-albums.md).
+
+## Poll content
+
+Poll questions and options are hostile text under containing-message authority.
+Only supplied aggregate counts cross the adapter boundary. Voting tokens, hashes,
+voter identities, personal selections and quiz solutions are not exposed or
+persisted. No additional RPC or side effect is introduced. Unknown counts remain
+absent, and malformed mappings fail without content-bearing diagnostics. Existing
+complete-response budgeting precedes history/context acknowledgment. See [polls](polls.md).

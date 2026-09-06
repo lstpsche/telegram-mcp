@@ -170,13 +170,17 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		date, err := time.Parse(time.RFC3339Nano, message.Date)
-		if err != nil || date.IsZero() || (query.Window != nil && date.Unix() != candidate.SentAt) || !message.ValidAuthor() || (message.Text == "" && candidate.Image == nil && candidate.Document == nil && candidate.Voice == nil) || !utf8.ValidString(message.Text) {
+		if err != nil || date.IsZero() || (query.Window != nil && date.Unix() != candidate.SentAt) || !message.ValidAuthor() || (message.Text == "" && candidate.Image == nil && candidate.Document == nil && candidate.Voice == nil && message.Poll == nil) || !utf8.ValidString(message.Text) {
 			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		if len(message.Text) > 64*1024 {
 			return searchWindow{}, model.TextError(model.ErrorResultTooLarge, nil)
 		}
-		snippet := []rune(message.Text)
+		snippetText := message.Text
+		if message.Poll != nil {
+			snippetText = message.Poll.Question
+		}
+		snippet := []rune(snippetText)
 		truncated := len(snippet) > 240
 		if truncated {
 			snippet = snippet[:240]
@@ -193,7 +197,7 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		if err != nil {
 			return searchWindow{}, err
 		}
-		items = append(items, model.SearchHit{AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated})
+		items = append(items, model.SearchHit{HasPoll: message.Poll != nil, AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated})
 	}
 
 	sort.Slice(items, func(i, j int) bool { return items[i].ID.TelegramID() > items[j].ID.TelegramID() })
