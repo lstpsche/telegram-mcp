@@ -274,11 +274,16 @@ func copyReleaseDocs(payload string) error {
 	}); err != nil {
 		return fmt.Errorf("copy release documentation: %w", err)
 	}
-	data, err := os.ReadFile("README.md")
-	if err != nil {
-		return err
+	for _, name := range []string{"README.md", "LICENSE", "THIRD_PARTY_NOTICES.txt"} {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(payload, name), data, 0600); err != nil {
+			return err
+		}
 	}
-	return os.WriteFile(filepath.Join(payload, "README.md"), data, 0600)
+	return nil
 }
 
 func fileDigest(path string) (digest string, resultError error) {

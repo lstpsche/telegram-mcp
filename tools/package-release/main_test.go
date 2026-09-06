@@ -101,7 +101,7 @@ func TestPortableArchivesAndChecksums(t *testing.T) {
 		if strings.HasPrefix(artifact.Platform, "windows") {
 			suffix = ".exe"
 		}
-		for _, name := range []string{"telegram-mcp" + suffix, "telegram-mcpctl" + suffix, "telegram-mcpd" + suffix, "SHA256SUMS", "README.md"} {
+		for _, name := range []string{"telegram-mcp" + suffix, "telegram-mcpctl" + suffix, "telegram-mcpd" + suffix, "SHA256SUMS", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.txt"} {
 			if !found[name] {
 				t.Fatal("missing payload", name)
 			}

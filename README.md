@@ -167,3 +167,6 @@ go vet ./...
 Human [metadata backup and audit maintenance](docs/metadata-maintenance.md) preserves
 settings without restoring account authority. [Portable packaging](docs/distribution.md)
 produces archives without a required signing certificate.
+
+Telegram MCP is available under the [MIT license](LICENSE). Dependencies retain
+their own terms, reproduced in [third-party notices](THIRD_PARTY_NOTICES.txt).

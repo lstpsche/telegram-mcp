@@ -59,3 +59,9 @@ Existing macOS accounts whose secrets remain in Keychain require the explicit
 [legacy migration](keychain.md). Standard packages cannot read that Keychain;
 only the separately built [migration executable](development-signing.md) needs
 the identity that owns those legacy items.
+
+Archives include the project MIT license and original third-party notices.
+Refresh THIRD_PARTY_NOTICES.txt from the exact module versions in go.mod when
+dependencies change, including nested license and notice files and the Go
+standard-library license. Native GitHub Actions checks run formatting, build,
+tests and vet on macOS, Linux and Windows without Telegram credentials.
