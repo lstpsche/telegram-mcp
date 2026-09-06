@@ -182,3 +182,5 @@ func validatePlatformPath(path string) error {
 	}
 	return nil
 }
+
+func openExecutable(path string) (*os.File, error) { return openPrivate(path, false, false) }

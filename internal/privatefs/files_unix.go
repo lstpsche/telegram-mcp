@@ -11,6 +11,12 @@ import (
 
 func createDirectory(path string) error { return os.Mkdir(path, 0700) }
 func openPrivate(path string, directory, create bool) (*os.File, error) {
+	return openCheckedMode(path, directory, create, false)
+}
+func openExecutable(path string) (*os.File, error) {
+	return openCheckedMode(path, false, false, true)
+}
+func openCheckedMode(path string, directory, create, executable bool) (*os.File, error) {
 	flags := unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK | unix.O_RDONLY
 	if directory {
 		flags |= unix.O_DIRECTORY
@@ -27,6 +33,9 @@ func openPrivate(path string, directory, create bool) (*os.File, error) {
 		return nil, errors.Join(err, f.Close())
 	}
 	kind, mode := uint32(unix.S_IFREG), os.FileMode(0600)
+	if executable {
+		mode = 0700
+	}
 	if directory {
 		kind = unix.S_IFDIR
 		mode = 0700

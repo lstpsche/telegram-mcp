@@ -81,8 +81,31 @@ func ReadFile(path string, max int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return readBounded(f, max)
+}
+
+// ReadExecutable reads an owner-only regular executable without following links.
+// It does not relax the permissions required for credential or metadata files.
+func ReadExecutable(path string, max int64) ([]byte, error) {
+	if max <= 0 || max == int64(^uint64(0)>>1) {
+		return nil, errors.New("invalid executable size limit")
+	}
+	if err := CheckDirectory(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	if err := validPath(path); err != nil {
+		return nil, err
+	}
+	f, err := openExecutable(path)
+	if err != nil {
+		return nil, err
+	}
+	return readBounded(f, max)
+}
+
+func readBounded(f *os.File, max int64) ([]byte, error) {
 	data, readError := io.ReadAll(io.LimitReader(f, max+1))
-	err = errors.Join(readError, f.Close())
+	err := errors.Join(readError, f.Close())
 	if int64(len(data)) > max {
 		err = errors.Join(err, errors.New("private file exceeds size limit"))
 	}

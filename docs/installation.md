@@ -5,6 +5,22 @@ The default uses private local credential files: no paid certificate, Keychain
 unlock, vault password or repeated Telegram login is required after setup.
 Read the [storage threat model](threat-model.md) before enabling account access.
 
+For a managed release installation, download `install.sh` (macOS/Linux) or
+`install.ps1` (Windows) from the desired GitHub release and run it as your normal
+user. The script verifies a standalone control executable, which downloads and
+verifies the full archive before starting guided setup. The scripts accept an
+explicit stable version; their default is 0.2.0. They do not require Go.
+
+The equivalent control command is `telegram-mcpctl install --version 0.2.0 --setup`.
+Omit `--setup` to prepare files without touching account or service state.
+Managed versions live under the OS user configuration directory at
+`Telegram MCP/install/versions/X.Y.Z`. Existing versions are checked in full and
+never overwritten. Both archive and payload checksums must match; downloads,
+file counts and extracted sizes are bounded. HTTPS and release checksums provide
+transport and file integrity, not independent publisher authentication.
+
+For manual archive installation, follow the requirements below.
+
 Install into a new private directory at a stable, absolute path. Installation
 registers existing executables; it does not download, copy, sign or replace them.
 Do not overwrite binaries referenced by an existing installation. Run as your

@@ -107,6 +107,16 @@ func TestPortableArchivesAndChecksums(t *testing.T) {
 			}
 		}
 	}
+	sums, err := os.ReadFile(filepath.Join(o.Output, "SHA256SUMS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"release.json", "install.sh", "install.ps1", "telegram-mcpctl-1.0.0-darwin-arm64", "telegram-mcpctl-1.0.0-windows-arm64.exe"} {
+		digest, err := fileDigest(filepath.Join(o.Output, name))
+		if err != nil || !strings.Contains(string(sums), digest+"  "+name+"\n") {
+			t.Fatal("asset checksum missing", name, err)
+		}
+	}
 	calls := strings.Join(f.calls, "\n")
 	for _, target := range []string{"GOOS=darwin GOARCH=arm64", "GOOS=linux GOARCH=amd64", "GOOS=windows GOARCH=arm64"} {
 		if !strings.Contains(calls, target) {

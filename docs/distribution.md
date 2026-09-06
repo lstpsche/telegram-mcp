@@ -65,3 +65,9 @@ Refresh THIRD_PARTY_NOTICES.txt from the exact module versions in go.mod when
 dependencies change, including nested license and notice files and the Go
 standard-library license. Native GitHub Actions checks run formatting, build,
 tests and vet on macOS, Linux and Windows without Telegram credentials.
+
+Releases also include standalone `telegram-mcpctl-VERSION-OS-ARCH` programs
+(with `.exe` on Windows), `install.sh`, `install.ps1` and an outer `SHA256SUMS`
+covering the archives, control programs, scripts and `release.json`. Bootstrap
+scripts verify the selected control program before execution; the Go installer
+then verifies the complete archive and its payload before publishing files.

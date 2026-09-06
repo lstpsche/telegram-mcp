@@ -70,6 +70,9 @@ func runContext(
 		return 0
 	}
 
+	if args[0] == "install" {
+		return runInstallCommand(ctx, args, stdout, stderr)
+	}
 	if args[0] == "setup" {
 		return runSetupCommand(ctx, args, stdout, stderr)
 	}
@@ -225,6 +228,7 @@ func parseConfiguration(args []string) (string, int, bool) {
 func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "usage:")
 	fmt.Fprintln(writer, "  telegram-mcpctl setup")
+	fmt.Fprintln(writer, "  telegram-mcpctl install --version X.Y.Z")
 	fmt.Fprintln(writer, "  telegram-mcpctl migrate-keychain --accept-plaintext-storage")
 	fmt.Fprintln(writer, "Metadata maintenance requires a stopped daemon; backup files require an absolute path in a private 0700 directory.")
 	fmt.Fprintln(writer, "  telegram-mcpctl backup --file ABSOLUTE_FILE")

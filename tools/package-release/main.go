@@ -166,6 +166,18 @@ func buildRelease(ctx context.Context, o options, run commandRunner) error {
 				return err
 			}
 		}
+		controlName := "telegram-mcpctl"
+		suffix := ""
+		if parts[0] == "windows" {
+			suffix = ".exe"
+		}
+		controlData, err := os.ReadFile(filepath.Join(payload, controlName+suffix))
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(o.Output, controlName+"-"+o.Version+"-"+platform+suffix), controlData, 0700); err != nil {
+			return err
+		}
 		if err := copyReleaseDocs(payload); err != nil {
 			return err
 		}
@@ -182,6 +194,23 @@ func buildRelease(ctx context.Context, o options, run commandRunner) error {
 		}
 		manifest.Artifacts = append(manifest.Artifacts, releaseArtifact{Platform: platform, Artifact: artifact, SHA256: digest})
 	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	for _, name := range []string{"install.sh", "install.ps1"} {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(o.Output, name), data, 0600); err != nil {
+			return err
+		}
+	}
+	data = append(data, '\n')
+	if err := writeAssetChecksums(o.Output, data); err != nil {
+		return err
+	}
 	if o.Mode == "distribution" {
 		current, err := run(ctx, nil, "git", "rev-parse", "HEAD")
 		if err != nil {
@@ -195,11 +224,7 @@ func buildRelease(ctx context.Context, o options, run commandRunner) error {
 			return errors.New("source changed while building distribution")
 		}
 	}
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(o.Output, "release.json"), append(data, '\n'), 0600)
+	return os.WriteFile(filepath.Join(o.Output, "release.json"), data, 0600)
 }
 
 func archivePayload(payload, path string) (resultError error) {
@@ -326,4 +351,28 @@ func writePayloadChecksums(payload string) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(payload, "SHA256SUMS"), []byte(lines.String()), 0600)
+}
+
+func writeAssetChecksums(directory string, manifest []byte) error {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return err
+	}
+	var sums strings.Builder
+	digest := sha256.Sum256(manifest)
+	fmt.Fprintf(&sums, "%x  release.json\n", digest)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if !entry.Type().IsRegular() {
+			return errors.New("release asset is not a regular file")
+		}
+		digest, err := fileDigest(filepath.Join(directory, entry.Name()))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&sums, "%s  %s\n", digest, entry.Name())
+	}
+	return os.WriteFile(filepath.Join(directory, "SHA256SUMS"), []byte(sums.String()), 0600)
 }
