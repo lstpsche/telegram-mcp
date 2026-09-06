@@ -22,7 +22,7 @@ func TestControlPlaneHelpListsOnlyHumanCommands(t *testing.T) {
 	if code := run(nil, &stdout, &stderr); code != 0 {
 		t.Fatalf("run() code = %d, want 0", code)
 	}
-	for _, command := range []string{"configure", "auth {phone|qr}", "status", "logout"} {
+	for _, command := range []string{"configure", "auth {phone|qr}", "restore --dry-run", "status", "logout"} {
 		if !strings.Contains(stdout.String(), command) {
 			t.Fatalf("help does not include %q: %q", command, stdout.String())
 		}

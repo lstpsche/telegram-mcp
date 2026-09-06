@@ -71,6 +71,33 @@ func (m *Migrator) Apply(ctx context.Context, database *sql.DB) error {
 	return nil
 }
 
+// check validates the complete migration history without updating storage.
+func (m *Migrator) check(ctx context.Context, database *sql.DB) error {
+	migrations, err := loadMigrations(m.files)
+	if err != nil {
+		return err
+	}
+	if err := rejectUnknownAppliedMigrations(ctx, database, migrations); err != nil {
+		return err
+	}
+	for _, expected := range migrations {
+		var name, checksum string
+		err := database.QueryRowContext(ctx,
+			"SELECT name, checksum FROM schema_migrations WHERE version = ?", expected.version,
+		).Scan(&name, &checksum)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("metadata migration %s is required before read-only access", expected.name)
+		}
+		if err != nil {
+			return fmt.Errorf("inspect migration %s: %w", expected.name, err)
+		}
+		if name != expected.name || checksum != expected.checksum {
+			return fmt.Errorf("migration %04d changed after it was applied", expected.version)
+		}
+	}
+	return nil
+}
+
 func rejectUnknownAppliedMigrations(ctx context.Context, database *sql.DB, migrations []migration) error {
 	known := make(map[int64]struct{}, len(migrations))
 	for _, migration := range migrations {

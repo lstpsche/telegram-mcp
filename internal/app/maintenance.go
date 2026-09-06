@@ -14,6 +14,20 @@ import (
 
 var ErrBackupEnvironment = errors.New("backup environment does not match configured account")
 
+type RestorePreview struct {
+	Current      MetadataBackup      `json:"current"`
+	Proposed     MetadataBackup      `json:"proposed"`
+	Consequences RestoreConsequences `json:"consequences"`
+}
+
+type RestoreConsequences struct {
+	ScopeIDsRegenerated          int    `json:"scope_ids_regenerated"`
+	AccessModeAfterRestore       string `json:"access_mode_after_restore"`
+	RestrictedGrantsAfterRestore int    `json:"restricted_grants_after_restore"`
+	IssuedReferencesInvalidated  bool   `json:"issued_references_invalidated"`
+	AuditHistoryPreserved        bool   `json:"audit_history_preserved"`
+}
+
 // withMaintenance owns both locks and opens metadata before invoking the operation.
 func (a *Application) withMaintenance(ctx context.Context, operation func(context.Context, *sql.DB, *store.Repository) error) (resultError error) {
 	if a == nil {
@@ -41,7 +55,7 @@ func (a *Application) withMaintenance(ctx context.Context, operation func(contex
 
 // Recovery uses the policy lease inside the exclusive account lock. Unlike
 // audit maintenance it requires a current authorization epoch.
-func (a *Application) withRecovery(ctx context.Context, operation func(context.Context, *policy.Lease, *store.Repository, *sql.DB) error) (resultError error) {
+func (a *Application) withRecovery(ctx context.Context, open func(context.Context, string) (*sql.DB, error), operation func(context.Context, *policy.Lease, *store.Repository, *sql.DB) error) (resultError error) {
 	if a == nil {
 		return errors.New("application is not initialized")
 	}
@@ -52,11 +66,15 @@ func (a *Application) withRecovery(ctx context.Context, operation func(context.C
 		return err
 	}
 	defer func() { resultError = errors.Join(resultError, lock.Release()) }()
-	db, repository, err := a.openRepository(ctx)
+	db, err := open(ctx, a.paths.Database)
 	if err != nil {
 		return err
 	}
 	defer func() { resultError = errors.Join(resultError, db.Close()) }()
+	repository, err := store.NewRepository(db)
+	if err != nil {
+		return err
+	}
 	policies, err := policy.New(db, filepath.Join(a.paths.StateDir, "policy.lock"), a.now)
 	if err != nil {
 		return err
@@ -70,36 +88,76 @@ func (a *Application) withRecovery(ctx context.Context, operation func(context.C
 }
 
 func (a *Application) Backup(ctx context.Context, path string) error {
-	return a.withRecovery(ctx, func(ctx context.Context, lease *policy.Lease, repository *store.Repository, db *sql.DB) error {
-		config, exists, err := repository.Config(ctx)
+	return a.withRecovery(ctx, store.Open, func(ctx context.Context, lease *policy.Lease, repository *store.Repository, db *sql.DB) error {
+		backup, err := currentMetadataBackup(ctx, lease, repository, db)
 		if err != nil {
 			return err
-		}
-		if !exists {
-			return ErrConfigurationRequired
-		}
-		scopes, err := lease.Scopes(ctx)
-		if err != nil {
-			return err
-		}
-		tx, err := db.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
-		retention, err := store.ReadAuditRetention(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-		backup := MetadataBackup{Version: 1, Environment: config.Environment, TestDC: config.TestDC, Retention: retention, Scopes: make([]policy.RecoverableScope, 0, len(scopes))}
-		for _, scope := range scopes {
-			backup.Scopes = append(backup.Scopes, policy.RecoverableScope{Name: scope.Name, Peers: scope.Peers})
 		}
 		return writeBackup(path, backup)
 	})
+}
+
+func currentMetadataBackup(ctx context.Context, lease *policy.Lease, repository *store.Repository, db *sql.DB) (MetadataBackup, error) {
+	config, exists, err := repository.Config(ctx)
+	if err != nil {
+		return MetadataBackup{}, err
+	}
+	if !exists {
+		return MetadataBackup{}, ErrConfigurationRequired
+	}
+	scopes, err := lease.Scopes(ctx)
+	if err != nil {
+		return MetadataBackup{}, err
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return MetadataBackup{}, err
+	}
+	defer tx.Rollback()
+	retention, err := store.ReadAuditRetention(ctx, tx)
+	if err != nil {
+		return MetadataBackup{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return MetadataBackup{}, err
+	}
+	backup := MetadataBackup{Version: 1, Environment: config.Environment, TestDC: config.TestDC, Retention: retention, Scopes: make([]policy.RecoverableScope, 0, len(scopes))}
+	for _, scope := range scopes {
+		backup.Scopes = append(backup.Scopes, policy.RecoverableScope{Name: scope.Name, Peers: scope.Peers})
+	}
+	return backup, nil
+}
+
+func (a *Application) PreviewRestore(ctx context.Context, path string) (preview RestorePreview, resultError error) {
+	backup, err := InspectBackup(path)
+	if err != nil {
+		return RestorePreview{}, err
+	}
+	resultError = a.withRecovery(ctx, store.OpenReadOnly, func(ctx context.Context, lease *policy.Lease, repository *store.Repository, db *sql.DB) error {
+		current, err := currentMetadataBackup(ctx, lease, repository, db)
+		if err != nil {
+			return err
+		}
+		if current.Environment != backup.Environment || current.TestDC != backup.TestDC {
+			return ErrBackupEnvironment
+		}
+		preview = RestorePreview{
+			Current:  current,
+			Proposed: backup,
+			Consequences: RestoreConsequences{
+				ScopeIDsRegenerated:          len(backup.Scopes),
+				AccessModeAfterRestore:       "restricted",
+				RestrictedGrantsAfterRestore: 0,
+				IssuedReferencesInvalidated:  true,
+				AuditHistoryPreserved:        true,
+			},
+		}
+		return nil
+	})
+	if resultError != nil {
+		return RestorePreview{}, resultError
+	}
+	return preview, nil
 }
 
 func (a *Application) Restore(ctx context.Context, path string) error {
@@ -107,7 +165,7 @@ func (a *Application) Restore(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	return a.withRecovery(ctx, func(ctx context.Context, lease *policy.Lease, repository *store.Repository, _ *sql.DB) error {
+	return a.withRecovery(ctx, store.Open, func(ctx context.Context, lease *policy.Lease, repository *store.Repository, _ *sql.DB) error {
 		config, exists, err := repository.Config(ctx)
 		if err != nil {
 			return err

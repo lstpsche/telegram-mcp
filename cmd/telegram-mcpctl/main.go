@@ -224,6 +224,7 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "Metadata maintenance requires a stopped daemon; backup files require an absolute path in a private 0700 directory.")
 	fmt.Fprintln(writer, "  telegram-mcpctl backup --file ABSOLUTE_FILE")
 	fmt.Fprintln(writer, "  telegram-mcpctl backup-inspect --file ABSOLUTE_FILE")
+	fmt.Fprintln(writer, "  telegram-mcpctl restore --dry-run --file ABSOLUTE_FILE")
 	fmt.Fprintln(writer, "  telegram-mcpctl restore --file ABSOLUTE_FILE --replace-scopes --reset-access")
 	fmt.Fprintln(writer, "  telegram-mcpctl audit")
 	fmt.Fprintln(writer, "  telegram-mcpctl audit retention --days N --max-records N --apply")
