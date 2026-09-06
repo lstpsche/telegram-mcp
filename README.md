@@ -214,6 +214,8 @@ them. See [forwarded messages](docs/forwarded-messages.md).
 
 Source after 0.5.0 also supports joined broadcast channels; see [channel access](docs/channel-access.md), including the outstanding sponsored-message presentation contract before release. Secret Chats and anonymous/channel authors in groups remain excluded. Bot-authored messages in supported conversations are included under the same access rules. Imported, quoted, protected, expiring, and unsupported media content is also filtered. A supported conversation can therefore contain messages that the server will not return.
 
+Source after 0.5.0 also adds [reply references and bounded parent context](docs/reply-context.md). Use `reply_depth` on `get_message_context` to follow authorized parents.
+
 The MCP surface is read-first: sending, editing, deleting, account administration, authentication, and access changes are not agent tools. See [message access](docs/text-access.md) and [image access](docs/image-access.md) for exact boundaries.
 
 ## How It Works

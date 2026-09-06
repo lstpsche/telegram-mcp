@@ -96,7 +96,7 @@ func (g Grant) CheckMessage(candidate model.Candidate, self model.PeerID, now ti
 		return err
 	}
 	message := candidate.Message
-	if !message.ValidAuthor() || message.ID.Peer() != g.Peer || message.ID.TelegramID() < g.MinID ||
+	if !message.ValidReply() || !message.ValidAuthor() || message.ID.Peer() != g.Peer || message.ID.TelegramID() < g.MinID ||
 		message.ID.TelegramID() > g.MaxID || (!g.fullRead && message.Author != g.Author) ||
 		(g.Profile == ProfileSelfAuthored && (self.Kind() != model.PeerKindUser || message.Author != self)) {
 		return model.TextError(model.ErrorPolicyDenied, ErrDenied)

@@ -274,3 +274,10 @@ client compatibility, safe handling, read effects and failure semantics.
 topic-only receipts. Parent grants do not authorize descendants.
 [Voice access](voice-access.md) defines the separate permission and native audio
 delivery contract. Voice delivery reports a history read effect, never playback.
+
+## Reply context
+
+Messages, search hits and media results may include `reply_to`. The existing
+context tool accepts `reply_depth` (0–5, default 0) and reports bounded ancestor
+coverage on the target. Exact authorization, unavailable-parent behavior and
+combined bounds are defined in [reply context](reply-context.md).

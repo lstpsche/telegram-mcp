@@ -139,6 +139,9 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 	if err := model.ValidatePageSize(query.Limit); err != nil {
 		return Result{}, model.TextError(model.ErrorInvalidInput, err)
 	}
+	if query.ReplyDepth < 0 || query.ReplyDepth > 5 || (query.ReplyDepth > 0 && query.Target == 0) || query.Limit+query.ReplyDepth > model.MaximumPageSize {
+		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+	}
 	if query.Target > 0 && query.Limit != query.BeforeCount+query.AfterCount+1 {
 		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
 	}
@@ -232,28 +235,15 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 		if message.Author.String() == "" {
 			return Result{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
-		date, err := time.Parse(time.RFC3339Nano, message.Date)
-		if err != nil || date.IsZero() {
-			return Result{}, model.TextError(model.ErrorInvalidReference, nil)
+		message, err = s.prepareMessage(candidate, grant, mediaAuthority{epoch, revision})
+		if err != nil {
+			return Result{}, err
 		}
 		if message.ID.TelegramID() == query.Target {
 			found = true
 		}
 		if message.ID.TelegramID() > through {
 			through = message.ID.TelegramID()
-		}
-		message.Image, err = s.imageDescriptor(candidate, grant, mediaAuthority{epoch, revision})
-		if err != nil {
-			return Result{}, err
-		}
-		message.Document, err = s.documentDescriptor(candidate, grant, mediaAuthority{epoch, revision})
-		if err != nil {
-			return Result{}, err
-		}
-
-		message.Voice, err = s.voiceDescriptor(candidate, grant, mediaAuthority{epoch, revision})
-		if err != nil {
-			return Result{}, err
 		}
 		items = append(items, message)
 	}
@@ -263,6 +253,21 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 	if err := grant.CheckCurrent(s.now()); err != nil {
 		return Result{}, err
 	}
+	if query.ReplyDepth > 0 {
+		if err := grant.CheckRead(through, s.now()); err != nil {
+			return Result{}, err
+		}
+		items, err = s.replyChain(ctx, query, grant, mediaAuthority{epoch, revision}, items, seen)
+		if err != nil {
+			return Result{}, err
+		}
+		for _, item := range items {
+			if item.ReplyChain != nil && item.ReplyChain.State != "complete" {
+				partial = true
+			}
+		}
+	}
+
 	sort.Slice(items, func(i, j int) bool { return items[i].ID.TelegramID() > items[j].ID.TelegramID() })
 	effect := model.NoReadEffect()
 	if through > 0 {
@@ -368,4 +373,26 @@ func (s *Service) finish(ctx context.Context, lease *policy.Lease, id, operation
 		return model.TextError(model.ErrorReadEffectUncertain, joined)
 	}
 	return joined
+}
+
+func (s *Service) prepareMessage(candidate model.Candidate, grant policy.Grant, authority mediaAuthority) (model.Message, error) {
+	message := candidate.Message
+	date, err := time.Parse(time.RFC3339Nano, message.Date)
+	if err != nil || date.IsZero() {
+		return model.Message{}, model.TextError(model.ErrorInvalidReference, nil)
+	}
+	message.Image, err = s.imageDescriptor(candidate, grant, authority)
+	if err != nil {
+		return model.Message{}, err
+	}
+	message.Document, err = s.documentDescriptor(candidate, grant, authority)
+	if err != nil {
+		return model.Message{}, err
+	}
+
+	message.Voice, err = s.voiceDescriptor(candidate, grant, authority)
+	if err != nil {
+		return model.Message{}, err
+	}
+	return message, nil
 }

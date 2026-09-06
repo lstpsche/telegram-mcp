@@ -321,8 +321,19 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 			candidate.Unsupported = true
 		} else {
 			candidate.Quoted = candidate.Quoted || reply.Quote || reply.QuoteText != "" || len(reply.QuoteEntities) > 0 || !reply.ReplyFrom.Zero() || reply.ReplyMedia != nil
-			candidate.Unsupported = candidate.Unsupported || (peer.TopicID() == 0 && (reply.ForumTopic || reply.ReplyToTopID != 0)) || reply.ReplyToPeerID != nil || reply.ReplyToScheduled
+			candidate.Unsupported = candidate.Unsupported || (peer.TopicID() == 0 && reply.ForumTopic) || reply.ReplyToPeerID != nil || reply.ReplyToScheduled
 			candidate.Ephemeral = candidate.Ephemeral || reply.ReplyToEphemeral
+			if reply.ReplyToMsgID != 0 || reply.Flags.Has(4) {
+				if reply.ReplyToMsgID <= 0 || reply.ReplyToMsgID >= message.ID || reply.ReplyToMsgID > math.MaxInt32 {
+					candidate.Unsupported = true
+				} else {
+					parent, err := model.NewMessageID(peer, int32(reply.ReplyToMsgID))
+					if err != nil {
+						return model.Candidate{}, err
+					}
+					candidate.Message.ReplyTo = &parent
+				}
+			}
 		}
 	}
 	if peer.TopicID() != 0 {
@@ -398,6 +409,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 		candidate.Voice = voice
 	} else {
 		candidate.Message.ChannelPost = nil
+		candidate.Message.ReplyTo = nil
 	}
 	return candidate, nil
 }
@@ -468,6 +480,12 @@ func (a *Account) History(ctx context.Context, q model.HistoryQuery) ([]model.Ca
 		candidates, err = a.reads.normalizePage(bounded, q.Peer, result, 1)
 		if err != nil {
 			return nil, err
+		}
+		if len(candidates) == 0 {
+			if err := a.reads.synchronize(bounded); err != nil {
+				return nil, model.TextError(model.ErrorFreshnessDegraded, err)
+			}
+			return candidates, nil
 		}
 		if len(candidates) != 1 || candidates[0].Message.ID.TelegramID() != q.Target {
 			return nil, model.TextError(model.ErrorInvalidReference, nil)

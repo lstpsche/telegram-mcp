@@ -222,8 +222,8 @@ func TestMissingContextTargetDoesNotFetchNeighbors(t *testing.T) {
 		}
 	})
 	result, err := account.History(context.Background(), model.HistoryQuery{Peer: testSelfPeer(t), Target: 10, BeforeCount: 1, AfterCount: 1, MinID: 1, MaxID: 20, Limit: 3})
-	if err == nil || result != nil {
-		t.Fatal("missing target returned a result")
+	if err != nil || len(result) != 0 {
+		t.Fatal("missing target did not return an empty lookup", err)
 	}
 }
 

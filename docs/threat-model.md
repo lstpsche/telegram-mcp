@@ -436,3 +436,13 @@ The current headless interface cannot establish screen presentation or genuine
 impressions. Sponsored presentation remains an unresolved publication contract;
 synthetic source qualification is not proof of compliance or a release decision.
 See [channel access](channel-access.md) for the exact boundary.
+
+## Reply navigation
+
+Reply IDs describe an older message inside the exact containing peer/topic and
+never authorize a parent fetch. Bounded parent traversal validates range before
+I/O and author/content/media policy afterward under the existing lease. Missing,
+denied and excluded parents have one public unavailable state; network and
+freshness failures discard the result. Embedded quote content and cross-peer
+reply metadata remain excluded. Reply chains reuse existing receipt and output
+budgets, and media source checks also compare reply IDs. See [reply context](reply-context.md).

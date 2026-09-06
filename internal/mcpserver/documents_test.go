@@ -135,6 +135,7 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool) {
 			delete(backend.data, oldID)
 		}
 	}
+	backend.candidates[0].Message.ReplyTo = &backend.candidates[1].Message.ID
 	grant.Documents = true
 	if forwarded {
 		grant.Profile = policy.ProfileConsented
@@ -294,6 +295,9 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool) {
 		if opened["id"] != expected.Message.ID.String() || opened["author"] != expected.Message.Author.String() || opened["date"] != expected.Message.Date || opened["text"] != nil {
 			t.Fatal("document provenance differs or body leaked into document metadata")
 		}
+		if expected.Message.ReplyTo != nil && opened["reply_to"] != expected.Message.ReplyTo.String() {
+			t.Fatal("document reply reference lost")
+		}
 		documentMetadata := opened["document"].(map[string]any)
 		if documentMetadata["handle"] != descriptor["handle"] || documentMetadata["mime_type"] != expected.Document.MIMEType || documentMetadata["size"] != float64(len(data)) {
 			t.Fatal("document descriptor does not match delivered content")
@@ -321,6 +325,17 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool) {
 		t.Fatal("attachment fixture does not exercise output larger than input frames")
 	}
 	open(attachment, backend.candidates[1])
+	_, replyContext := call("get_message_context", map[string]any{"message": backend.candidates[0].Message.ID.String(), "reply_depth": 2})
+	replyItems := replyContext["items"].([]any)
+	if len(replyItems) != 2 || replyItems[0].(map[string]any)["reply_to"] != backend.candidates[1].Message.ID.String() || replyItems[0].(map[string]any)["reply_chain"].(map[string]any)["state"] != "complete" {
+		t.Fatal("reply context lost over stdio")
+	}
+	for _, depth := range []any{-1, 6, nil, "2"} {
+		invalid, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_message_context", Arguments: map[string]any{"message": backend.candidates[0].Message.ID.String(), "reply_depth": depth}})
+		if err != nil || !invalid.IsError {
+			t.Fatal("invalid reply depth accepted")
+		}
+	}
 	beforeFetches, beforeAcks, beforeDownloads := backend.fetches.Load(), backend.acks.Load(), backend.downloads.Load()
 	for _, arguments := range []string{
 		`{}`, `{"handle":null}`, `{"handle":""}`, `{"handle":"a","handle":"b"}`,

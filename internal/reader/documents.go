@@ -16,6 +16,7 @@ type DocumentContent struct {
 }
 
 type documentItem struct {
+	ReplyTo     *model.MessageID          `json:"reply_to,omitempty"`
 	ChannelPost *model.ChannelPost        `json:"channel_post,omitempty"`
 	Forward     *model.Forward            `json:"forward,omitempty"`
 	ID          model.MessageID           `json:"id"`

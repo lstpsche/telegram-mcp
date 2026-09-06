@@ -19,7 +19,14 @@ type Chat struct {
 	Title     string `json:"title"`
 }
 
+type ReplyChain struct {
+	Depth int    `json:"depth"`
+	State string `json:"state"`
+}
+
 type Message struct {
+	ReplyTo     *MessageID          `json:"reply_to,omitempty"`
+	ReplyChain  *ReplyChain         `json:"reply_chain,omitempty"`
 	ChannelPost *ChannelPost        `json:"channel_post,omitempty"`
 	Forward     *Forward            `json:"forward,omitempty"`
 	Voice       *VoiceDescriptor    `json:"voice_note,omitempty"`
@@ -52,6 +59,7 @@ type Candidate struct {
 type HistoryQuery struct {
 	Peer        PeerID
 	Before      int32
+	ReplyDepth  int
 	Target      int32
 	BeforeCount int
 	AfterCount  int
@@ -98,6 +106,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	ReplyTo          *MessageID          `json:"reply_to,omitempty"`
 	ChannelPost      *ChannelPost        `json:"channel_post,omitempty"`
 	Forward          *Forward            `json:"forward,omitempty"`
 	Voice            *VoiceDescriptor    `json:"voice_note,omitempty"`
@@ -126,4 +135,9 @@ func NormalizeSearchQuery(query string) (string, error) {
 		return "", TextError(ErrorInvalidInput, nil)
 	}
 	return query, nil
+}
+
+// ValidReply keeps reply navigation inside the exact conversation and older IDs.
+func (m Message) ValidReply() bool {
+	return m.ReplyTo == nil || (m.ReplyTo.String() != "" && m.ReplyTo.Peer() == m.ID.Peer() && m.ReplyTo.TelegramID() < m.ID.TelegramID())
 }
