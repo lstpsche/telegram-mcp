@@ -157,3 +157,16 @@ unconfigured state, install/start, run `doctor`, connect the relay and call
 `status`, restart with a connected relay, reconnect, then stop/uninstall. Verify
 that only the expected registration is removed and retained metadata and binaries
 remain. Do not run that fresh-state exercise against an existing account.
+
+On Windows, use an ordinary, non-elevated user shell. Do not run setup or the
+daemon with Run as administrator: elevated tokens can assign group ownership
+to SQLite auxiliary files, outside the per-user storage contract.
+
+Windows CI runs the full suite, console input and real task registration/removal
+as a standard user, including a Unicode installation path. Its secondary logon
+has no interactive desktop session, so it cannot qualify scheduled-process
+startup. In a disposable non-elevated Windows desktop login with no existing
+Telegram MCP installation, run
+`$env:TELEGRAM_MCP_NATIVE_SERVICE_TEST='1'; go test -count=1 -v ./internal/cli ./internal/service`
+to additionally verify task start, restart and stop. Desktop startup and reboot
+acceptance remain separate from the hosted CI checks.

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/policy"
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 	"github.com/lstpsche/telegram-mcp/internal/store"
 )
 
@@ -60,8 +60,8 @@ func testService(t *testing.T) (*Service, *fakeBackend, *policy.Repository, *sql
 	t.Helper()
 	ctx := context.Background()
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o700); err != nil {
+	dir := filepath.Join(t.TempDir(), "private")
+	if err := privatefs.EnsureDirectory(dir); err != nil {
 		t.Fatal(err)
 	}
 	db, err := store.Open(ctx, filepath.Join(dir, "metadata.sqlite"))

@@ -402,6 +402,9 @@ func TestDaemonInvalidatesEpochWhenAuthorizationExpiresAfterReady(t *testing.T) 
 }
 
 func TestDaemonCleansUpAfterSIGTERM(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows task shutdown is verified by the native task lifecycle test")
+	}
 	stateRoot := filepath.Join(t.TempDir(), "state")
 	runtimeRoot := filepath.Join(shortRuntimeRoot(t), "runtime")
 	processContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)

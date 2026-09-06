@@ -82,7 +82,7 @@ func TestInspectLocalMCPWithoutOpeningMetadata(t *testing.T) {
 	}
 	written := []byte("deliberately not a SQLite database; private fixture")
 	for _, path := range []string{paths.Database, paths.Lock, filepath.Join(paths.StateDir, "policy.lock"), filepath.Join(paths.StateDir, "secrets.json"), filepath.Join(paths.StateDir, "secrets.lock")} {
-		if err := os.WriteFile(path, written, 0o600); err != nil {
+		if err := privatefs.WriteFile(path, written, false); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -245,7 +245,7 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadata := []byte("deliberately invalid SQLite to detect accidental open")
-	if err := os.WriteFile(paths.Database, metadata, 0600); err != nil {
+	if err := privatefs.WriteFile(paths.Database, metadata, false); err != nil {
 		t.Fatal(err)
 	}
 	invoke(1, "doctor")
@@ -314,7 +314,23 @@ func (r *workflowRunner) Run(ctx context.Context, program string, args ...string
 		return err
 	}
 	joined := strings.Join(args, " ")
-	if strings.Contains(joined, "Get-ScheduledTask") {
+	if filepath.Base(program) == "powershell.exe" {
+		if strings.Contains(joined, "$folder.RegisterTask(") {
+			r.registered = true
+			return nil
+		}
+		if strings.Contains(joined, ".Run($null)") {
+			r.loaded = true
+			return nil
+		}
+		if strings.Contains(joined, ".Stop(0)") {
+			r.loaded = false
+			return nil
+		}
+		if strings.Contains(joined, "$folder.DeleteTask(") {
+			r.registered = false
+			return nil
+		}
 		if !r.registered {
 			return workflowExit(4)
 		}
@@ -323,7 +339,7 @@ func (r *workflowRunner) Run(ctx context.Context, program string, args ...string
 		}
 		return workflowExit(3)
 	}
-	if program == "/usr/bin/systemctl" || strings.EqualFold(filepath.Base(program), "schtasks.exe") {
+	if program == "/usr/bin/systemctl" {
 		switch {
 		case strings.Contains(joined, "is-enabled"):
 			if r.registered {
@@ -335,13 +351,13 @@ func (r *workflowRunner) Run(ctx context.Context, program string, args ...string
 				return nil
 			}
 			return workflowExit(3)
-		case strings.Contains(joined, "/Create") || strings.Contains(joined, " enable "):
+		case strings.Contains(joined, " enable "):
 			r.registered = true
-		case strings.Contains(joined, "/Run") || strings.Contains(joined, " start "):
+		case strings.Contains(joined, " start "):
 			r.loaded = true
-		case strings.Contains(joined, "/End") || strings.Contains(joined, " stop "):
+		case strings.Contains(joined, " stop "):
 			r.loaded = false
-		case strings.Contains(joined, "/Delete") || strings.Contains(joined, " disable "):
+		case strings.Contains(joined, " disable "):
 			r.registered = false
 		case strings.Contains(joined, "daemon-reload"):
 		default:

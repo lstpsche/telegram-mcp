@@ -37,7 +37,23 @@ func (r *syntheticRunner) Run(ctx context.Context, program string, args ...strin
 		return testExit(5)
 	}
 	joined := strings.Join(args, " ")
-	if strings.Contains(joined, "Get-ScheduledTask") {
+	if filepath.Base(program) == "powershell.exe" {
+		if strings.Contains(joined, "$folder.RegisterTask(") {
+			r.registered = true
+			return nil
+		}
+		if strings.Contains(joined, ".Run($null)") {
+			r.active = true
+			return nil
+		}
+		if strings.Contains(joined, ".Stop(0)") {
+			r.active = false
+			return nil
+		}
+		if strings.Contains(joined, "$folder.DeleteTask(") {
+			r.registered = false
+			return nil
+		}
 		if !r.registered {
 			return testExit(4)
 		}
@@ -57,13 +73,13 @@ func (r *syntheticRunner) Run(ctx context.Context, program string, args ...strin
 			return nil
 		}
 		return testExit(3)
-	case strings.Contains(joined, "/Create") || strings.Contains(joined, " enable "):
+	case strings.Contains(joined, " enable "):
 		r.registered = true
-	case strings.Contains(joined, "/Run") || strings.Contains(joined, " start "):
+	case strings.Contains(joined, " start "):
 		r.active = true
-	case strings.Contains(joined, "/End") || strings.Contains(joined, " stop "):
+	case strings.Contains(joined, " stop "):
 		r.active = false
-	case strings.Contains(joined, "/Delete") || strings.Contains(joined, " disable "):
+	case strings.Contains(joined, " disable "):
 		r.registered = false
 	}
 	return nil
