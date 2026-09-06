@@ -102,7 +102,10 @@ func (g Grant) CheckMessage(candidate model.Candidate, self model.PeerID, now ti
 	if candidate.Ephemeral {
 		return model.TextError(model.ErrorEphemeralContent, ErrDenied)
 	}
-	if candidate.Forwarded || candidate.Quoted || candidate.Unsupported || (candidate.Image != nil && !g.Images) || (candidate.Document != nil && !g.Documents) || (candidate.Voice != nil && !g.VoiceNotes) {
+	if candidate.Forwarded != (message.Forward != nil) || (message.Forward != nil && (message.Forward.Validate() != nil || g.Profile == ProfileSelfAuthored)) {
+		return model.TextError(model.ErrorPolicyDenied, ErrDenied)
+	}
+	if candidate.Quoted || candidate.Unsupported || (candidate.Image != nil && !g.Images) || (candidate.Document != nil && !g.Documents) || (candidate.Voice != nil && !g.VoiceNotes) {
 		return model.TextError(model.ErrorPolicyDenied, ErrDenied)
 	}
 	return nil

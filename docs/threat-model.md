@@ -398,3 +398,19 @@ read-receipt boundaries. Bot flags do not grant authority. Keyboard/button marku
 is omitted from delivered messages; the server never invokes callbacks, sends
 commands, starts a bot or follows its links. Message text and supported media
 remain hostile data. Bot-account authentication is still unsupported.
+
+## Forwarded copies and origin metadata
+
+A forwarded copy is authorized by its containing peer, message ID and sender.
+Saved Messages copies use the account owner as the containing sender. Consented
+grants and Full read can expose the copy; self-authored grants cannot, even when
+the origin claims the current user. Origin metadata never selects grants, causes
+a source fetch, resolves an entity, or produces an authorized source handle.
+A channel origin does not enable broadcast-channel history.
+
+The optional forward object carries bounded untrusted date, origin peer/name
+and signature. Hidden names are not resolved or used to infer identity. Import,
+PSA and malformed headers are excluded. Protected, ephemeral, quoted and unsafe
+media checks remain. Media delivery compares attribution around the download
+and receipt, withholding changed metadata and bytes. The forward object is never
+persisted, and names participate in the existing response budget.

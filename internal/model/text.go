@@ -19,6 +19,7 @@ type Chat struct {
 }
 
 type Message struct {
+	Forward  *Forward            `json:"forward,omitempty"`
 	Voice    *VoiceDescriptor    `json:"voice_note,omitempty"`
 	Document *DocumentDescriptor `json:"document,omitempty"`
 	Image    *ImageDescriptor    `json:"image,omitempty"`
@@ -95,6 +96,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	Forward          *Forward            `json:"forward,omitempty"`
 	Voice            *VoiceDescriptor    `json:"voice_note,omitempty"`
 	Document         *DocumentDescriptor `json:"document,omitempty"`
 	Image            *ImageDescriptor    `json:"image,omitempty"`

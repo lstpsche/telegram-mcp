@@ -64,7 +64,7 @@ Limits and checks:
   exceed the receiving client's limits or the operation deadline. No partial PDF
   is returned. Plain-text attachments retain their existing response budget.
 
-Protected, expiring, forwarded, quoted, spoiler, paid and unsupported media
+Protected, expiring, imported, quoted, spoiler, paid and unsupported media
 variants retain the existing exclusions. Supported documents may carry an
 optional filename attribute, which is discarded; animation, audio, video,
 sticker and image-dimension attributes are rejected.

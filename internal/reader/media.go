@@ -144,10 +144,11 @@ func (s *Service) decodeMediaHandle(token string, kind mediaKind) (mediaHandle, 
 }
 
 type imageItem struct {
-	ID     model.MessageID        `json:"id"`
-	Author model.PeerID           `json:"author"`
-	Date   string                 `json:"date"`
-	Image  *model.ImageDescriptor `json:"image"`
+	Forward *model.Forward         `json:"forward,omitempty"`
+	ID      model.MessageID        `json:"id"`
+	Author  model.PeerID           `json:"author"`
+	Date    string                 `json:"date"`
+	Image   *model.ImageDescriptor `json:"image"`
 }
 
 // OpenImage releases original bytes only after authorization, validation, a hooked
@@ -294,6 +295,10 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 	if err != nil {
 		return Result{}, err
 	}
+	if candidate.Message.Forward != nil {
+		attribution := *candidate.Message.Forward
+		candidate.Message.Forward = &attribution
+	}
 	immutableSource := *mediaSource(candidate, kind)
 	if kind == mediaVoice {
 		candidate.Voice = &immutableSource
@@ -324,19 +329,19 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 	if err != nil {
 		return Result{}, err
 	}
-	if current.Message.Author != candidate.Message.Author || current.Message.Date != candidate.Message.Date {
+	if current.Message.Author != candidate.Message.Author || current.Message.Date != candidate.Message.Date || !model.SameForward(current.Message.Forward, candidate.Message.Forward) {
 		return Result{}, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	effect := model.ReadEffect{Kind: model.ReadEffectHistoryMarkedRead, ThroughMessageID: &handle.Message}
 	if kind == mediaVoice {
 		descriptor := &model.VoiceDescriptor{Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size, Duration: immutableSource.Duration}
-		result, err = prepare(requestID, []voiceItem{{ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Voice: descriptor}}, s.now(), false, effect, nil, nil)
+		result, err = prepare(requestID, []voiceItem{{Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Voice: descriptor}}, s.now(), false, effect, nil, nil)
 	} else if kind == mediaDocument {
 		descriptor := &model.DocumentDescriptor{Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size}
-		result, err = prepare(requestID, []documentItem{{ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Document: descriptor}}, s.now(), false, effect, nil, nil)
+		result, err = prepare(requestID, []documentItem{{Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Document: descriptor}}, s.now(), false, effect, nil, nil)
 	} else {
 		descriptor := &model.ImageDescriptor{Handle: token, Kind: immutableSource.Kind, MIMEType: immutableSource.MIMEType, Width: immutableSource.Width, Height: immutableSource.Height, Size: immutableSource.Size}
-		result, err = prepare(requestID, []imageItem{{ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Image: descriptor}}, s.now(), false, effect, nil, nil)
+		result, err = prepare(requestID, []imageItem{{Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Image: descriptor}}, s.now(), false, effect, nil, nil)
 	}
 	if err != nil {
 		return Result{}, err
@@ -369,7 +374,7 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 	if err != nil {
 		return Result{}, err
 	}
-	if current.Message.Author != candidate.Message.Author || current.Message.Date != candidate.Message.Date {
+	if current.Message.Author != candidate.Message.Author || current.Message.Date != candidate.Message.Date || !model.SameForward(current.Message.Forward, candidate.Message.Forward) {
 		return Result{}, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	if kind == mediaVoice {

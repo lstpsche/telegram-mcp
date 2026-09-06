@@ -281,15 +281,18 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	candidate.Protected = message.Noforwards || len(message.RestrictionReason) > 0
 	candidate.Ephemeral = message.TTLPeriod != 0
 	candidate.Forwarded = !message.FwdFrom.Zero() || message.Flags.Has(2)
+	var forward *model.Forward
+	if candidate.Forwarded {
+		forward = normalizeForward(message.FwdFrom)
+	}
 	for _, entity := range message.Entities {
 		if _, ok := entity.(*tg.MessageEntityBlockquote); ok {
 			candidate.Quoted = true
 		}
 	}
-	// Direct notes to ourselves also carry SavedPeerID. Other saved origins
-	// remain outside the supported content boundary.
-	unsupportedSavedDialog := message.SavedPeerID != nil && (peer.Kind() != model.PeerKindSelf || peer.TelegramID() != self || !matchesPeer(peer, message.SavedPeerID))
-	candidate.Unsupported = message.Post || message.Legacy || message.Offline || message.FromScheduled || unsupportedSavedDialog || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
+	// SavedPeerID groups notes and forwarded copies; it never selects authority.
+	unsupportedSavedDialog := message.SavedPeerID != nil && (peer.Kind() != model.PeerKindSelf || peer.TelegramID() != self || (!candidate.Forwarded && !matchesPeer(peer, message.SavedPeerID)))
+	candidate.Unsupported = (candidate.Forwarded && forward == nil) || message.Post || message.Legacy || message.Offline || message.FromScheduled || unsupportedSavedDialog || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
 	var image, document, voice *model.MediaSource
 	if message.Media != nil {
 		if _, empty := message.Media.(*tg.MessageMediaEmpty); !empty {
@@ -334,7 +337,9 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 		}
 	}
 	var author int64
-	if from, ok := message.FromID.(*tg.PeerUser); ok {
+	if peer.Kind() == model.PeerKindSelf && candidate.Forwarded {
+		author = self
+	} else if from, ok := message.FromID.(*tg.PeerUser); ok {
 		author = from.UserID
 	} else if message.FromID == nil {
 		switch {
@@ -353,7 +358,8 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	if !utf8.ValidString(message.Message) || len(message.Message) > 64*1024 {
 		return model.Candidate{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
-	if !candidate.Protected && !candidate.Ephemeral && !candidate.Forwarded && !candidate.Quoted && !candidate.Unsupported {
+	if !candidate.Protected && !candidate.Ephemeral && !candidate.Quoted && !candidate.Unsupported {
+		candidate.Message.Forward = forward
 		candidate.Message.Text = message.Message
 		candidate.Message.Date = time.Unix(int64(message.Date), 0).UTC().Format(time.RFC3339)
 		candidate.Image = image
@@ -434,7 +440,7 @@ func (a *Account) History(ctx context.Context, q model.HistoryQuery) ([]model.Ca
 			return nil, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		target := candidates[0]
-		if target.Unsupported || target.Protected || target.Ephemeral || target.Forwarded || target.Quoted {
+		if target.Unsupported || target.Protected || target.Ephemeral || target.Quoted {
 			return candidates, nil
 		}
 		if q.BeforeCount > 0 {

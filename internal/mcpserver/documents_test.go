@@ -17,6 +17,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/model"
+	"github.com/lstpsche/telegram-mcp/internal/policy"
 	"github.com/lstpsche/telegram-mcp/internal/reader"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -97,8 +98,21 @@ func (f *documentWireBackend) Acknowledge(_ context.Context, peer model.PeerID, 
 }
 
 func TestDocumentsOverStdioRelay(t *testing.T) {
+	t.Run("ordinary", func(t *testing.T) { testDocumentsOverStdioRelay(t, false) })
+	t.Run("forwarded", func(t *testing.T) { testDocumentsOverStdioRelay(t, true) })
+}
+
+func testDocumentsOverStdioRelay(t *testing.T, forwarded bool) {
+	t.Helper()
 	_, base := wireService(t)
 	backend := newDocumentWireBackend(t, base)
+	for i := range backend.candidates {
+		if !forwarded {
+			continue
+		}
+		backend.candidates[i].Forwarded = true
+		backend.candidates[i].Message.Forward = &model.Forward{Date: "2026-09-01T00:00:00Z", FromName: "untrusted forwarded origin"}
+	}
 	lease, err := base.repository.Acquire(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -108,6 +122,9 @@ func TestDocumentsOverStdioRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	grant.Documents = true
+	if forwarded {
+		grant.Profile = policy.ProfileConsented
+	}
 	if err := lease.Save(context.Background(), grant); err != nil {
 		t.Fatal(err)
 	}
@@ -196,6 +213,15 @@ func TestDocumentsOverStdioRelay(t *testing.T) {
 		}
 		if name != "open_document" && len(result.Content) != 1 {
 			t.Fatal("discovery returned native media")
+		}
+		if forwarded && name != "list_scopes" {
+			for _, raw := range content["items"].([]any) {
+				item := raw.(map[string]any)
+				forward, ok := item["forward"].(map[string]any)
+				if !ok || forward["from_name"] != "untrusted forwarded origin" {
+					t.Fatal("forward attribution lost over stdio")
+				}
+			}
 		}
 		return result, content
 	}

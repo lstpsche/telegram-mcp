@@ -16,6 +16,7 @@ type DocumentContent struct {
 }
 
 type documentItem struct {
+	Forward  *model.Forward            `json:"forward,omitempty"`
 	ID       model.MessageID           `json:"id"`
 	Author   model.PeerID              `json:"author"`
 	Date     string                    `json:"date"`

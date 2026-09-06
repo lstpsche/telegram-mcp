@@ -14,10 +14,11 @@ type voiceBackend interface {
 	DownloadVoice(context.Context, model.Candidate) ([]byte, error)
 }
 type voiceItem struct {
-	ID     model.MessageID        `json:"id"`
-	Author model.PeerID           `json:"author"`
-	Date   string                 `json:"date"`
-	Voice  *model.VoiceDescriptor `json:"voice_note"`
+	Forward *model.Forward         `json:"forward,omitempty"`
+	ID      model.MessageID        `json:"id"`
+	Author  model.PeerID           `json:"author"`
+	Date    string                 `json:"date"`
+	Voice   *model.VoiceDescriptor `json:"voice_note"`
 }
 
 func (s *Service) OpenVoice(ctx context.Context, requestID, token string) (Result, error) {

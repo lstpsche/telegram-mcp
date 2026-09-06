@@ -123,8 +123,9 @@ Common recovery failures still block reads.
 
 Direct messages to the authenticated account may carry a `saved_peer_id`
 pointing back to that same account. This ordinary Saved Messages grouping is
-supported. Other saved-dialog origins and forwarded content remain excluded;
-the grouping metadata never replaces current human authorization.
+supported. Forwarded copies in Saved Messages may carry another saved origin;
+authority still belongs to the containing Saved Messages conversation. Source
+grouping metadata grants no access to the origin. See [forwarded messages](forwarded-messages.md).
 
 For the newest Saved Messages item, stop the daemon and run
 `telegram-mcp saved-message`. It queries only the authenticated account's
@@ -241,7 +242,7 @@ The MCP tools `list_chats`, `list_messages`, `get_message_context`,
 policy boundary. Lists expose only authorized peers. History and context recheck
 current authority and content exclusions after normalization; restricted grants
 also enforce author, range, expiry and eligibility. Protected, expiring,
-forwarded, imported, quoted, unsupported media and service content is excluded.
+imported, quoted, unsupported media and service content is excluded.
 Photos and static JPEG/PNG attachments require Full mode or `--allow-images`; see
 [image access](image-access.md) for supported variants and delivery.
 PDF/plain-text attachments require Full mode or a separate `--allow-documents`

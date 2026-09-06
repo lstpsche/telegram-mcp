@@ -208,7 +208,11 @@ For paginated tools, continue while `next_cursor` is non-null, even when a page 
 
 Supported conversations are Saved Messages, private chats with people or bots, basic groups, and ordinary supergroups and individual forum topics. Supported images are ordinary JPEG/PNG photos and static document attachments. Supported documents include original PDFs without a fixed application byte cap and UTF-8 plain-text attachments up to 256 KiB. PDF interpretation requires client support; no text extraction or OCR is performed.
 
-Broadcast channels, Secret Chats, and anonymous/channel authors are excluded. Bot-authored messages in supported conversations are included under the same access rules. Forwarded, quoted, protected, expiring, and unsupported media content is also filtered. A supported conversation can therefore contain messages that the server will not return.
+Forwarded-message support is available in the source after 0.5.0. Consented grants
+and Full read include supported forwarded copies; self-authored grants exclude
+them. See [forwarded messages](docs/forwarded-messages.md).
+
+Broadcast channels, Secret Chats, and anonymous/channel authors are excluded. Bot-authored messages in supported conversations are included under the same access rules. Imported, quoted, protected, expiring, and unsupported media content is also filtered. A supported conversation can therefore contain messages that the server will not return.
 
 The MCP surface is read-first: sending, editing, deleting, account administration, authentication, and access changes are not agent tools. See [message access](docs/text-access.md) and [image access](docs/image-access.md) for exact boundaries.
 

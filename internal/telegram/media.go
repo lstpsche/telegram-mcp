@@ -212,7 +212,7 @@ func (a *Account) DownloadVoice(ctx context.Context, expected model.Candidate) (
 }
 
 func safeMedia(candidate model.Candidate) bool {
-	return candidateMedia(candidate) != nil && candidateMedia(candidate).Validate() == nil && !candidate.Protected && !candidate.Ephemeral && !candidate.Forwarded && !candidate.Quoted && !candidate.Unsupported
+	return candidateMedia(candidate) != nil && candidateMedia(candidate).Validate() == nil && !candidate.Protected && !candidate.Ephemeral && (!candidate.Forwarded || candidate.Message.Forward != nil) && !candidate.Quoted && !candidate.Unsupported
 }
 
 func (a *Account) exactMedia(ctx context.Context, expected model.Candidate) (*mediaLocation, error) {

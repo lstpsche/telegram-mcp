@@ -29,7 +29,7 @@ playback: it does not send a played receipt or claim the voice note was listened
 to. This follows Telegram's distinction between
 [history and content read receipts](https://core.telegram.org/api/views).
 
-Protected, expiring, forwarded, quoted and otherwise excluded messages remain
+Protected, expiring, imported, quoted and otherwise excluded messages remain
 excluded. Audio is untrusted content. No original filenames, waveforms, audio,
 transcripts or source references are written to metadata or logs. Failed delivery
 withholds the response and clears downloaded buffers.
