@@ -5,6 +5,28 @@ The default uses private local credential files: no paid certificate, Keychain
 unlock, vault password or repeated Telegram login is required after setup.
 Read the [storage threat model](threat-model.md) before enabling account access.
 
+Homebrew users on macOS or Linux can install with:
+
+```sh
+brew install lstpsche/tap/telegram-mcp
+telegram-mcpctl install --version 0.2.0 --setup
+```
+
+Homebrew supplies checksum-pinned platform binaries. The explicit second command
+uses the managed installer to create private copies outside the Cellar, then
+starts the human setup guide. Use the stable relay path printed by setup or
+`agent-config`, not the Homebrew symlink, in your MCP client. Do not run `setup`
+directly from the Cellar or use `brew services`: the private installation and
+Telegram MCP's service manager own the runtime.
+
+After `brew upgrade lstpsche/tap/telegram-mcp`, run the managed `upgrade --version`
+command shown in `brew info lstpsche/tap/telegram-mcp`, then reconnect clients.
+Homebrew upgrade/cleanup/uninstall does not mutate private credentials, grants or
+service registration. If removing the runtime, stop and uninstall its service
+using its private control program; removing the formula alone leaves it running.
+Other taps distribute unrelated projects called `telegram-mcp`; use the fully
+qualified name and inspect any existing same-name installation before replacing it.
+
 For a managed release installation, download `install.sh` (macOS/Linux) or
 `install.ps1` (Windows) from the desired GitHub release and run it as your normal
 user. The script verifies a standalone control executable, which downloads and

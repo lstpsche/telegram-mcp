@@ -31,8 +31,19 @@ Search, catch-up, and unread inspection do not mark chats read. **Opening histor
 
 ## Installation
 
-Use the guided installer to select the right binary, verify checksums, prepare
-private permissions and start setup. No Go installation is needed.
+On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsche/homebrew-tap):
+
+```sh
+brew install lstpsche/tap/telegram-mcp
+telegram-mcpctl install --version 0.2.0 --setup
+```
+
+The second command creates the private per-user installation and starts setup.
+Use its printed relay path in your MCP client. The service runs from private
+copies outside Homebrew's Cellar; `brew cleanup` does not remove them.
+
+You can also use the guided installer below to select the right binary, verify
+checksums, prepare private permissions and start setup. Neither option requires Go.
 
 **macOS / Linux**
 
@@ -128,6 +139,13 @@ On Windows, use the absolute path to `telegram-mcp.exe`; JSON paths need escaped
 The client connects through standard **MCP stdio**. Start the daemon separately: the relay does not launch it automatically. After restarting or upgrading the daemon, reconnect your MCP client.
 
 ## Updates
+
+For Homebrew installations, run `brew update` and
+`brew upgrade lstpsche/tap/telegram-mcp`, then run the explicit
+`telegram-mcpctl upgrade --version ...` command shown by
+`brew info lstpsche/tap/telegram-mcp`. Upgrading the formula alone does not
+replace the running service. Uninstalling it leaves private account data and
+service registration intact.
 
 Managed installations keep stable `telegram-mcp` and `telegram-mcpctl` programs
 under your OS user configuration directory in `Telegram MCP/install`:
