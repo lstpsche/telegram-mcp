@@ -28,12 +28,24 @@ are refused. Creation publishes a complete file atomically without overwriting a
 existing path. Do not copy a live SQLite database as an alternative: restoring
 old authority or checkpoints is unsafe.
 
-Inspect the backup, then explicitly replace scopes and reset access:
+Inspect the backup, preview it against the current installation, then explicitly
+replace scopes and reset access:
 
 ```sh
+telegram-mcpctl restore --dry-run --file "$HOME/telegram-mcp-backups/metadata.json"
 telegram-mcpctl restore --file "$HOME/telegram-mcp-backups/metadata.json" --replace-scopes --reset-access
 telegram-mcpctl scopes
 ```
+
+The dry run takes the same maintenance locks and checks the same configured,
+authenticated account and production/Test DC match as restore. It prints current
+and proposed scope selections and retention settings as JSON, without current
+scope IDs. Its consequences summarize the eventual access reset, fresh scope IDs,
+reference invalidation and audit-history preservation. It does not change scopes,
+retention, grants, Full read access, policy revisions or audit history. The daemon
+must still be stopped. Metadata is opened read-only: a missing database or an
+outdated or incompatible migration history is refused without initialization or
+migration. Maintenance lock files and SQLite coordination files may still be used.
 
 Restore requires an already configured, authenticated account in the same
 production/Test DC environment. It is an explicit import into that current

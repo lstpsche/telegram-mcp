@@ -12,6 +12,7 @@ import (
 
 type maintenanceController interface {
 	Backup(context.Context, string) error
+	PreviewRestore(context.Context, string) (app.RestorePreview, error)
 	Restore(context.Context, string) error
 	AuditMaintenance(context.Context, *store.AuditRetention, bool, bool) (store.AuditStatus, error)
 }
@@ -29,7 +30,9 @@ func runMaintenanceCommand(ctx context.Context, args []string, stdout, stderr io
 			return usage()
 		}
 	case "restore":
-		if len(args) != 5 || args[1] != "--file" || args[3] != "--replace-scopes" || args[4] != "--reset-access" {
+		preview := len(args) == 4 && args[1] == "--dry-run" && args[2] == "--file"
+		apply := len(args) == 5 && args[1] == "--file" && args[3] == "--replace-scopes" && args[4] == "--reset-access"
+		if !preview && !apply {
 			return usage()
 		}
 	case "backup-inspect":
@@ -85,9 +88,17 @@ func runMaintenanceCommand(ctx context.Context, args []string, stdout, stderr io
 			_, err = fmt.Fprintln(stdout, "Metadata backup created; credentials, permissions, synchronization state and audit history are excluded.")
 		}
 	case "restore":
-		err = maintenance.Restore(ctx, args[2])
-		if err == nil {
-			_, err = fmt.Fprintln(stdout, "Scopes restored with new IDs. Access is restricted with no grants; enable access explicitly when ready.")
+		if args[1] == "--dry-run" {
+			var preview app.RestorePreview
+			preview, err = maintenance.PreviewRestore(ctx, args[3])
+			if err == nil {
+				err = writeTextJSON(stdout, preview)
+			}
+		} else {
+			err = maintenance.Restore(ctx, args[2])
+			if err == nil {
+				_, err = fmt.Fprintln(stdout, "Scopes restored with new IDs. Access is restricted with no grants; enable access explicitly when ready.")
+			}
 		}
 	case "audit":
 		var status store.AuditStatus

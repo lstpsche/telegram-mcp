@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/model"
@@ -123,6 +124,9 @@ func TestRecoveryRoundTripIsLocalAndRequiresStoppedDaemon(t *testing.T) {
 	if err := a.Restore(ctx, path); !errors.Is(err, daemon.ErrAccountLocked) {
 		t.Fatal("restore allowed live daemon", err)
 	}
+	if _, err := a.PreviewRestore(ctx, path); !errors.Is(err, daemon.ErrAccountLocked) {
+		t.Fatal("restore preview allowed live daemon", err)
+	}
 	if _, err := a.AuditMaintenance(ctx, nil, false, false); !errors.Is(err, daemon.ErrAccountLocked) {
 		t.Fatal("maintenance allowed live daemon", err)
 	}
@@ -149,6 +153,97 @@ func TestRecoveryRoundTripIsLocalAndRequiresStoppedDaemon(t *testing.T) {
 	}
 	if err := a.Restore(ctx, other); !errors.Is(err, ErrBackupEnvironment) {
 		t.Fatal("cross-environment restore", err)
+	}
+	if _, err := a.PreviewRestore(ctx, other); !errors.Is(err, ErrBackupEnvironment) {
+		t.Fatal("cross-environment restore preview", err)
+	}
+}
+
+func TestRestorePreviewReportsSettingsWithoutChangingInstallation(t *testing.T) {
+	ctx := context.Background()
+	a := authorizedTextApplication(t, &fakeRuntime{})
+	a.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
+		t.Fatal("opened Telegram")
+		return nil, errors.New("unexpected")
+	}
+	currentPeer, _ := model.ParsePeerID("tgpeer:v1:chat:123")
+	currentScope, err := a.Scope(ctx, "", "current", []model.PeerID{currentPeer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	author, _ := model.ParsePeerID("tgpeer:v1:user:456")
+	grant := policy.Grant{Peer: currentPeer, Author: author, MinID: 1, MaxID: 4, ReadThrough: 4, Profile: policy.ProfileConsented, ExpiresAt: a.now().Add(time.Hour), Eligible: true}
+	if err := a.Grant(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetFullRead(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	currentRetention := store.AuditRetention{Days: 5, MaxRecords: 50}
+	statusBefore, err := a.AuditMaintenance(ctx, &currentRetention, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proposed := sampleBackup()
+	proposed.Retention = store.AuditRetention{Days: 90, MaxRecords: 500}
+	proposedPeer, _ := model.ParsePeerID("tgpeer:v1:channel:789")
+	proposed.Scopes = []policy.RecoverableScope{{Name: "proposed", Peers: []model.PeerID{proposedPeer}}, {Name: "empty", Peers: []model.PeerID{}}}
+	dir := filepath.Join(t.TempDir(), "backup")
+	if err := privatefs.EnsureDirectory(dir); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "metadata.json")
+	if err := writeBackup(path, proposed); err != nil {
+		t.Fatal(err)
+	}
+
+	var revisionBefore int64
+	if err := a.withPolicy(ctx, func(lease *policy.Lease) error {
+		_, revision, err := lease.Binding(ctx)
+		revisionBefore = revision
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := a.PreviewRestore(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Current.Environment != "test" || preview.Current.TestDC != 2 || preview.Current.Retention != currentRetention || len(preview.Current.Scopes) != 1 || preview.Current.Scopes[0].Name != "current" || preview.Current.Scopes[0].Peers[0] != currentPeer {
+		t.Fatalf("current=%+v", preview.Current)
+	}
+	if preview.Proposed.Retention != proposed.Retention || len(preview.Proposed.Scopes) != 2 || preview.Proposed.Scopes[0].Name != "proposed" {
+		t.Fatalf("proposed=%+v", preview.Proposed)
+	}
+	if preview.Consequences.ScopeIDsRegenerated != 2 || preview.Consequences.AccessModeAfterRestore != "restricted" || preview.Consequences.RestrictedGrantsAfterRestore != 0 || !preview.Consequences.IssuedReferencesInvalidated || !preview.Consequences.AuditHistoryPreserved {
+		t.Fatalf("consequences=%+v", preview.Consequences)
+	}
+
+	scopes, err := a.Scopes(ctx)
+	if err != nil || len(scopes) != 1 || scopes[0].ID != currentScope.ID {
+		t.Fatalf("scopes changed: %+v %v", scopes, err)
+	}
+	full, err := a.FullRead(ctx)
+	if err != nil || !full {
+		t.Fatalf("full read changed: %v %v", full, err)
+	}
+	grants, err := a.Grants(ctx)
+	if err != nil || len(grants) != 1 || grants[0].Peer != currentPeer {
+		t.Fatalf("grants changed: %+v %v", grants, err)
+	}
+	status, err := a.AuditMaintenance(ctx, nil, false, false)
+	if err != nil || status != statusBefore {
+		t.Fatalf("audit state changed: before=%+v after=%+v err=%v", statusBefore, status, err)
+	}
+	if err := a.withPolicy(ctx, func(lease *policy.Lease) error {
+		_, revisionAfter, err := lease.Binding(ctx)
+		if revisionAfter != revisionBefore {
+			t.Fatalf("revision changed: %d -> %d", revisionBefore, revisionAfter)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

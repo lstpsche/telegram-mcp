@@ -26,6 +26,29 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 		return nil, err
 	}
 
+	return openDatabase(ctx, absolutePath, false)
+}
+
+// OpenReadOnly opens existing metadata without creating it or applying migrations.
+// The schema must already match the embedded migrations.
+func OpenReadOnly(ctx context.Context, path string) (*sql.DB, error) {
+	if path == "" {
+		return nil, errors.New("metadata database path is required")
+	}
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve metadata database path: %w", err)
+	}
+	if err := privatefs.CheckDirectory(filepath.Dir(absolutePath)); err != nil {
+		return nil, fmt.Errorf("inspect metadata directory: %w", err)
+	}
+	if err := privatefs.CheckFile(absolutePath); err != nil {
+		return nil, fmt.Errorf("inspect metadata database: %w", err)
+	}
+	return openDatabase(ctx, absolutePath, true)
+}
+
+func openDatabase(ctx context.Context, absolutePath string, readOnly bool) (*sql.DB, error) {
 	uriPath := filepath.ToSlash(absolutePath)
 	if filepath.VolumeName(absolutePath) != "" && !strings.HasPrefix(uriPath, "/") {
 		uriPath = "/" + uriPath
@@ -35,9 +58,13 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 	query.Set("_defensive", "1")
 	query.Set("_busy_timeout", fmt.Sprint(busyTimeoutMilliseconds))
 	query.Set("_foreign_keys", "on")
-	query.Set("_journal_mode", "wal")
-	query.Set("_synchronous", "full")
-	query.Set("_txlock", "immediate")
+	if readOnly {
+		query.Set("mode", "ro")
+	} else {
+		query.Set("_journal_mode", "wal")
+		query.Set("_synchronous", "full")
+		query.Set("_txlock", "immediate")
+	}
 	query.Add("_pragma", "trusted_schema(OFF)")
 	databaseURL.RawQuery = query.Encode()
 
@@ -61,7 +88,12 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 	if err != nil {
 		return closeWithError(err)
 	}
-	if err := migrator.Apply(ctx, database); err != nil {
+	if readOnly {
+		err = migrator.check(ctx, database)
+	} else {
+		err = migrator.Apply(ctx, database)
+	}
+	if err != nil {
 		return closeWithError(err)
 	}
 	return database, nil
