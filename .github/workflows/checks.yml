@@ -27,7 +27,17 @@ jobs:
           cache-dependency-path: go.sum
       - name: Check formatting
         shell: bash
-        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
       - run: go build ./cmd/...
       - run: go test -count=1 -timeout=15m ./...
       - run: go vet ./...
+      - name: Qualify native Windows console and scheduled task
+        if: runner.os == 'Windows'
+        env:
+          TELEGRAM_MCP_NATIVE_SERVICE_TEST: "1"
+        run: go test -count=1 -v -timeout=5m ./internal/cli ./internal/service
