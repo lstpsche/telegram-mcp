@@ -58,7 +58,7 @@ func TestNativeScheduledTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := binaryConfig(bin)
-	for _, path := range []string{config.Relay, config.Control, config.Daemon} {
+	for _, path := range []string{config.Relay, config.Daemon} {
 		if err := privatefs.WriteFile(path, data, false); err != nil {
 			t.Fatal(err)
 		}

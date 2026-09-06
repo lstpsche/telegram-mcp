@@ -36,7 +36,7 @@ func releaseFixture(t *testing.T) (*Installer, []byte) {
 func fixtureArchive(t *testing.T, platform string, mutate func(map[string][]byte)) []byte {
 	t.Helper()
 	files := map[string][]byte{"README.md": []byte("synthetic docs")}
-	for _, name := range []string{"telegram-mcp", "telegram-mcpd", "telegram-mcpctl"} {
+	for _, name := range []string{"telegram-mcp", "telegram-mcpd"} {
 		if strings.HasPrefix(platform, "windows-") {
 			name += ".exe"
 		}
@@ -83,7 +83,7 @@ func TestInstallVerifiesAndResumesWithoutReplacement(t *testing.T) {
 	if err := privatefs.CheckDirectory(directory); err != nil {
 		t.Fatal(err)
 	}
-	executable := filepath.Join(directory, Binary("telegram-mcpctl"))
+	executable := filepath.Join(directory, Binary("telegram-mcp"))
 	before, err := os.Stat(executable)
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestUnsafeArchivesNeverPublish(t *testing.T) {
 		"backslash":         func(f map[string][]byte) { f[`docs\escape`] = []byte("bad") },
 		"case collision":    func(f map[string][]byte) { f["readme.md"] = []byte("bad") },
 		"checksum mismatch": func(f map[string][]byte) { f["README.md"] = []byte("bad") },
-		"missing binary":    func(f map[string][]byte) { delete(f, Binary("telegram-mcpctl")) },
+		"missing binary":    func(f map[string][]byte) { delete(f, Binary("telegram-mcp")) },
 		"missing sums":      func(f map[string][]byte) { delete(f, "SHA256SUMS") },
 		"unlisted file":     func(f map[string][]byte) { f["extra"] = []byte("bad") },
 	} {

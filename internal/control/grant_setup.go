@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -16,11 +16,11 @@ import (
 
 func runAccessSetupCommand(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 2 {
-		fmt.Fprintln(stderr, "telegram-mcpctl: access setup accepts no additional arguments")
+		fmt.Fprintln(stderr, "telegram-mcp: access setup accepts no additional arguments")
 		return 2
 	}
 	if err := setupDefault(ctx, stdout, true); err != nil {
-		fmt.Fprintln(stderr, "telegram-mcpctl: access setup stopped; completed changes remain. Check access and doctor before restarting the service.")
+		fmt.Fprintln(stderr, "telegram-mcp: access setup stopped; completed changes remain. Check access and doctor before restarting the service.")
 		writeControlError(stderr, err)
 		return 1
 	}

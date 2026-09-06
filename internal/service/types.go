@@ -13,8 +13,7 @@ var (
 
 // Config records the exact binaries selected by the installed service configuration.
 type Config struct {
-	BinDir  string
-	Relay   string
-	Daemon  string
-	Control string
+	BinDir string
+	Relay  string
+	Daemon string
 }

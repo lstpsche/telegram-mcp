@@ -34,7 +34,7 @@ items; see [legacy development signing](development-signing.md). Ordinary
 portable archives deliberately do not contain this native adapter.
 
 ```sh
-telegram-mcpctl migrate-keychain --accept-plaintext-storage
+telegram-mcp migrate-keychain --accept-plaintext-storage
 ```
 
 This explicit human operation reads the four fixed items under
@@ -95,7 +95,7 @@ umask 077
 mkdir -p tmp
 for variant in current upgrade; do
   mkdir -m 700 "tmp/keychain-$variant"
-  for command in telegram-mcpctl telegram-mcpd; do
+  for command in telegram-mcp telegram-mcpd; do
     env GO111MODULE=on go build \
       -ldflags "-X github.com/lstpsche/telegram-mcp/internal/buildinfo.Version=synthetic-$variant" \
       -o "tmp/keychain-$variant/$command" "./cmd/$command"

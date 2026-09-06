@@ -1,14 +1,12 @@
-package main
+// Package control implements the human subcommands of Telegram MCP.
+package control
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/signal"
 	"strconv"
-	"syscall"
 
 	"github.com/lstpsche/telegram-mcp/internal/app"
 	"github.com/lstpsche/telegram-mcp/internal/buildinfo"
@@ -40,17 +38,12 @@ type terminal interface {
 type controllerFactory func() (controller, error)
 type terminalFactory func() (terminal, error)
 
-func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if handled, code := dispatchControl(ctx, os.Args[1:]); handled {
-		os.Exit(code)
+// Run executes human control commands. MCP traffic never enters this package.
+func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if handled, code := dispatchControl(ctx, args, stdout, stderr); handled {
+		return code
 	}
-	os.Exit(runContext(ctx, os.Args[1:], os.Stdout, os.Stderr, defaultController, defaultTerminal))
-}
-
-func run(args []string, stdout, stderr io.Writer) int {
-	return runContext(context.Background(), args, stdout, stderr, defaultController, defaultTerminal)
+	return runContext(ctx, args, stdout, stderr, defaultController, defaultTerminal)
 }
 
 func runContext(
@@ -65,7 +58,7 @@ func runContext(
 		return keychaincheck.Run(ctx, args[1:], stdout)
 	}
 	if len(args) == 1 && args[0] == "--version" {
-		fmt.Fprintln(stdout, buildinfo.String("telegram-mcpctl"))
+		fmt.Fprintln(stdout, buildinfo.String("telegram-mcp"))
 		return 0
 	}
 	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h")) {
@@ -101,12 +94,12 @@ func runContext(
 	switch args[0] {
 	case "migrate-keychain":
 		if len(args) != 2 || args[1] != "--accept-plaintext-storage" {
-			fmt.Fprintln(stderr, "telegram-mcpctl: migrate-keychain requires --accept-plaintext-storage")
+			fmt.Fprintln(stderr, "telegram-mcp: migrate-keychain requires --accept-plaintext-storage")
 			return 2
 		}
 		migration, ok := control.(interface{ MigrateKeychain(context.Context) error })
 		if !ok {
-			fmt.Fprintln(stderr, "telegram-mcpctl: legacy migration is unavailable")
+			fmt.Fprintln(stderr, "telegram-mcp: legacy migration is unavailable")
 			return 1
 		}
 		if err := migration.MigrateKeychain(ctx); err != nil {
@@ -128,7 +121,7 @@ func runContext(
 		return runTextCommand(ctx, args, stdout, stderr, control)
 	case "status":
 		if len(args) != 1 {
-			fmt.Fprintln(stderr, "telegram-mcpctl: status accepts no arguments")
+			fmt.Fprintln(stderr, "telegram-mcp: status accepts no arguments")
 			return 2
 		}
 		status, err := control.Status(ctx)
@@ -140,7 +133,7 @@ func runContext(
 		return 0
 	case "logout":
 		if len(args) != 1 {
-			fmt.Fprintln(stderr, "telegram-mcpctl: logout accepts no arguments")
+			fmt.Fprintln(stderr, "telegram-mcp: logout accepts no arguments")
 			return 2
 		}
 		if err := control.Logout(ctx); err != nil {
@@ -152,7 +145,7 @@ func runContext(
 	case "configure":
 		environment, testDC, ok := parseConfiguration(args[1:])
 		if !ok {
-			fmt.Fprintln(stderr, "telegram-mcpctl: configure requires --test-dc {1|2|3} or --production --attest-eligible")
+			fmt.Fprintln(stderr, "telegram-mcp: configure requires --test-dc {1|2|3} or --production --attest-eligible")
 			return 2
 		}
 		if err := control.Configure(ctx, environment, testDC, configurationReader(openTerminal)); err != nil {
@@ -163,7 +156,7 @@ func runContext(
 		return 0
 	case "auth":
 		if len(args) != 2 || (args[1] != "phone" && args[1] != "qr") {
-			fmt.Fprintln(stderr, "telegram-mcpctl: auth requires exactly one method: phone or qr")
+			fmt.Fprintln(stderr, "telegram-mcp: auth requires exactly one method: phone or qr")
 			return 2
 		}
 		prompt, err := openTerminal()
@@ -188,7 +181,7 @@ func runContext(
 		}
 		return 0
 	default:
-		fmt.Fprintln(stderr, "telegram-mcpctl: unknown command")
+		fmt.Fprintln(stderr, "telegram-mcp: unknown command")
 		return 2
 	}
 }
@@ -238,44 +231,45 @@ func parseConfiguration(args []string) (string, int, bool) {
 }
 
 func writeHelp(writer io.Writer) {
-	fmt.Fprintln(writer, "usage:")
-	fmt.Fprintln(writer, "  telegram-mcpctl setup")
-	fmt.Fprintln(writer, "  telegram-mcpctl install --version X.Y.Z [--setup]")
-	fmt.Fprintln(writer, "  telegram-mcpctl upgrade --version X.Y.Z")
-	fmt.Fprintln(writer, "  telegram-mcpctl migrate-keychain --accept-plaintext-storage")
+	fmt.Fprintln(writer, "usage: telegram-mcp [COMMAND]")
+	fmt.Fprintln(writer, "Without arguments, connect MCP stdio to the running daemon. Human subcommands follow.")
+	fmt.Fprintln(writer, "  telegram-mcp setup")
+	fmt.Fprintln(writer, "  telegram-mcp install --version X.Y.Z [--setup]")
+	fmt.Fprintln(writer, "  telegram-mcp upgrade --version X.Y.Z")
+	fmt.Fprintln(writer, "  telegram-mcp migrate-keychain --accept-plaintext-storage")
 	fmt.Fprintln(writer, "Metadata maintenance requires a stopped daemon; backup files require an absolute path in a private 0700 directory.")
-	fmt.Fprintln(writer, "  telegram-mcpctl backup --file ABSOLUTE_FILE")
-	fmt.Fprintln(writer, "  telegram-mcpctl backup-inspect --file ABSOLUTE_FILE")
-	fmt.Fprintln(writer, "  telegram-mcpctl restore --dry-run --file ABSOLUTE_FILE")
-	fmt.Fprintln(writer, "  telegram-mcpctl restore --file ABSOLUTE_FILE --replace-scopes --reset-access")
-	fmt.Fprintln(writer, "  telegram-mcpctl audit")
-	fmt.Fprintln(writer, "  telegram-mcpctl audit retention --days N --max-records N --apply")
-	fmt.Fprintln(writer, "  telegram-mcpctl audit prune --confirm")
-	fmt.Fprintln(writer, "  telegram-mcpctl audit purge --all --confirm")
-	fmt.Fprintln(writer, "  telegram-mcpctl configure --test-dc {1|2|3}")
-	fmt.Fprintln(writer, "  telegram-mcpctl configure --production --attest-eligible")
-	fmt.Fprintln(writer, "  telegram-mcpctl auth {phone|qr}")
-	fmt.Fprintln(writer, "  telegram-mcpctl service install --bin-dir ABSOLUTE_DIRECTORY")
-	fmt.Fprintln(writer, "  telegram-mcpctl service {start|stop|restart|uninstall}")
-	fmt.Fprintln(writer, "  telegram-mcpctl doctor")
-	fmt.Fprintln(writer, "  telegram-mcpctl agent-config")
-	fmt.Fprintln(writer, "  telegram-mcpctl status")
-	fmt.Fprintln(writer, "  telegram-mcpctl logout")
-	fmt.Fprintln(writer, "  telegram-mcpctl peers")
-	fmt.Fprintln(writer, "  telegram-mcpctl saved-message")
-	fmt.Fprintln(writer, "  telegram-mcpctl access")
-	fmt.Fprintln(writer, "  telegram-mcpctl access setup")
-	fmt.Fprintln(writer, "  telegram-mcpctl access full --accept-full-read")
-	fmt.Fprintln(writer, "  telegram-mcpctl access restricted")
+	fmt.Fprintln(writer, "  telegram-mcp backup --file ABSOLUTE_FILE")
+	fmt.Fprintln(writer, "  telegram-mcp backup-inspect --file ABSOLUTE_FILE")
+	fmt.Fprintln(writer, "  telegram-mcp restore --dry-run --file ABSOLUTE_FILE")
+	fmt.Fprintln(writer, "  telegram-mcp restore --file ABSOLUTE_FILE --replace-scopes --reset-access")
+	fmt.Fprintln(writer, "  telegram-mcp audit")
+	fmt.Fprintln(writer, "  telegram-mcp audit retention --days N --max-records N --apply")
+	fmt.Fprintln(writer, "  telegram-mcp audit prune --confirm")
+	fmt.Fprintln(writer, "  telegram-mcp audit purge --all --confirm")
+	fmt.Fprintln(writer, "  telegram-mcp configure --test-dc {1|2|3}")
+	fmt.Fprintln(writer, "  telegram-mcp configure --production --attest-eligible")
+	fmt.Fprintln(writer, "  telegram-mcp auth {phone|qr}")
+	fmt.Fprintln(writer, "  telegram-mcp service install --bin-dir ABSOLUTE_DIRECTORY")
+	fmt.Fprintln(writer, "  telegram-mcp service {start|stop|restart|uninstall}")
+	fmt.Fprintln(writer, "  telegram-mcp doctor")
+	fmt.Fprintln(writer, "  telegram-mcp agent-config")
+	fmt.Fprintln(writer, "  telegram-mcp status")
+	fmt.Fprintln(writer, "  telegram-mcp logout")
+	fmt.Fprintln(writer, "  telegram-mcp peers")
+	fmt.Fprintln(writer, "  telegram-mcp saved-message")
+	fmt.Fprintln(writer, "  telegram-mcp access")
+	fmt.Fprintln(writer, "  telegram-mcp access setup")
+	fmt.Fprintln(writer, "  telegram-mcp access full --accept-full-read")
+	fmt.Fprintln(writer, "  telegram-mcp access restricted")
 	fmt.Fprintln(writer, "Full read access includes supported conversations, all supported message authors and history, images, and read acknowledgments until revoked.")
 	fmt.Fprintln(writer, "Content is disclosed to the connected agent and its model provider. Enabling access does not establish permission under Telegram terms.")
-	fmt.Fprintln(writer, "  telegram-mcpctl grants")
-	fmt.Fprintln(writer, "  telegram-mcpctl grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible [--allow-images]")
-	fmt.Fprintln(writer, "  telegram-mcpctl revoke --peer PEER")
-	fmt.Fprintln(writer, "  telegram-mcpctl scope setup")
-	fmt.Fprintln(writer, "  telegram-mcpctl scopes")
-	fmt.Fprintln(writer, "  telegram-mcpctl scope --name NAME [--id ID] [--peer PEER ...]")
-	fmt.Fprintln(writer, "  telegram-mcpctl unscope --id ID")
+	fmt.Fprintln(writer, "  telegram-mcp grants")
+	fmt.Fprintln(writer, "  telegram-mcp grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible [--allow-images]")
+	fmt.Fprintln(writer, "  telegram-mcp revoke --peer PEER")
+	fmt.Fprintln(writer, "  telegram-mcp scope setup")
+	fmt.Fprintln(writer, "  telegram-mcp scopes")
+	fmt.Fprintln(writer, "  telegram-mcp scope --name NAME [--id ID] [--peer PEER ...]")
+	fmt.Fprintln(writer, "  telegram-mcp unscope --id ID")
 	fmt.Fprintln(writer, "Authentication is interactive through the OS console; content access requires human grants or explicit Full read access.")
 }
 
@@ -300,58 +294,58 @@ func writeControlError(writer io.Writer, err error) {
 	}
 	switch {
 	case errors.Is(err, app.ErrMigrationUnavailable):
-		fmt.Fprintln(writer, "telegram-mcpctl: migration requires a cgo-enabled macOS control binary signed with the existing Keychain identity; see docs/keychain.md")
+		fmt.Fprintln(writer, "telegram-mcp: migration requires a cgo-enabled macOS control binary signed with the existing Keychain identity; see docs/keychain.md")
 	case errors.Is(err, app.ErrLocalSecretsUnavailable):
-		fmt.Fprintln(writer, "telegram-mcpctl: configured local credentials are unavailable; migrate an existing Keychain installation or recover the account explicitly before reconfiguration")
+		fmt.Fprintln(writer, "telegram-mcp: configured local credentials are unavailable; migrate an existing Keychain installation or recover the account explicitly before reconfiguration")
 	case errors.Is(err, secrets.ErrStoreExists):
-		fmt.Fprintln(writer, "telegram-mcpctl: local secret storage already exists; migration never replaces or merges it")
+		fmt.Fprintln(writer, "telegram-mcp: local secret storage already exists; migration never replaces or merges it")
 	case errors.Is(err, secrets.ErrInvalidStore):
-		fmt.Fprintln(writer, "telegram-mcpctl: local secret storage is invalid; no secret details were emitted")
+		fmt.Fprintln(writer, "telegram-mcp: local secret storage is invalid; no secret details were emitted")
 	case errors.Is(err, app.ErrInvalidBackup):
-		fmt.Fprintln(writer, "telegram-mcpctl: invalid metadata backup; expected supported version, exact fields and bounded scopes/settings")
+		fmt.Fprintln(writer, "telegram-mcp: invalid metadata backup; expected supported version, exact fields and bounded scopes/settings")
 	case errors.Is(err, app.ErrBackupFile):
-		fmt.Fprintln(writer, "telegram-mcpctl: backup file failed validation or I/O; require an owner-only directory and regular file (Unix 0700/0600 or restricted Windows ACLs), no links or overwrite")
+		fmt.Fprintln(writer, "telegram-mcp: backup file failed validation or I/O; require an owner-only directory and regular file (Unix 0700/0600 or restricted Windows ACLs), no links or overwrite")
 	case errors.Is(err, app.ErrBackupEnvironment):
-		fmt.Fprintln(writer, "telegram-mcpctl: backup environment differs from the configured account; configure and authenticate the intended environment separately")
+		fmt.Fprintln(writer, "telegram-mcp: backup environment differs from the configured account; configure and authenticate the intended environment separately")
 	case errors.Is(err, metastore.ErrInvalidRetention):
-		fmt.Fprintln(writer, "telegram-mcpctl: audit retention requires 1–3650 days and 1–1000000 records")
+		fmt.Fprintln(writer, "telegram-mcp: audit retention requires 1–3650 days and 1–1000000 records")
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		fmt.Fprintln(writer, "telegram-mcpctl: operation cancelled")
+		fmt.Fprintln(writer, "telegram-mcp: operation cancelled")
 	case errors.Is(err, policy.ErrBusy):
-		fmt.Fprintln(writer, "telegram-mcpctl: text policy is busy; retry after the in-flight content request or grant operation finishes")
+		fmt.Fprintln(writer, "telegram-mcp: text policy is busy; retry after the in-flight content request or grant operation finishes")
 	case errors.Is(err, policy.ErrInvalidGrant):
-		fmt.Fprintln(writer, "telegram-mcpctl: invalid text grant; check IDs, scope, eligibility, and expiry within 30 days")
+		fmt.Fprintln(writer, "telegram-mcp: invalid text grant; check IDs, scope, eligibility, and expiry within 30 days")
 	case errors.Is(err, policy.ErrInvalidScope):
-		fmt.Fprintln(writer, "telegram-mcpctl: invalid named scope; check its name, ID, unique supported peers, and scope limits")
+		fmt.Fprintln(writer, "telegram-mcp: invalid named scope; check its name, ID, unique supported peers, and scope limits")
 	case errors.Is(err, model.ErrInvalidReference):
-		fmt.Fprintln(writer, "telegram-mcpctl: invalid or unavailable reference; use a current exact identifier")
+		fmt.Fprintln(writer, "telegram-mcp: invalid or unavailable reference; use a current exact identifier")
 	case errors.Is(err, policy.ErrEpochChanged):
-		fmt.Fprintln(writer, "telegram-mcpctl: authorization epoch is unavailable or changed; authenticate and retry")
+		fmt.Fprintln(writer, "telegram-mcp: authorization epoch is unavailable or changed; authenticate and retry")
 	case errors.Is(err, app.ErrTextControlUnsupported):
-		fmt.Fprintln(writer, "telegram-mcpctl: account runtime does not support text access control")
+		fmt.Fprintln(writer, "telegram-mcp: account runtime does not support text access control")
 	case errors.Is(err, daemon.ErrAccountLocked):
-		fmt.Fprintln(writer, "telegram-mcpctl: account runtime is busy; stop the daemon before authentication changes, peer discovery or metadata maintenance")
+		fmt.Fprintln(writer, "telegram-mcp: account runtime is busy; stop the daemon before authentication changes, peer discovery or metadata maintenance")
 	case errors.Is(err, metastore.ErrAuthorizationExists):
-		fmt.Fprintln(writer, "telegram-mcpctl: log out before changing Telegram application credentials")
+		fmt.Fprintln(writer, "telegram-mcp: log out before changing Telegram application credentials")
 	case errors.Is(err, app.ErrConfigurationRequired):
-		fmt.Fprintln(writer, "telegram-mcpctl: run configure before authentication or logout")
+		fmt.Fprintln(writer, "telegram-mcp: run configure before authentication or logout")
 	case errors.Is(err, tgaccount.ErrInvalidConfig):
-		fmt.Fprintln(writer, "telegram-mcpctl: invalid Telegram application credentials")
+		fmt.Fprintln(writer, "telegram-mcp: invalid Telegram application credentials")
 	case errors.Is(err, tgaccount.ErrPasswordRequired):
-		fmt.Fprintln(writer, "telegram-mcpctl: Telegram requested your existing Two-Step Verification password; an empty value cannot skip it")
+		fmt.Fprintln(writer, "telegram-mcp: Telegram requested your existing Two-Step Verification password; an empty value cannot skip it")
 	case errors.Is(err, tgaccount.ErrAuthenticationRateLimited):
-		fmt.Fprintln(writer, "telegram-mcpctl: Telegram is rate-limiting authentication; pause login attempts before trying again")
+		fmt.Fprintln(writer, "telegram-mcp: Telegram is rate-limiting authentication; pause login attempts before trying again")
 	case errors.Is(err, tgaccount.ErrAuthenticationRejected):
-		fmt.Fprintln(writer, "telegram-mcpctl: Telegram rejected the interactive authentication input")
+		fmt.Fprintln(writer, "telegram-mcp: Telegram rejected the interactive authentication input")
 	case errors.Is(err, tgaccount.ErrReauthenticationRequired):
-		fmt.Fprintln(writer, "telegram-mcpctl: the Telegram session requires reauthentication")
+		fmt.Fprintln(writer, "telegram-mcp: the Telegram session requires reauthentication")
 	case errors.Is(err, tgaccount.ErrTelegramUnavailable):
-		fmt.Fprintln(writer, "telegram-mcpctl: Telegram operation is unavailable; retry later")
+		fmt.Fprintln(writer, "telegram-mcp: Telegram operation is unavailable; retry later")
 	case errors.Is(err, keychain.ErrKeychainLocked), errors.Is(err, keychain.ErrWrongKeychain), errors.Is(err, keychain.ErrUnsupported):
-		fmt.Fprintln(writer, "telegram-mcpctl: the unlocked macOS login keychain is required")
+		fmt.Fprintln(writer, "telegram-mcp: the unlocked macOS login keychain is required")
 	case errors.Is(err, daemon.ErrUnsafeSocket), errors.Is(err, daemon.ErrSocketInUse):
-		fmt.Fprintln(writer, "telegram-mcpctl: runtime socket validation failed closed")
+		fmt.Fprintln(writer, "telegram-mcp: runtime socket validation failed closed")
 	default:
-		fmt.Fprintln(writer, "telegram-mcpctl: operation failed safely; no credential details were emitted")
+		fmt.Fprintln(writer, "telegram-mcp: operation failed safely; no credential details were emitted")
 	}
 }

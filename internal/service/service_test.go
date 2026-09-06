@@ -71,7 +71,7 @@ func fixture(t *testing.T) (*Manager, *fakeRunner, string) {
 	if err := os.Mkdir(bin, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"telegram-mcp", "telegram-mcpd", "telegram-mcpctl"} {
+	for _, name := range []string{"telegram-mcp", "telegram-mcpd"} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte("synthetic executable"), 0700); err != nil {
 			t.Fatal(err)
 		}

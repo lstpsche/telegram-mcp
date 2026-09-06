@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	setup := len(args) == 4 && args[3] == "--setup"
 	if (len(args) != 3 && !setup) || args[1] != "--version" || !distribution.ValidVersion(args[2]) {
-		fmt.Fprintln(stderr, "telegram-mcpctl: use install --version X.Y.Z [--setup]")
+		fmt.Fprintln(stderr, "telegram-mcp: use install --version X.Y.Z [--setup]")
 		return 2
 	}
 	installer, err := distribution.Default()
@@ -23,7 +23,7 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		directory, err = installer.Install(ctx, args[2])
 	}
 	if err != nil {
-		fmt.Fprintln(stderr, "telegram-mcpctl: release installation failed; check the version, network, checksums and private installation directory. Existing versions were not replaced.")
+		fmt.Fprintln(stderr, "telegram-mcp: release installation failed; check the version, network, checksums and private installation directory. Existing versions were not replaced.")
 		return 1
 	}
 	if err := writeTextJSON(stdout, struct {
@@ -33,10 +33,10 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 	}
 	if setup {
 		if err := verifyReleasePrograms(ctx, directory, args[2], runClientCommand); err != nil {
-			fmt.Fprintln(stderr, "telegram-mcpctl: release executable identity check failed")
+			fmt.Fprintln(stderr, "telegram-mcp: release executable identity check failed")
 			return 1
 		}
-		command := exec.CommandContext(ctx, filepath.Join(directory, distribution.Binary("telegram-mcpctl")), "setup")
+		command := exec.CommandContext(ctx, filepath.Join(directory, distribution.Binary("telegram-mcp")), "setup")
 		command.Stdin = os.Stdin
 		command.Stdout = stdout
 		command.Stderr = stderr
@@ -45,6 +45,6 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		}
 		return 0
 	}
-	fmt.Fprintln(stdout, "Release installed. Run telegram-mcpctl setup from that directory to configure the account and service.")
+	fmt.Fprintln(stdout, "Release installed. Run telegram-mcp setup from that directory to configure the account and service.")
 	return 0
 }

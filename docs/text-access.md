@@ -3,11 +3,11 @@
 Telegram MCP is an unofficial client using Telegram's API. Text tools are
 available only with an authorized local account and an explicit human
 authorization: restricted grants or Full read access. Authentication, peer discovery, eligibility
-decisions, access-mode, grant and named-scope mutations belong to `telegram-mcpctl`; they are never MCP
+decisions, access-mode, grant and named-scope mutations belong to `telegram-mcp`; they are never MCP
 tools.
 
-Run `telegram-mcpctl access setup` for guided restricted grants, or choose
-`restricted` during `telegram-mcpctl setup`. The guide can discover the exact
+Run `telegram-mcp access setup` for guided restricted grants, or choose
+`restricted` during `telegram-mcp setup`. The guide can discover the exact
 newest Saved Message reference, show a bounded numbered conversation list, or
 accept independently verified typed IDs. It never fetches message bodies for
 selection. Conversation titles are quoted and terminal control/format characters
@@ -40,10 +40,10 @@ Restricted mode is the default, including after upgrading an existing installati
 To enable Full read access, the account owner runs:
 
 ```sh
-telegram-mcpctl access full --accept-full-read
-telegram-mcpctl access
+telegram-mcp access full --accept-full-read
+telegram-mcp access
 # Restore restricted grants:
-telegram-mcpctl access restricted
+telegram-mcp access restricted
 ```
 
 The flag explicitly authorizes disclosure of supported conversations, all supported
@@ -83,7 +83,7 @@ Scoped lists still inspect only their bounded membership and accept no cursor.
 
 The daemon requires an existing local authorization epoch before opening the
 read runtime. If it reports `reauth_required` because the epoch is missing,
-stop the daemon, run `telegram-mcpctl auth phone` or `telegram-mcpctl auth qr`,
+stop the daemon, run `telegram-mcp auth phone` or `telegram-mcp auth qr`,
 then restart it. The human authentication command can reconcile an existing
 surviving Telegram session without a new login. The daemon does not manufacture
 an authorization epoch on its own.
@@ -95,7 +95,7 @@ operator's stated basis. Selecting a profile or passing `--attest-eligible` does
 not establish a contractual exemption or validate that basis. Disposable Test-DC
 authentication and permission to process content are separate decisions.
 
-Stop the daemon before running `telegram-mcpctl peers`. Discovery opens the
+Stop the daemon before running `telegram-mcp peers`. Discovery opens the
 existing interactive account's session and scans at most the first 100 main-list dialogs,
 returning a JSON list of supported typed peer IDs and display titles. Unsupported
 dialogs are filtered, so fewer than 100 results does not prove there are no more
@@ -127,7 +127,7 @@ supported. Other saved-dialog origins and forwarded content remain excluded;
 the grouping metadata never replaces current human authorization.
 
 For the newest Saved Messages item, stop the daemon and run
-`telegram-mcpctl saved-message`. It queries only the authenticated account's
+`telegram-mcp saved-message`. It queries only the authenticated account's
 Saved Messages dialog and prints one JSON string such as
 `"tgmsg:v1:self:456:120"`. Incidental message and draft content stays inside the
 adapter and is discarded. The command does not return text or images, mark
@@ -143,7 +143,7 @@ image permission separately, then restart the daemon for MCP access.
 In restricted mode, create a grant with every scope field explicit:
 
 ```sh
-telegram-mcpctl grant \
+telegram-mcp grant \
   --peer tgpeer:v1:chat:123 \
   --author tgpeer:v1:user:456 \
   --min-id 100 \
@@ -173,8 +173,8 @@ response. Consent to receive selected bodies alone does not authorize that
 prefix. Set the ceiling only when the entire affected prefix is authorized.
 An insufficient ceiling fails the request without releasing bodies.
 
-Use `telegram-mcpctl grants` to inspect current unexpired grants and
-`telegram-mcpctl revoke --peer tgpeer:v1:chat:123` to revoke one. These local
+Use `telegram-mcp grants` to inspect current unexpired grants and
+`telegram-mcp revoke --peer tgpeer:v1:chat:123` to revoke one. These local
 operations can run while the daemon is alive. They share an owner-only policy
 lock with content requests. Contention returns an explicit busy error; retry
 after the in-flight operation completes. Revocation succeeds only after any
@@ -182,8 +182,7 @@ request holding the lock has finished and the grant is removed. It cannot undo
 a previous read acknowledgment or recall a previously delivered response.
 
 Named scopes group exact supported peers without granting access.
-Current source builds provide `telegram-mcpctl scope setup`, also offered during
-`setup` before service startup. This guided command is not included in v0.2.0.
+`telegram-mcp scope setup` is also offered during `setup` before service startup.
 It lists existing scopes, asks for a name, and offers numbered peer choices from
 that scope's current members and stored grants. Enter space-separated numbers or
 exact `tgpeer:v1:...` IDs to select the complete membership. Existing members are
@@ -195,14 +194,14 @@ have expired; a listed choice is not proof of current access. With Full read,
 use IDs from the agent's authorized `list_chats` results. For human peer discovery,
 `peers` requires a stopped daemon and returns only a bounded dialog list.
 
-These noninteractive commands are also available in v0.2.0:
+For noninteractive scope management:
 
 ```sh
-telegram-mcpctl scope --name work --peer tgpeer:v1:chat:123
-telegram-mcpctl scopes
+telegram-mcp scope --name work --peer tgpeer:v1:chat:123
+telegram-mcp scopes
 # Use the returned stable ID to rename or replace membership:
-telegram-mcpctl scope --id tgscope:v1:0123456789abcdef0123456789abcdef --name work --peer tgpeer:v1:chat:123
-telegram-mcpctl unscope --id tgscope:v1:0123456789abcdef0123456789abcdef
+telegram-mcp scope --id tgscope:v1:0123456789abcdef0123456789abcdef --name work --peer tgpeer:v1:chat:123
+telegram-mcp unscope --id tgscope:v1:0123456789abcdef0123456789abcdef
 ```
 
 Replace the example scope ID with the actual returned ID. Names start with a

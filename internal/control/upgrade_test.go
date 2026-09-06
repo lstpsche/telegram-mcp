@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -98,7 +98,7 @@ func TestReleaseIdentityChecksEveryProgram(t *testing.T) {
 			return []byte("Telegram MCP " + component + " version=0.2.0 commit=" + commit + "\n"), nil
 		}
 		err := verifyReleasePrograms(context.Background(), "/private/bin", "0.2.0", run)
-		if (err != nil) != mismatch || count != 3 {
+		if (err != nil) != mismatch || count != 2 {
 			t.Fatal(err, count)
 		}
 	}

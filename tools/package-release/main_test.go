@@ -6,10 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/lstpsche/telegram-mcp/internal/distribution"
 )
 
 type packageFake struct {
@@ -74,7 +79,15 @@ func TestPortableArchivesAndChecksums(t *testing.T) {
 	if manifest.Qualification != "unsigned-build-only" || len(manifest.Artifacts) != 3 || manifest.Commit != f.commit {
 		t.Fatal("incorrect manifest")
 	}
+	server := httptest.NewServer(http.StripPrefix("/v"+o.Version, http.FileServer(http.Dir(o.Output))))
+	defer server.Close()
 	for _, artifact := range manifest.Artifacts {
+		if strings.HasPrefix(artifact.Platform, runtime.GOOS+"-") {
+			installer := distribution.Installer{Root: filepath.Join(filepath.Dir(o.Output), "installed"), Client: server.Client(), BaseURL: server.URL + "/", Platform: artifact.Platform}
+			if _, err := installer.Install(context.Background(), o.Version); err != nil {
+				t.Fatalf("packaged archive rejected by installer: %v", err)
+			}
+		}
 		path := filepath.Join(o.Output, artifact.Artifact)
 		digest, err := fileDigest(path)
 		if err != nil || digest != artifact.SHA256 {
@@ -85,14 +98,24 @@ func TestPortableArchivesAndChecksums(t *testing.T) {
 			t.Fatal(err)
 		}
 		found := map[string]bool{}
+		programs := 0
 		for _, file := range archive.File {
+			if !strings.HasPrefix(file.Name, strings.TrimSuffix(artifact.Artifact, ".zip")+"/") {
+				t.Fatal("archive root differs from installer contract", file.Name)
+			}
 			found[filepath.Base(file.Name)] = true
+			if strings.HasPrefix(filepath.Base(file.Name), "telegram-mcp") {
+				programs++
+			}
 			if filepath.Base(file.Name) == "telegram-mcp" && file.Mode().Perm() != 0700 {
 				t.Fatal("missing Unix executable permissions")
 			}
 			if strings.Contains(file.Name, "\\") {
 				t.Fatal("nonportable archive name")
 			}
+		}
+		if programs != 2 {
+			t.Fatalf("archive contains %d executables, want 2", programs)
 		}
 		if err := archive.Close(); err != nil {
 			t.Fatal(err)
@@ -101,7 +124,7 @@ func TestPortableArchivesAndChecksums(t *testing.T) {
 		if strings.HasPrefix(artifact.Platform, "windows") {
 			suffix = ".exe"
 		}
-		for _, name := range []string{"telegram-mcp" + suffix, "telegram-mcpctl" + suffix, "telegram-mcpd" + suffix, "SHA256SUMS", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.txt"} {
+		for _, name := range []string{"telegram-mcp" + suffix, "telegram-mcpd" + suffix, "SHA256SUMS", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.txt"} {
 			if !found[name] {
 				t.Fatal("missing payload", name)
 			}
@@ -111,7 +134,7 @@ func TestPortableArchivesAndChecksums(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"release.json", "install.sh", "install.ps1", "telegram-mcpctl-1.0.0-darwin-arm64", "telegram-mcpctl-1.0.0-windows-arm64.exe"} {
+	for _, name := range []string{"release.json", "install.sh", "install.ps1", "telegram-mcp-1.0.0-darwin-arm64", "telegram-mcp-1.0.0-windows-arm64.exe"} {
 		digest, err := fileDigest(filepath.Join(o.Output, name))
 		if err != nil || !strings.Contains(string(sums), digest+"  "+name+"\n") {
 			t.Fatal("asset checksum missing", name, err)

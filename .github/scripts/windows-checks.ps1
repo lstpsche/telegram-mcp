@@ -32,7 +32,6 @@ foreach ($command in @(
     @('test', '-count=1', '-timeout=15m', './...'),
     @('vet', './...'),
     @('run', './cmd/telegram-mcp', '--version'),
-    @('run', './cmd/telegram-mcpctl', '--version'),
     @('run', './cmd/telegram-mcpd', '--version')
 )) {
     & go @command

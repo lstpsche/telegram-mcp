@@ -29,7 +29,7 @@ func TestDaemonHelpHasNoSideEffects(t *testing.T) {
 	if code != 0 || factoryCalled || stderr.Len() != 0 {
 		t.Fatalf("code = %d, factoryCalled = %t, stderr = %q", code, factoryCalled, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "configure and authenticate through telegram-mcpctl") {
+	if !strings.Contains(stdout.String(), "configure and authenticate through telegram-mcp") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }

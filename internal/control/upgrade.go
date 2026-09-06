@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -19,11 +19,11 @@ import (
 
 func runUpgradeCommand(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 3 || args[1] != "--version" || !distribution.ValidVersion(args[2]) {
-		fmt.Fprintln(stderr, "telegram-mcpctl: use upgrade --version X.Y.Z")
+		fmt.Fprintln(stderr, "telegram-mcp: use upgrade --version X.Y.Z")
 		return 2
 	}
 	if err := upgradeDefault(ctx, args[2], stdout); err != nil {
-		fmt.Fprintln(stderr, "telegram-mcpctl: upgrade failed; run doctor and inspect service registration. Downloaded versions and account data were retained; no downgrade was attempted.")
+		fmt.Fprintln(stderr, "telegram-mcp: upgrade failed; run doctor and inspect service registration. Downloaded versions and account data were retained; no downgrade was attempted.")
 		writeSupportError(stderr, err)
 		return 1
 	}
@@ -77,7 +77,7 @@ func upgradeDefault(ctx context.Context, version string, output io.Writer) (resu
 	if err != nil {
 		return err
 	}
-	if err := writeTextJSON(output, struct{ Version, Relay, Control string }{version, relay, filepath.Join(installer.Root, distribution.Binary("telegram-mcpctl"))}); err != nil {
+	if err := writeTextJSON(output, struct{ Version, Relay, Control string }{version, relay, filepath.Join(installer.Root, distribution.Binary("telegram-mcp"))}); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintln(output, "Upgrade complete: the service responds. Reconnect your MCP client; the managed relay path is unchanged. Account readiness and content permission are separate checks.")
@@ -109,7 +109,7 @@ func activateRelease(ctx context.Context, local support, installed *service.Conf
 
 func verifyReleasePrograms(ctx context.Context, directory, version string, run func(context.Context, string, ...string) ([]byte, error)) error {
 	var commit string
-	for _, name := range []string{"telegram-mcp", "telegram-mcpctl", "telegram-mcpd"} {
+	for _, name := range []string{"telegram-mcp", "telegram-mcpd"} {
 		output, err := run(ctx, filepath.Join(directory, distribution.Binary(name)), "--version")
 		if err != nil {
 			return err
@@ -131,64 +131,64 @@ func verifyReleasePrograms(ctx context.Context, directory, version string, run f
 	return nil
 }
 
-// Only the stable human control entry delegates. The relay never dispatches,
-// starts services, authenticates, reconnects or replays an MCP request.
-func dispatchControl(ctx context.Context, args []string) (bool, int) {
+// Human subcommands from the stable entry delegate to the selected release.
+// No-argument MCP traffic never enters this function.
+func dispatchControl(ctx context.Context, args []string, stdout, stderr io.Writer) (bool, int) {
 	executable, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "telegram-mcpctl: cannot resolve control executable")
+		fmt.Fprintln(stderr, "telegram-mcp: cannot resolve control executable")
 		return true, 1
 	}
 	root, err := distribution.DefaultRoot()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "telegram-mcpctl: cannot resolve installation directory")
+		fmt.Fprintln(stderr, "telegram-mcp: cannot resolve installation directory")
 		return true, 1
 	}
-	if executable != filepath.Join(root, distribution.Binary("telegram-mcpctl")) {
+	if executable != filepath.Join(root, distribution.Binary("telegram-mcp")) {
 		return false, 0
 	}
 	if len(args) == 0 || args[0] == "install" || args[0] == "--help" || args[0] == "-h" {
 		return false, 0
 	}
 	if err := privatefs.CheckExecutable(executable); err != nil {
-		writeSupportError(os.Stderr, err)
+		writeSupportError(stderr, err)
 		return true, 1
 	}
 	local, err := defaultSupport()
 	if err != nil {
-		writeSupportError(os.Stderr, err)
+		writeSupportError(stderr, err)
 		return true, 1
 	}
 	installed, err := local.service.Inspect(ctx)
 	if err != nil {
-		writeSupportError(os.Stderr, err)
+		writeSupportError(stderr, err)
 		return true, 1
 	}
 	if installed == nil {
 		if args[0] == "upgrade" || args[0] == "doctor" || args[0] == "agent-config" || args[0] == "--version" {
 			return false, 0
 		}
-		fmt.Fprintln(os.Stderr, "telegram-mcpctl: no active version; run install --version X.Y.Z --setup")
+		fmt.Fprintln(stderr, "telegram-mcp: no active version; run install --version X.Y.Z --setup")
 		return true, 1
 	}
 	if distribution.ManagedVersion(root, installed.BinDir) == "" {
-		fmt.Fprintln(os.Stderr, "telegram-mcpctl: existing service is unmanaged; use upgrade --version X.Y.Z to adopt it")
+		fmt.Fprintln(stderr, "telegram-mcp: existing service is unmanaged; use upgrade --version X.Y.Z to adopt it")
 		if args[0] == "upgrade" {
 			return false, 0
 		}
 		return true, 1
 	}
-	command := exec.CommandContext(ctx, installed.Control, args...)
+	command := exec.CommandContext(ctx, installed.Relay, args...)
 	command.WaitDelay = 5 * time.Second
 	command.Stdin = os.Stdin
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
+	command.Stdout = stdout
+	command.Stderr = stderr
 	if err := command.Run(); err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() > 0 {
 			return true, exit.ExitCode()
 		}
-		fmt.Fprintln(os.Stderr, "telegram-mcpctl: active control program failed to start")
+		fmt.Fprintln(stderr, "telegram-mcp: active control program failed to start")
 		return true, 1
 	}
 	return true, 0

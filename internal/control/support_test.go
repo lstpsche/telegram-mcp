@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"bytes"
@@ -210,7 +210,7 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 	if err := privatefs.EnsureDirectory(bin); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"telegram-mcp", "telegram-mcpd", "telegram-mcpctl"} {
+	for _, name := range []string{"telegram-mcp", "telegram-mcpd"} {
 		if err := privatefs.WriteFile(filepath.Join(bin, name+suffix), []byte("synthetic artifact"), false); err != nil {
 			t.Fatal(err)
 		}

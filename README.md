@@ -31,65 +31,33 @@ Search, catch-up, and unread inspection do not mark chats read. **Opening histor
 
 ## Installation
 
-On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsche/homebrew-tap):
+The unified `telegram-mcp` command documented below is available in current
+source builds and will ship in the next release. Build it using the
+[development instructions](#development) or the
+[private installation guide](docs/installation.md).
+
+The published [v0.2.0 release](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.2.0)
+and Homebrew formula use the earlier command interface. For those binaries,
+follow the [v0.2.0 installation instructions](https://github.com/lstpsche/telegram-mcp/blob/v0.2.0/README.md).
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcpctl install --version 0.2.0 --setup
 ```
 
-The second command creates the private per-user installation and starts setup.
-Use its printed relay path in your MCP client. The service runs from private
-copies outside Homebrew's Cellar; `brew cleanup` does not remove them.
+Homebrew's service uses private copies outside the Cellar; follow the formula's
+printed instructions to create that installation. Other taps provide unrelated
+projects with the same executable name, so use the fully qualified formula.
 
-You can also use the guided installer below to select the right binary, verify
-checksums, prepare private permissions and start setup. Neither option requires Go.
-
-**macOS / Linux**
-
-```sh
-curl --fail --location --proto '=https' --proto-redir '=https' \
-  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/install.sh
-sh install.sh
-```
-
-**Windows PowerShell, without elevation**
-
-```powershell
-Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/install.ps1 -OutFile install.ps1
-.\install.ps1
-```
-
-The scripts download a checksum-verified control program, then verify
-the full release and its payload before installing. Downloads and checksums come
-from GitHub Releases; they establish integrity, not independent publisher identity.
-Setup collects credentials directly through your OS console and asks you to
-choose access. Read or inspect the downloaded script before running it if desired.
-
-You can also download and prepare an archive manually. Each ZIP includes the
-three executables, documentation, licenses and payload checksums.
-
-| Platform | v0.2.0 archive |
-| --- | --- |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-darwin-arm64.zip) |
-| macOS Intel | [darwin-amd64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-darwin-amd64.zip) |
-| Linux ARM64 | [linux-arm64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-linux-arm64.zip) |
-| Linux x86_64 | [linux-amd64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-linux-amd64.zip) |
-| Windows ARM64 | [windows-arm64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-windows-arm64.zip) |
-| Windows x86_64 | [windows-amd64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-windows-amd64.zip) |
-
-Extract into a **new private directory at a stable, absolute path**. Verify the archive hash against the release's `release.json` and the extracted files against `SHA256SUMS`. Follow the [platform installation guide](docs/installation.md) to prepare permissions: Unix requires a directory owned by you with mode `0700`; Windows requires owner-only ACLs. Run as your normal user, without `sudo` or an elevated Windows terminal.
-
-Packages are unsigned and not notarized, so your OS may require approval before running a download. Native CI covers macOS, Linux, and Windows amd64. Windows desktop task startup/restart/stop remains unverified; Windows arm64 is cross-compiled but has not been exercised natively. See [distribution and verification](docs/distribution.md) for details.
-
-Prefer to compile locally? See [Development](#development) and the [source installation instructions](docs/installation.md).
+Packages are unsigned and not notarized. Native CI covers macOS, Linux and Windows
+amd64; Windows desktop lifecycle and native Windows arm64 remain separate
+qualification checks. See [distribution](docs/distribution.md).
 
 ## Quick Start
 
 You need a Telegram account, your application's API ID and API hash, and an MCP client. Obtain application credentials through [Telegram's development tools](https://my.telegram.org). Before using real conversations with an AI system, establish eligibility under Telegram's terms and the rights and consent of the people affected; the setup flag records your attestation, not an exemption.
 
-The installer starts `telegram-mcpctl setup`. If you prepared an archive manually,
-run `./telegram-mcpctl setup` (`.\telegram-mcpctl.exe setup` on Windows).
+Run `telegram-mcp setup` after building the two executables. From their directory,
+run `./telegram-mcp setup` (`.\telegram-mcp.exe setup` on Windows).
 
 The guide handles:
 
@@ -109,14 +77,13 @@ The guide handles:
 
 The default restricted grant is search-only unless you permit read receipts.
 After granting the newest Saved Message, try searching for a word in that item.
-Use `telegram-mcpctl access setup` to add or replace a grant later. See
+Use `telegram-mcp access setup` to add or replace a grant later. See
 [message access](docs/text-access.md) for the exact authority and read-effect rules.
 
-For catch-up, create a scope containing the exact peer you granted. In v0.2.0,
-use `telegram-mcpctl scope --name project --peer YOUR_PEER_ID`, replacing
+For catch-up, create a scope containing the exact peer you granted. Use `telegram-mcp scope --name project --peer YOUR_PEER_ID`, replacing
 `YOUR_PEER_ID` with the `tgpeer:v1:...` ID printed by access setup.
-Current source builds also offer `telegram-mcpctl scope setup` and an optional
-scope prompt during setup; these are not included in the v0.2.0 downloads yet.
+For guided selection, use `telegram-mcp scope setup` or the optional scope
+prompt during setup.
 The guide lets you select numbered peers from stored grants, preview the complete
 membership, and confirm before saving. See [scope setup](docs/text-access.md).
 
@@ -127,7 +94,7 @@ Then ask your agent:
 
 Replace the date and time window with one containing your test message.
 A ready connection does not imply content permission. If no peers are eligible,
-review `telegram-mcpctl grants` and renew expired grants through `access setup`.
+review `telegram-mcp grants` and renew expired grants through `access setup`.
 If peers are eligible but no messages appear, check the granted author, message
 range and requested time window, and inspect reported exclusions or partial
 coverage. Catch-up does not mark chats read. See the
@@ -155,7 +122,7 @@ For clients using `mcpServers` JSON configuration, such as Cursor or Claude Desk
 }
 ```
 
-On Windows, use the absolute path to `telegram-mcp.exe`; JSON paths need escaped backslashes. `telegram-mcpctl agent-config` prints the correct configuration for your installation.
+On Windows, use the absolute path to `telegram-mcp.exe`; JSON paths need escaped backslashes. `telegram-mcp agent-config` prints the correct configuration for your installation.
 
 The client connects through standard **MCP stdio**. Start the daemon separately: the relay does not launch it automatically. After restarting or upgrading the daemon, reconnect your MCP client.
 
@@ -163,19 +130,19 @@ The client connects through standard **MCP stdio**. Start the daemon separately:
 
 For Homebrew installations, run `brew update` and
 `brew upgrade lstpsche/tap/telegram-mcp`, then run the explicit
-`telegram-mcpctl upgrade --version ...` command shown by
-`brew info lstpsche/tap/telegram-mcp`. Upgrading the formula alone does not
+managed upgrade command shown by `brew info lstpsche/tap/telegram-mcp`
+for that packaged version. Upgrading the formula alone does not
 replace the running service. Uninstalling it leaves private account data and
 service registration intact.
 
-Managed installations keep stable `telegram-mcp` and `telegram-mcpctl` programs
+Managed installations keep one stable `telegram-mcp` program
 under your OS user configuration directory in `Telegram MCP/install`:
 
 | Platform | Control program |
 | --- | --- |
-| macOS | `~/Library/Application Support/Telegram MCP/install/telegram-mcpctl` |
-| Linux | `${XDG_CONFIG_HOME:-$HOME/.config}/Telegram MCP/install/telegram-mcpctl` |
-| Windows | `%APPDATA%\Telegram MCP\install\telegram-mcpctl.exe` |
+| macOS | `~/Library/Application Support/Telegram MCP/install/telegram-mcp` |
+| Linux | `${XDG_CONFIG_HOME:-$HOME/.config}/Telegram MCP/install/telegram-mcp` |
+| Windows | `%APPDATA%\Telegram MCP\install\telegram-mcp.exe` |
 
 Invoke that control program with `upgrade --version X.Y.Z`. It verifies the new
 release before switching the service, preserves account data and old binaries,
@@ -218,9 +185,8 @@ AI client → telegram-mcp → private local transport → telegram-mcpd → Tel
 
 | Executable | Role |
 | --- | --- |
-| `telegram-mcp` | Byte-only stdio relay launched by your MCP client |
+| `telegram-mcp` | Human CLI with subcommands; byte-only MCP stdio relay with no arguments |
 | `telegram-mcpd` | Background daemon that owns the session and enforces access policy |
-| `telegram-mcpctl` | Human CLI for authentication, access, services, and maintenance |
 
 The local transport is a user-checked Unix socket on macOS/Linux or a SID-checked named pipe on Windows. A single daemon owns the account session. Background startup uses launchd, systemd's user manager, or a Windows per-user logon task. There is no HTTP listener.
 
@@ -258,7 +224,6 @@ git clone https://github.com/lstpsche/telegram-mcp.git
 cd telegram-mcp
 go build -o ./tmp/telegram-mcp ./cmd/telegram-mcp
 go build -o ./tmp/telegram-mcpd ./cmd/telegram-mcpd
-go build -o ./tmp/telegram-mcpctl ./cmd/telegram-mcpctl
 ```
 
 Run `./tmp/telegram-mcpd` in a terminal for foreground development; point your MCP client at the built relay. On Windows, add `.exe` to each build output path. Use the [installation guide](docs/installation.md) for a persistent service.

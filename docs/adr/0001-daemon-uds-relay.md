@@ -23,11 +23,11 @@ secret-file access. It accepts newline-delimited MCP connections over an
 owner-only Unix domain socket on macOS/Linux or a user-restricted named pipe
 on Windows.
 
-`telegram-mcp` is a byte-only bridge between standard MCP stdio and that
+Without arguments, `telegram-mcp` is a byte-only bridge between standard MCP stdio and that
 socket. It owns no Telegram client, credential, policy decision, schema
 translation, or daemon-spawn fallback. Its stdout contains MCP frames only.
 
-`telegram-mcpctl` is the interactive human control plane for authentication,
+With explicit subcommands, `telegram-mcp` is the interactive human control plane for authentication,
 policy, consent, lifecycle, and audit operations. Those operations have no MCP
 equivalent.
 
@@ -37,7 +37,7 @@ Windows uses private directory ACLs, exclusive locks and a user-restricted pipe.
 Stale socket cleanup must use `lstat`, reject symlinks, non-sockets, and wrong
 owners, and never remove an unresolved path.
 
-`telegram-mcpctl` takes that same lock and authenticates directly only
+The human authentication command takes that same lock and authenticates directly only
 while the daemon is stopped. This avoids adding a temporary credential-bearing
 control protocol to the local transport. The daemon can start without account
 configuration so an operator can verify client connectivity through the

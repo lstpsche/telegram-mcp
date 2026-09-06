@@ -27,10 +27,8 @@ func TestStableEntriesSurviveVersionChange(t *testing.T) {
 	if err := privatefs.EnsureDirectory(next); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{Binary("telegram-mcp"), Binary("telegram-mcpctl")} {
-		if err := privatefs.WriteExecutable(filepath.Join(next, name), []byte("new executable")); err != nil {
-			t.Fatal(err)
-		}
+	if err := privatefs.WriteExecutable(filepath.Join(next, Binary("telegram-mcp")), []byte("new executable")); err != nil {
+		t.Fatal(err)
 	}
 	if err := prepareEntries(i.Root, next); err != nil {
 		t.Fatal(err)

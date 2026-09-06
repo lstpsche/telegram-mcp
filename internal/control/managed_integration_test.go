@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func TestStableControlDispatchUsesRegisteredVersion(t *testing.T) {
 	var programs [][]byte
 	for _, version := range []string{"0.2.0", "0.3.0"} {
 		path := filepath.Join(parent, "control-"+version+".exe")
-		command := exec.Command("go", "build", "-o", path, "-ldflags", "-X github.com/lstpsche/telegram-mcp/internal/buildinfo.Version="+version+" -X github.com/lstpsche/telegram-mcp/internal/buildinfo.Commit="+strings.Repeat("a", 40), ".")
+		command := exec.Command("go", "build", "-o", path, "-ldflags", "-X github.com/lstpsche/telegram-mcp/internal/buildinfo.Version="+version+" -X github.com/lstpsche/telegram-mcp/internal/buildinfo.Commit="+strings.Repeat("a", 40), "../../cmd/telegram-mcp")
 		if data, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("build synthetic control: %v: %s", err, data)
 		}
@@ -56,11 +56,11 @@ func TestStableControlDispatchUsesRegisteredVersion(t *testing.T) {
 	if err := privatefs.EnsureDirectory(directory); err != nil {
 		t.Fatal(err)
 	}
-	stable := filepath.Join(root, distribution.Binary("telegram-mcpctl"))
+	stable := filepath.Join(root, distribution.Binary("telegram-mcp"))
 	if err := privatefs.WriteExecutable(stable, programs[0]); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"telegram-mcpctl", "telegram-mcp", "telegram-mcpd"} {
+	for _, name := range []string{"telegram-mcp", "telegram-mcpd"} {
 		if err := privatefs.WriteExecutable(filepath.Join(directory, distribution.Binary(name)), programs[1]); err != nil {
 			t.Fatal(err)
 		}

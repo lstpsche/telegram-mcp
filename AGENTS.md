@@ -45,7 +45,8 @@
   and malformed data; never silently switch storage backends. Legacy macOS
   Keychain migration is an explicit human operation using Security.framework,
   with no source deletion or invocation of `/usr/bin/security`.
-- `telegram-mcp` stdout is reserved for MCP frames. Send diagnostics to
+- Without arguments, `telegram-mcp` stdout is reserved for MCP frames. Explicit
+  human subcommands use the control-plane output format. Send diagnostics to
   stderr through the safe structured logging boundary.
 
 ## Engineering rules

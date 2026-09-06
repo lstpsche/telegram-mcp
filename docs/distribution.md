@@ -1,7 +1,7 @@
 # Portable distribution
 
 Telegram MCP is an unofficial client using Telegram's API. Packages contain
-three executables and documentation. Each recipient configures their own local
+two executables and documentation. Each recipient configures their own local
 account; credentials, sessions, permissions and metadata are never bundled.
 
 Build with Go 1.27.1 from the repository root on macOS, Linux or Windows. The
@@ -66,7 +66,7 @@ dependencies change, including nested license and notice files and the Go
 standard-library license. Native GitHub Actions checks run formatting, build,
 tests and vet on macOS, Linux and Windows without Telegram credentials.
 
-Releases also include standalone `telegram-mcpctl-VERSION-OS-ARCH` programs
+Releases also include standalone `telegram-mcp-VERSION-OS-ARCH` programs
 (with `.exe` on Windows), `install.sh`, `install.ps1` and an outer `SHA256SUMS`
 covering the archives, control programs, scripts and `release.json`. Bootstrap
 scripts verify the selected control program before execution; the Go installer

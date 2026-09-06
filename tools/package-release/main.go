@@ -145,12 +145,12 @@ func buildRelease(ctx context.Context, o options, run commandRunner) error {
 		parts := strings.Split(target, "/")
 		platform := strings.ReplaceAll(target, "/", "-")
 		name := "telegram-mcp-" + o.Version + "-" + platform
-		payload := filepath.Join(o.Output, name)
+		payload := filepath.Join(o.Output, name+"-payload")
 		if err := os.Mkdir(payload, 0700); err != nil {
 			return err
 		}
 		env := append(append([]string{}, buildEnv...), "GOOS="+parts[0], "GOARCH="+parts[1])
-		for _, binary := range []string{"telegram-mcp", "telegram-mcpctl", "telegram-mcpd"} {
+		for _, binary := range []string{"telegram-mcp", "telegram-mcpd"} {
 			filename := binary
 			if parts[0] == "windows" {
 				filename += ".exe"
@@ -160,7 +160,7 @@ func buildRelease(ctx context.Context, o options, run commandRunner) error {
 				return err
 			}
 		}
-		controlName := "telegram-mcpctl"
+		controlName := "telegram-mcp"
 		suffix := ""
 		if parts[0] == "windows" {
 			suffix = ".exe"
@@ -241,6 +241,7 @@ func stampInstaller(data []byte, name, version string) ([]byte, error) {
 }
 
 func archivePayload(payload, path string) (resultError error) {
+	archiveRoot := strings.TrimSuffix(filepath.Base(path), ".zip")
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err
@@ -266,15 +267,15 @@ func archivePayload(payload, path string) (resultError error) {
 		if err != nil {
 			return err
 		}
-		relative, err := filepath.Rel(filepath.Dir(payload), path)
+		relative, err := filepath.Rel(payload, path)
 		if err != nil {
 			return err
 		}
-		header.Name = filepath.ToSlash(relative)
+		header.Name = filepath.ToSlash(filepath.Join(archiveRoot, relative))
 		// A Windows build host cannot represent Unix executable mode on disk.
 		if filepath.Dir(path) == payload {
 			switch entry.Name() {
-			case "telegram-mcp", "telegram-mcpctl", "telegram-mcpd":
+			case "telegram-mcp", "telegram-mcpd":
 				header.SetMode(0700)
 			}
 		}

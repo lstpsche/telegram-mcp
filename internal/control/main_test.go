@@ -1,9 +1,10 @@
-package main
+package control
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -322,4 +323,8 @@ func TestAuthenticationDiagnosticsAreDistinctAndContentFree(t *testing.T) {
 			t.Fatal("authentication diagnostic lost or leaked", output.String())
 		}
 	}
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	return runContext(context.Background(), args, stdout, stderr, defaultController, defaultTerminal)
 }

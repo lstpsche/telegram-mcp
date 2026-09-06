@@ -54,7 +54,7 @@ needed. Keep credentials and Telegram content out of those notes.
 2. Grant one known self-authored Saved Message with no image permission and a
    read-through ceiling of zero. Record the exact peer locally, then create a
    `project` scope containing that peer. Use `scope --name project --peer ID`
-   with v0.2.0; current source builds also offer guided `scope setup`.
+   or the guided `scope setup` command.
 3. In the actual agent client, check `status`, discover `project` with
    `list_scopes`, and verify one eligible peer. Search for a known word in the
    granted message, then use `catch_up` with an explicit UTC window containing
@@ -90,7 +90,7 @@ notarized acceptance.
 - Phone login with 2FA succeeds where enabled.
 - Restart reuses the local session without prompting.
 - QR login succeeds from a scanning client authorized in the same environment.
-- `telegram-mcpctl status` records each method only after that method ran.
+- `telegram-mcp status` records each method only after that method ran.
 - Logout revokes remotely, deletes the local session, and removes the
   active epoch.
 - A background service invocation can reuse the local session without prompting.

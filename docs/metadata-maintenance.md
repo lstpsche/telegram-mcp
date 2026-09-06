@@ -1,7 +1,7 @@
 # Metadata backup and audit maintenance
 
 These are human control commands, never MCP tools. Stop the daemon first with
-`telegram-mcpctl service stop`. They take the account and policy locks and do
+`telegram-mcp service stop`. They take the account and policy locks and do
 not connect to Telegram, read local credentials or sessions, or mark messages read. Restart
 with `service start` after maintenance. Backup inspection needs only the file.
 
@@ -9,8 +9,8 @@ Create a private backup directory, then export to a new absolute path. On Unix:
 
 ```sh
 mkdir -m 700 "$HOME/telegram-mcp-backups"
-telegram-mcpctl backup --file "$HOME/telegram-mcp-backups/metadata.json"
-telegram-mcpctl backup-inspect --file "$HOME/telegram-mcp-backups/metadata.json"
+telegram-mcp backup --file "$HOME/telegram-mcp-backups/metadata.json"
+telegram-mcp backup-inspect --file "$HOME/telegram-mcp-backups/metadata.json"
 ```
 
 The versioned JSON contains the environment/Test DC selector, named scope names
@@ -32,9 +32,9 @@ Inspect the backup, preview it against the current installation, then explicitly
 replace scopes and reset access:
 
 ```sh
-telegram-mcpctl restore --dry-run --file "$HOME/telegram-mcp-backups/metadata.json"
-telegram-mcpctl restore --file "$HOME/telegram-mcp-backups/metadata.json" --replace-scopes --reset-access
-telegram-mcpctl scopes
+telegram-mcp restore --dry-run --file "$HOME/telegram-mcp-backups/metadata.json"
+telegram-mcp restore --file "$HOME/telegram-mcp-backups/metadata.json" --replace-scopes --reset-access
+telegram-mcp scopes
 ```
 
 The dry run takes the same maintenance locks and checks the same configured,
@@ -70,10 +70,10 @@ repair corrupt storage, a Telegram synchronization gap, lost credentials. It nev
 Inspect the content-free audit inventory and prospective prune count:
 
 ```sh
-telegram-mcpctl audit
-telegram-mcpctl audit retention --days 30 --max-records 10000 --apply
-telegram-mcpctl audit prune --confirm
-telegram-mcpctl audit purge --all --confirm
+telegram-mcp audit
+telegram-mcp audit retention --days 30 --max-records 10000 --apply
+telegram-mcp audit prune --confirm
+telegram-mcp audit purge --all --confirm
 ```
 
 The default retention is 30 days and 10,000 records. Supported limits are 1–3650

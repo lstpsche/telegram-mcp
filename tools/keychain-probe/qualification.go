@@ -103,7 +103,7 @@ func inspectArtifacts(ctx context.Context, current, upgrade string) ([]artifact,
 		if directory.Uid != uint32(os.Geteuid()) || directory.Mode != unix.S_IFDIR|0700 {
 			return nil, errors.New("artifact directory is not private")
 		}
-		for _, name := range []string{"telegram-mcpctl", "telegram-mcpd"} {
+		for _, name := range []string{"telegram-mcp", "telegram-mcpd"} {
 			path := filepath.Join(dir, name)
 			var info unix.Stat_t
 			if err := unix.Lstat(path, &info); err != nil {
@@ -129,7 +129,7 @@ func inspectArtifacts(ctx context.Context, current, upgrade string) ([]artifact,
 			if count == 0 || count > 256*1024*1024 {
 				return nil, errors.New("artifact size is invalid")
 			}
-			role := []string{"current_", "upgrade_"}[index] + map[string]string{"telegram-mcpctl": "control", "telegram-mcpd": "daemon"}[name]
+			role := []string{"current_", "upgrade_"}[index] + map[string]string{"telegram-mcp": "control", "telegram-mcpd": "daemon"}[name]
 			artifacts = append(artifacts, artifact{Role: role, SHA256: hex.EncodeToString(digest.Sum(nil)), path: path})
 		}
 	}

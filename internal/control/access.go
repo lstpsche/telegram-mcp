@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -16,12 +16,12 @@ func runAccessCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	enable := len(args) == 3 && args[1] == "full" && args[2] == "--accept-full-read"
 	disable := len(args) == 2 && args[1] == "restricted"
 	if !inspect && !enable && !disable {
-		fmt.Fprintln(stderr, "telegram-mcpctl: use access, access full --accept-full-read, or access restricted; see --help for disclosure and read effects")
+		fmt.Fprintln(stderr, "telegram-mcp: use access, access full --accept-full-read, or access restricted; see --help for disclosure and read effects")
 		return 2
 	}
 	access, ok := control.(accessController)
 	if !ok {
-		fmt.Fprintln(stderr, "telegram-mcpctl: access control is unavailable")
+		fmt.Fprintln(stderr, "telegram-mcp: access control is unavailable")
 		return 1
 	}
 	var err error

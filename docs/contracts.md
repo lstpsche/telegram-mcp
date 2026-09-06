@@ -7,6 +7,8 @@ policy mutations are human-only.
 
 ## Available MCP behavior
 
+Invoking `telegram-mcp` without arguments starts the stdio relay. Explicit
+subcommands enter the human control plane; MCP frames cannot select that mode.
 The stdio relay forwards bytes to an owner-only Unix socket on macOS/Linux
 or a user-restricted named pipe on Windows. The daemon uses
 the pinned MCP SDK for initialization, tool discovery, calls, and cancellation.

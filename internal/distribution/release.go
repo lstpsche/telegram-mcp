@@ -289,7 +289,7 @@ func inspectArchive(data []byte, prefix, platform string) (map[string]*zip.File,
 	if len(checksums) != len(files)-1 {
 		return nil, nil, errors.New("incomplete payload checksum list")
 	}
-	for _, name := range []string{"telegram-mcp", "telegram-mcpd", "telegram-mcpctl"} {
+	for _, name := range []string{"telegram-mcp", "telegram-mcpd"} {
 		if strings.HasPrefix(platform, "windows-") {
 			name += ".exe"
 		}
@@ -337,7 +337,7 @@ func matchesDigest(data []byte, digest string) bool {
 	return hex.EncodeToString(sum[:]) == digest
 }
 func isBinary(name, platform string) bool {
-	for _, binary := range []string{"telegram-mcp", "telegram-mcpd", "telegram-mcpctl"} {
+	for _, binary := range []string{"telegram-mcp", "telegram-mcpd"} {
 		if strings.HasPrefix(platform, "windows-") {
 			binary += ".exe"
 		}

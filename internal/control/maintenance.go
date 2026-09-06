@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -19,7 +19,7 @@ type maintenanceController interface {
 
 func runMaintenanceCommand(ctx context.Context, args []string, stdout, stderr io.Writer, control controller) int {
 	usage := func() int {
-		fmt.Fprintln(stderr, "telegram-mcpctl: invalid maintenance arguments; see --help")
+		fmt.Fprintln(stderr, "telegram-mcp: invalid maintenance arguments; see --help")
 		return 2
 	}
 	var retention *store.AuditRetention
@@ -77,7 +77,7 @@ func runMaintenanceCommand(ctx context.Context, args []string, stdout, stderr io
 	}
 	maintenance, ok := control.(maintenanceController)
 	if !ok {
-		fmt.Fprintln(stderr, "telegram-mcpctl: metadata maintenance is unavailable")
+		fmt.Fprintln(stderr, "telegram-mcp: metadata maintenance is unavailable")
 		return 1
 	}
 	var err error

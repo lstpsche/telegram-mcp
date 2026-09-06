@@ -38,29 +38,22 @@ func CompareVersions(a, b string) (int, error) {
 	return 0, nil
 }
 
-// prepareEntries publishes stable regular entry programs once. The relay is
-// byte-only; the human control program dispatches through the service record.
-// Neither entry is overwritten while another process may be executing it.
+// prepareEntries publishes the stable unified entry once. Human arguments
+// dispatch through the service record; no-argument invocation relays MCP bytes.
+// The executable is never overwritten while another process may be using it.
 func prepareEntries(root, directory string) error {
-	for _, name := range []string{Binary("telegram-mcp"), Binary("telegram-mcpctl")} {
-		destination := filepath.Join(root, name)
-		if _, err := os.Lstat(destination); err == nil {
-			if err := privatefs.CheckExecutable(destination); err != nil {
-				return err
-			}
-			continue
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		data, err := privatefs.ReadExecutable(filepath.Join(directory, name), maxFile)
-		if err != nil {
-			return err
-		}
-		if err := privatefs.WriteExecutable(destination, data); err != nil {
-			return err
-		}
+	name := Binary("telegram-mcp")
+	destination := filepath.Join(root, name)
+	if _, err := os.Lstat(destination); err == nil {
+		return privatefs.CheckExecutable(destination)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
-	return nil
+	data, err := privatefs.ReadExecutable(filepath.Join(directory, name), maxFile)
+	if err != nil {
+		return err
+	}
+	return privatefs.WriteExecutable(destination, data)
 }
 
 // Relay returns the stable managed path, or the explicit manual installation path.

@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func isSupportCommand(command string) bool {
 
 func runSupportCommand(ctx context.Context, args []string, stdout, stderr io.Writer, create func() (support, error)) int {
 	if !validSupportArguments(args) {
-		fmt.Fprintln(stderr, "telegram-mcpctl: use service install --bin-dir ABSOLUTE_DIRECTORY, service {start|stop|restart|uninstall}, doctor, or agent-config")
+		fmt.Fprintln(stderr, "telegram-mcp: use service install --bin-dir ABSOLUTE_DIRECTORY, service {start|stop|restart|uninstall}, doctor, or agent-config")
 		return 2
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -70,7 +70,7 @@ func runSupportCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 	}
 	if args[0] == "agent-config" {
 		if installed == nil {
-			fmt.Fprintln(stderr, "telegram-mcpctl: install the service before generating agent configuration")
+			fmt.Fprintln(stderr, "telegram-mcp: install the service before generating agent configuration")
 			return 1
 		}
 		relay, err := distribution.Relay(installed.BinDir, installed.Relay)
@@ -172,20 +172,20 @@ func writeSupportError(writer io.Writer, err error) {
 	}
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		fmt.Fprintln(writer, "telegram-mcpctl: support operation cancelled; inspect the current service state before retrying")
+		fmt.Fprintln(writer, "telegram-mcp: support operation cancelled; inspect the current service state before retrying")
 	case errors.Is(err, daemon.ErrAccountLocked):
-		fmt.Fprintln(writer, "telegram-mcpctl: another service operation is running; retry after it finishes")
+		fmt.Fprintln(writer, "telegram-mcp: another service operation is running; retry after it finishes")
 	case errors.Is(err, service.ErrNotInstalled):
-		fmt.Fprintln(writer, "telegram-mcpctl: service is not installed; use service install --bin-dir ABSOLUTE_DIRECTORY")
+		fmt.Fprintln(writer, "telegram-mcp: service is not installed; use service install --bin-dir ABSOLUTE_DIRECTORY")
 	case errors.Is(err, service.ErrAlreadyInstalled):
-		fmt.Fprintln(writer, "telegram-mcpctl: installation already exists; inspect it before an explicit stop and uninstall")
+		fmt.Fprintln(writer, "telegram-mcp: installation already exists; inspect it before an explicit stop and uninstall")
 	case errors.Is(err, service.ErrServiceLoaded):
-		fmt.Fprintln(writer, "telegram-mcpctl: service is registered; use service stop before starting or uninstalling")
+		fmt.Fprintln(writer, "telegram-mcp: service is registered; use service stop before starting or uninstalling")
 	case errors.Is(err, service.ErrServiceAbsent):
-		fmt.Fprintln(writer, "telegram-mcpctl: service is not registered in this user session")
+		fmt.Fprintln(writer, "telegram-mcp: service is not registered in this user session")
 	case errors.Is(err, service.ErrUnsafePath), errors.Is(err, service.ErrInvalidInstallation):
-		fmt.Fprintln(writer, "telegram-mcpctl: installation validation failed; check canonical paths, ownership, permissions, and the generated service configuration")
+		fmt.Fprintln(writer, "telegram-mcp: installation validation failed; check canonical paths, ownership, permissions, and the generated service configuration")
 	default:
-		fmt.Fprintln(writer, "telegram-mcpctl: local support check failed; check filesystem permissions, the user login session, and foreground daemon diagnostics")
+		fmt.Fprintln(writer, "telegram-mcp: local support check failed; check filesystem permissions, the user login session, and foreground daemon diagnostics")
 	}
 }

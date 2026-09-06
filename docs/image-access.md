@@ -6,7 +6,7 @@ from all supported authors and message IDs in supported conversations. Add that 
 [text access](text-access.md). Existing grants default to `images: false`;
 replacing a grant without the flag disables images. The flag does not expand
 its author, message range, expiry, or separate read-prefix authority.
-`telegram-mcpctl grants` reports the current `images` setting.
+`telegram-mcp grants` reports the current `images` setting.
 
 `list_messages`, `get_message_context`, and `search_messages` include an
 optional `image` object only for permitted images. It contains `handle`,

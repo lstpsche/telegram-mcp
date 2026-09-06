@@ -1,7 +1,7 @@
 #!/bin/sh
 # Download the verified control program; it installs and checks the full release.
 set -eu
-version=${1:-0.2.0}
+version=${1:-UNRELEASED}
 if [ "$#" -gt 1 ] || ! printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
   echo 'Usage: sh install.sh [X.Y.Z]' >&2
   exit 2
@@ -14,7 +14,7 @@ bootstrap_dir=$(mktemp -d "$HOME/.telegram-mcp-bootstrap.XXXXXXXX")
 trap 'rm -r -- "$bootstrap_dir"' EXIT
 trap 'exit 130' HUP INT TERM
 base="https://github.com/lstpsche/telegram-mcp/releases/download/v$version"
-asset="telegram-mcpctl-$version-$platform-$arch"
+asset="telegram-mcp-$version-$platform-$arch"
 curl --fail --location --connect-timeout 15 --max-time 300 --proto '=https' --proto-redir '=https' --max-filesize 65536 --output "$bootstrap_dir/SHA256SUMS" "$base/SHA256SUMS"
 curl --fail --location --connect-timeout 15 --max-time 300 --proto '=https' --proto-redir '=https' --max-filesize 134217728 --output "$bootstrap_dir/control" "$base/$asset"
 expected=$(awk -v name="$asset" '$2 == name {print $1; count++} END {if (count != 1) exit 1}' "$bootstrap_dir/SHA256SUMS")

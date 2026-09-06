@@ -24,10 +24,10 @@ and follows Telegram-directed account DC migration.
 ## Configure
 
 ```sh
-telegram-mcpctl configure --production --attest-eligible
+telegram-mcp configure --production --attest-eligible
 ```
 
-For a disposable Test-DC account, use `telegram-mcpctl configure --test-dc 2`.
+For a disposable Test-DC account, use `telegram-mcp configure --test-dc 2`.
 The selectors cannot be combined. Production requires the attestation flag
 before the command can open a credential prompt. No certificate or vault password
 is required; see [storage and legacy migration](keychain.md).
@@ -51,7 +51,7 @@ or rebound to different application credentials or a different DC.
 ## Phone and 2FA
 
 ```sh
-telegram-mcpctl auth phone
+telegram-mcp auth phone
 ```
 
 The phone number, login code, and optional 2FA password are read without echo
@@ -68,7 +68,7 @@ unclassified failures disclose no raw Telegram error or credential details.
 ## QR
 
 ```sh
-telegram-mcpctl auth qr
+telegram-mcp auth qr
 ```
 
 The QR token is rendered as terminal blocks directly on the OS console; its raw URI
@@ -85,7 +85,7 @@ forward.
 ## Run and inspect
 
 ```sh
-telegram-mcpctl status
+telegram-mcp status
 telegram-mcpd
 ```
 
@@ -107,7 +107,7 @@ the exact socket node, closes SQLite, and releases the lock.
 ## Logout
 
 ```sh
-telegram-mcpctl logout
+telegram-mcp logout
 ```
 
 When Telegram considers the session authorized, remote `auth.logOut` must

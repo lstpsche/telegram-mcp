@@ -38,7 +38,7 @@ func (m *Manager) stateDir() string {
 func (m *Manager) taskPath() string { return filepath.Join(m.stateDir(), "service.xml") }
 
 func binaryConfig(dir string) Config {
-	return Config{dir, filepath.Join(dir, "telegram-mcp.exe"), filepath.Join(dir, "telegram-mcpd.exe"), filepath.Join(dir, "telegram-mcpctl.exe")}
+	return Config{dir, filepath.Join(dir, "telegram-mcp.exe"), filepath.Join(dir, "telegram-mcpd.exe")}
 }
 
 func (m *Manager) inspectBinaries(ctx context.Context, dir string) (Config, error) {
@@ -52,7 +52,7 @@ func (m *Manager) inspectBinaries(ctx context.Context, dir string) (Config, erro
 		return Config{}, err
 	}
 	config := binaryConfig(dir)
-	for _, path := range []string{config.Relay, config.Daemon, config.Control} {
+	for _, path := range []string{config.Relay, config.Daemon} {
 		if err := privatefs.CheckFile(path); err != nil {
 			return Config{}, err
 		}

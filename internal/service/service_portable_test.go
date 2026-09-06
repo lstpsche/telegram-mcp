@@ -112,7 +112,7 @@ func portableFixture(t *testing.T) (*Manager, *syntheticRunner, string) {
 		t.Fatal(err)
 	}
 	config := binaryConfig(bin)
-	for _, name := range []string{config.Daemon, config.Control, config.Relay} {
+	for _, name := range []string{config.Daemon, config.Relay} {
 		if err := privatefs.WriteFile(name, []byte("synthetic executable"), false); err != nil {
 			t.Fatal(err)
 		}

@@ -43,7 +43,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer, ne
 	}
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		fmt.Fprintln(stdout, "usage: telegram-mcpd")
-		fmt.Fprintln(stdout, "Runs the single-account Telegram daemon; configure and authenticate through telegram-mcpctl.")
+		fmt.Fprintln(stdout, "Runs the single-account Telegram daemon; configure and authenticate through telegram-mcp.")
 		return 0
 	}
 	if len(args) != 0 {
@@ -71,7 +71,7 @@ func defaultDaemon() (daemonApplication, error) {
 func writeDaemonError(writer io.Writer, err error) {
 	switch {
 	case errors.Is(err, app.ErrConfigurationRequired):
-		fmt.Fprintln(writer, "telegram-mcpd: Test-DC configuration is required; run telegram-mcpctl configure")
+		fmt.Fprintln(writer, "telegram-mcpd: Test-DC configuration is required; run telegram-mcp configure")
 	case errors.Is(err, daemon.ErrAccountLocked):
 		fmt.Fprintln(writer, "telegram-mcpd: another account runtime already owns the lock")
 	case errors.Is(err, daemon.ErrUnsafeSocket), errors.Is(err, daemon.ErrSocketInUse):

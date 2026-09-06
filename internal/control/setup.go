@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -35,12 +35,12 @@ type setupSession struct {
 
 func runSetupCommand(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "telegram-mcpctl: setup accepts no arguments")
+		fmt.Fprintln(stderr, "telegram-mcp: setup accepts no arguments")
 		return 2
 	}
 	err := setupDefault(ctx, stdout, false)
 	if err != nil {
-		fmt.Fprintln(stderr, "telegram-mcpctl: setup stopped; completed changes were retained. Use status and doctor before resuming setup.")
+		fmt.Fprintln(stderr, "telegram-mcp: setup stopped; completed changes were retained. Use status and doctor before resuming setup.")
 		writeControlError(stderr, err)
 		return 1
 	}

@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -44,7 +44,7 @@ func runScopeCommand(ctx context.Context, args []string, stdout, stderr io.Write
 	}
 	scopeControl, ok := control.(scopeController)
 	if !ok {
-		fmt.Fprintln(stderr, "telegram-mcpctl: scope control is unavailable")
+		fmt.Fprintln(stderr, "telegram-mcp: scope control is unavailable")
 		return 1
 	}
 	switch args[0] {
@@ -77,7 +77,7 @@ func runScopeCommand(ctx context.Context, args []string, stdout, stderr io.Write
 }
 
 func scopeUsageError(stderr io.Writer) int {
-	fmt.Fprintln(stderr, "telegram-mcpctl: invalid named scope arguments; see --help")
+	fmt.Fprintln(stderr, "telegram-mcp: invalid named scope arguments; see --help")
 	return 2
 }
 

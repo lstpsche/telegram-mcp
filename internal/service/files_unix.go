@@ -75,8 +75,8 @@ func (m *Manager) inspectBinaries(ctx context.Context, dir string) (Config, erro
 	if err := inspectDirectory(dir, m.uid, true); err != nil {
 		return Config{}, err
 	}
-	config := Config{BinDir: dir, Relay: filepath.Join(dir, "telegram-mcp"), Daemon: filepath.Join(dir, "telegram-mcpd"), Control: filepath.Join(dir, "telegram-mcpctl")}
-	for _, path := range []string{config.Relay, config.Daemon, config.Control} {
+	config := Config{BinDir: dir, Relay: filepath.Join(dir, "telegram-mcp"), Daemon: filepath.Join(dir, "telegram-mcpd")}
+	for _, path := range []string{config.Relay, config.Daemon} {
 		if err := validatePath(path); err != nil {
 			return Config{}, err
 		}

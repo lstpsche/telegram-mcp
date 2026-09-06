@@ -20,14 +20,14 @@ export the private key or put passwords into command arguments.
 migration_dir="$HOME/Applications/telegram-mcp-keychain-migration"
 mkdir -m 700 "$migration_dir"
 env GO111MODULE=on GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 \
-  go build -o "$migration_dir/telegram-mcpctl" ./cmd/telegram-mcpctl
+  go build -o "$migration_dir/telegram-mcp" ./cmd/telegram-mcp
 identity=REPLACE_WITH_ORIGINAL_40_HEX_CERTIFICATE_FINGERPRINT
 requirement="anchor apple generic and certificate leaf = H\"$identity\" and (identifier \"dev.telegram-mcp.control\" or identifier \"dev.telegram-mcp.daemon\")"
 /usr/bin/codesign --force --sign "$identity" \
   --identifier dev.telegram-mcp.control --options runtime --timestamp=none \
-  --requirements "=designated => $requirement" "$migration_dir/telegram-mcpctl"
+  --requirements "=designated => $requirement" "$migration_dir/telegram-mcp"
 /usr/bin/codesign --verify --strict -R "=$requirement" \
-  "$migration_dir/telegram-mcpctl"
+  "$migration_dir/telegram-mcp"
 ```
 
 This requirement matches the legacy shared control/daemon recipe. It does not
@@ -39,7 +39,7 @@ Stop the existing daemon using its installed control executable. Then, in a
 human terminal, explicitly accept the storage change:
 
 ```sh
-"$migration_dir/telegram-mcpctl" migrate-keychain --accept-plaintext-storage
+"$migration_dir/telegram-mcp" migrate-keychain --accept-plaintext-storage
 ```
 
 The command copies the supported credential/session/integrity records atomically

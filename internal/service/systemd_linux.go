@@ -29,7 +29,7 @@ func (m *Manager) unitPath() string {
 }
 
 func binaryConfig(dir string) Config {
-	return Config{dir, filepath.Join(dir, "telegram-mcp"), filepath.Join(dir, "telegram-mcpd"), filepath.Join(dir, "telegram-mcpctl")}
+	return Config{dir, filepath.Join(dir, "telegram-mcp"), filepath.Join(dir, "telegram-mcpd")}
 }
 
 func (m *Manager) unit(config Config) []byte {

@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func runTextCommand(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	textControl, ok := control.(textController)
 	if !ok {
-		fmt.Fprintln(stderr, "telegram-mcpctl: text access control is unavailable")
+		fmt.Fprintln(stderr, "telegram-mcp: text access control is unavailable")
 		return 1
 	}
 	switch args[0] {
@@ -98,7 +98,7 @@ func runTextCommand(ctx context.Context, args []string, stdout, stderr io.Writer
 }
 
 func textUsageError(stderr io.Writer) int {
-	fmt.Fprintln(stderr, "telegram-mcpctl: invalid text access arguments; see --help")
+	fmt.Fprintln(stderr, "telegram-mcp: invalid text access arguments; see --help")
 	return 2
 }
 

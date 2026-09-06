@@ -1,5 +1,5 @@
 # Download the verified control program; it installs and checks the full release.
-param([string]$Version = '0.2.0')
+param([string]$Version = 'UNRELEASED')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($Version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Use a stable X.Y.Z version.' }
@@ -53,7 +53,7 @@ try {
         } finally { $deadline.Dispose(); $client.Dispose(); $handler.Dispose() }
     }
     $base = "https://github.com/lstpsche/telegram-mcp/releases/download/v$Version"
-    $asset = "telegram-mcpctl-$Version-windows-$arch.exe"
+    $asset = "telegram-mcp-$Version-windows-$arch.exe"
     $checksums = Join-Path $bootstrapDir 'SHA256SUMS'
     $control = Join-Path $bootstrapDir 'control.exe'
     Save-ReleaseFile "$base/SHA256SUMS" $checksums 65536

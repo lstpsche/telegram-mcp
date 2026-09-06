@@ -9,12 +9,12 @@ Homebrew users on macOS or Linux can install with:
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcpctl install --version 0.2.0 --setup
 ```
 
-Homebrew supplies checksum-pinned platform binaries. The explicit second command
-uses the managed installer to create private copies outside the Cellar, then
-starts the human setup guide. Use the stable relay path printed by setup or
+The current formula ships v0.2.0 with the earlier command interface; follow
+its printed caveats or the [versioned guide](https://github.com/lstpsche/telegram-mcp/blob/v0.2.0/docs/installation.md).
+The commands below describe current source builds. The managed installer creates
+private copies outside the Cellar before starting the human setup guide. Use the stable relay path printed by setup or
 `agent-config`, not the Homebrew symlink, in your MCP client. Do not run `setup`
 directly from the Cellar or use `brew services`: the private installation and
 Telegram MCP's service manager own the runtime.
@@ -31,9 +31,11 @@ For a managed release installation, download `install.sh` (macOS/Linux) or
 `install.ps1` (Windows) from the desired GitHub release and run it as your normal
 user. The script verifies a standalone control executable, which downloads and
 verifies the full archive before starting guided setup. The scripts accept an
-explicit stable version; their default is 0.2.0. They do not require Go.
+explicit stable version; release assets default to their packaged version.
+Source templates require an explicit version and target the unified-command
+asset layout, which is not available in v0.2.0. They do not require Go.
 
-The equivalent control command is `telegram-mcpctl install --version 0.2.0 --setup`.
+The equivalent control command is `telegram-mcp install --version X.Y.Z --setup`.
 Omit `--setup` to prepare files without touching account or service state.
 Managed versions live under the OS user configuration directory at
 `Telegram MCP/install/versions/X.Y.Z`. Existing versions are checked in full and
@@ -48,7 +50,7 @@ registers existing executables; it does not download, copy, sign or replace them
 Do not overwrite binaries referenced by an existing installation. Run as your
 normal user, without `sudo` or an elevated Windows terminal.
 
-After preparing the binaries, run `telegram-mcpctl setup` from that directory.
+After preparing the binaries, run `telegram-mcp setup` from that directory.
 The interactive guide selects production or an explicit Test DC, collects API
 credentials and phone/QR authentication, offers access settings, starts the
 service and waits for account readiness. Obtain your own API ID and hash at
@@ -71,11 +73,10 @@ mkdir -p "$HOME/Applications"
 mkdir -m 700 "$artifact_dir"
 env GO111MODULE=on CGO_ENABLED=0 go build -o "$artifact_dir/telegram-mcp" ./cmd/telegram-mcp
 env GO111MODULE=on CGO_ENABLED=0 go build -o "$artifact_dir/telegram-mcpd" ./cmd/telegram-mcpd
-env GO111MODULE=on CGO_ENABLED=0 go build -o "$artifact_dir/telegram-mcpctl" ./cmd/telegram-mcpctl
-"$artifact_dir/telegram-mcpctl" service install --bin-dir "$artifact_dir"
-"$artifact_dir/telegram-mcpctl" service start
-"$artifact_dir/telegram-mcpctl" doctor
-"$artifact_dir/telegram-mcpctl" agent-config
+"$artifact_dir/telegram-mcp" service install --bin-dir "$artifact_dir"
+"$artifact_dir/telegram-mcp" service start
+"$artifact_dir/telegram-mcp" doctor
+"$artifact_dir/telegram-mcp" agent-config
 ```
 
 No additional signing command is needed for these source builds. The directory
@@ -101,11 +102,10 @@ $env:GO111MODULE = 'on'
 $env:CGO_ENABLED = '0'
 go build -o "$artifactDir\telegram-mcp.exe" ./cmd/telegram-mcp
 go build -o "$artifactDir\telegram-mcpd.exe" ./cmd/telegram-mcpd
-go build -o "$artifactDir\telegram-mcpctl.exe" ./cmd/telegram-mcpctl
-& "$artifactDir\telegram-mcpctl.exe" service install --bin-dir $artifactDir
-& "$artifactDir\telegram-mcpctl.exe" service start
-& "$artifactDir\telegram-mcpctl.exe" doctor
-& "$artifactDir\telegram-mcpctl.exe" agent-config
+& "$artifactDir\telegram-mcp.exe" service install --bin-dir $artifactDir
+& "$artifactDir\telegram-mcp.exe" service start
+& "$artifactDir\telegram-mcp.exe" doctor
+& "$artifactDir\telegram-mcp.exe" agent-config
 ```
 
 Prebuilt archives and their platform verification requirements are described in
@@ -172,15 +172,15 @@ credentials, sessions and runtime files. Stop and uninstall remain possible when
 an old executable has been removed or has unsafe permissions. Missing or already
 running states are explicit errors.
 
-Managed installations publish stable regular `telegram-mcp` and `telegram-mcpctl`
-entry programs directly under `Telegram MCP/install`. Use the stable control
-program for subsequent commands. It delegates to the version selected by the
+Managed installations publish a stable regular `telegram-mcp` entry directly
+under `Telegram MCP/install`. Use it for human subcommands and, without arguments,
+for MCP stdio. It delegates to the version selected by the
 validated service registration; no version-pointer file or symlink is used.
-The stable relay only transfers bytes to the existing account endpoint and is
-not overwritten during upgrades. `agent-config` selects this stable relay path.
+Without arguments the stable entry only transfers bytes to the existing account
+endpoint. It is not overwritten during upgrades. `agent-config` selects this stable relay path.
 
-Run `telegram-mcpctl upgrade --version X.Y.Z` through the stable control program.
-The command verifies a complete release and all three program version identities
+Run `telegram-mcp upgrade --version X.Y.Z` through the stable control program.
+The command verifies a complete release and both program version identities
 before stopping the old service. It installs and starts the new registration,
 waits for a responding MCP server, and retains old binaries and account data.
 Managed downgrades are refused because metadata migrations are forward-only.

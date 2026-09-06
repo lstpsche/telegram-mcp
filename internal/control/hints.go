@@ -1,4 +1,4 @@
-package main
+package control
 
 import (
 	"errors"
@@ -23,12 +23,12 @@ func (e *humanStepError) Unwrap() error { return e.cause }
 func writeHumanHint(writer io.Writer, err error) bool {
 	var step *humanStepError
 	if errors.As(err, &step) {
-		fmt.Fprintln(writer, "telegram-mcpctl:", step.hint)
+		fmt.Fprintln(writer, "telegram-mcp:", step.hint)
 		return true
 	}
 	var hint humanHint
 	if errors.As(err, &hint) {
-		fmt.Fprintln(writer, "telegram-mcpctl:", string(hint))
+		fmt.Fprintln(writer, "telegram-mcp:", string(hint))
 		return true
 	}
 	return false

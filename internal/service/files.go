@@ -108,7 +108,7 @@ func (m *Manager) readInstallation(ctx context.Context) (config *Config, identit
 	if err := validatePath(extracted.Arguments[0]); err != nil {
 		return nil, nil, errors.Join(ErrInvalidInstallation, err)
 	}
-	candidate := Config{BinDir: dir, Relay: filepath.Join(dir, "telegram-mcp"), Daemon: filepath.Join(dir, "telegram-mcpd"), Control: filepath.Join(dir, "telegram-mcpctl")}
+	candidate := Config{BinDir: dir, Relay: filepath.Join(dir, "telegram-mcp"), Daemon: filepath.Join(dir, "telegram-mcpd")}
 	if !bytes.Equal(data, m.plist(candidate)) {
 		return nil, nil, ErrInvalidInstallation
 	}
