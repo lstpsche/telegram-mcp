@@ -181,7 +181,21 @@ after the in-flight operation completes. Revocation succeeds only after any
 request holding the lock has finished and the grant is removed. It cannot undo
 a previous read acknowledgment or recall a previously delivered response.
 
-Named scopes group exact supported peers without granting access. Use:
+Named scopes group exact supported peers without granting access.
+Current source builds provide `telegram-mcpctl scope setup`, also offered during
+`setup` before service startup. This guided command is not included in v0.2.0.
+It lists existing scopes, asks for a name, and offers numbered peer choices from
+that scope's current members and stored grants. Enter space-separated numbers or
+exact `tgpeer:v1:...` IDs to select the complete membership. Existing members are
+not kept automatically; select them again if needed. Type `empty` explicitly to
+clear the membership. The preview must be confirmed with `yes` before saving.
+An existing name retains its stable ID. Scope setup does not contact Telegram,
+restart the daemon, grant access, or change Full read settings. Stored grants may
+have expired; a listed choice is not proof of current access. With Full read,
+use IDs from the agent's authorized `list_chats` results. For human peer discovery,
+`peers` requires a stopped daemon and returns only a bounded dialog list.
+
+These noninteractive commands are also available in v0.2.0:
 
 ```sh
 telegram-mcpctl scope --name work --peer tgpeer:v1:chat:123

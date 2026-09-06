@@ -54,11 +54,11 @@ func TestSetupFreshAndResumePreserveAuthority(t *testing.T) {
 	for _, resume := range []bool{false, true} {
 		t.Run(map[bool]string{false: "fresh", true: "resume"}[resume], func(t *testing.T) {
 			control := &fakeAccessController{}
-			answers := []string{"test2", "phone", "", "json"}
+			answers := []string{"test2", "phone", "", "", "json"}
 			if resume {
 				control.status = app.Status{Configured: true, Authorized: true}
 				control.authError = errors.New("must not reauthenticate")
-				answers = []string{"", "json"}
+				answers = []string{"", "", "json"}
 			}
 			prompt := &setupAnswers{fakeTerminal: fakeTerminal{apiID: 12, apiHash: []byte("secret")}, answers: answers}
 			manager := &setupService{}
@@ -112,7 +112,7 @@ func TestSetupRefusalDoesNotConfigureOrEnableFullRead(t *testing.T) {
 func TestSetupDoesNotConnectBeforeReadiness(t *testing.T) {
 	control := &fakeAccessController{}
 	control.status = app.Status{Configured: true, Authorized: true}
-	prompt := &setupAnswers{answers: []string{"", "codex"}}
+	prompt := &setupAnswers{answers: []string{"", "", "codex"}}
 	count := 0
 	failure := errors.New("probe failure")
 	s := setupSession{control: control, prompt: prompt, output: io.Discard, local: support{service: &setupService{}, inspect: func(context.Context) (diagnostics.Report, error) {

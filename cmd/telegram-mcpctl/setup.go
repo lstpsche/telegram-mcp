@@ -175,6 +175,9 @@ func (s *setupSession) run(ctx context.Context) error {
 	if err := s.chooseAccess(ctx); err != nil {
 		return err
 	}
+	if err := s.chooseScope(ctx); err != nil {
+		return err
+	}
 	if installed != nil && installed.BinDir != s.binDir {
 		if err := s.confirm(ctx, "Switch the service to the binaries running this setup? Existing binaries and account data will be retained."); err != nil {
 			return err

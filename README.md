@@ -112,6 +112,27 @@ After granting the newest Saved Message, try searching for a word in that item.
 Use `telegram-mcpctl access setup` to add or replace a grant later. See
 [message access](docs/text-access.md) for the exact authority and read-effect rules.
 
+For catch-up, create a scope containing the exact peer you granted. In v0.2.0,
+use `telegram-mcpctl scope --name project --peer YOUR_PEER_ID`, replacing
+`YOUR_PEER_ID` with the `tgpeer:v1:...` ID printed by access setup.
+Current source builds also offer `telegram-mcpctl scope setup` and an optional
+scope prompt during setup; these are not included in the v0.2.0 downloads yet.
+The guide lets you select numbered peers from stored grants, preview the complete
+membership, and confirm before saving. See [scope setup](docs/text-access.md).
+
+Then ask your agent:
+
+> Check Telegram status and list my scopes. For the scope named project, tell me
+> how many peers are eligible, then catch up from 09:00 to 10:00 UTC on YYYY-MM-DD.
+
+Replace the date and time window with one containing your test message.
+A ready connection does not imply content permission. If no peers are eligible,
+review `telegram-mcpctl grants` and renew expired grants through `access setup`.
+If peers are eligible but no messages appear, check the granted author, message
+range and requested time window, and inspect reported exclusions or partial
+coverage. Catch-up does not mark chats read. See the
+[human verification procedure](docs/account-runtime-verification.md) for a complete check.
+
 You can also connect an unconfigured daemon and call `status` without Telegram credentials. It reports that authentication is required; content tools become usable only after authentication and access setup.
 
 ## Client Setup

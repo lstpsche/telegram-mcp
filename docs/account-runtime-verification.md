@@ -43,12 +43,47 @@ real account or a release binary. Record results against the exact binary in
 external acceptance notes; historical database method observations are not
 release approval.
 
+For first-use acceptance, have someone unfamiliar with the project follow the
+README from a clean OS user profile and record the OS, architecture, exact
+version, installation method, elapsed time, and points where outside help was
+needed. Keep credentials and Telegram content out of those notes.
+
+1. Install using the documented release or Homebrew path and complete setup
+   with an explicitly selected Test DC and disposable account. Confirm that the
+   printed relay path matches the client registration.
+2. Grant one known self-authored Saved Message with no image permission and a
+   read-through ceiling of zero. Record the exact peer locally, then create a
+   `project` scope containing that peer. Use `scope --name project --peer ID`
+   with v0.2.0; current source builds also offer guided `scope setup`.
+3. In the actual agent client, check `status`, discover `project` with
+   `list_scopes`, and verify one eligible peer. Search for a known word in the
+   granted message, then use `catch_up` with an explicit UTC window containing
+   it. Inspect coverage and exclusions. Search and catch-up must not mark it read.
+4. Attempt to open context under the search-only grant and confirm denial with
+   no body released. A later receipt-enabled test needs separate explicit
+   permission for the affected dialog prefix; verify the actual receipt in a
+   Telegram client when performing that test.
+5. Restart the service and reconnect the agent. Confirm the scope and grant are
+   retained. Revoke the grant and confirm the scope reports the peer as excluded
+   and content is unavailable. A scope must not restore revoked authority.
+6. On a source build, rerun `scope setup`, choose the existing name, and decline
+   the final replacement preview. Confirm unchanged membership and stable ID.
+   Then confirm a replacement and verify the same ID with exactly the selected
+   members. Resuming setup with scope setup skipped must retain existing scopes.
+
+This procedure is a human acceptance gate, not a claim that it has passed.
+Synthetic CLI tests cover fresh configuration, restricted-grant-to-scope setup,
+client handoff, replacement identity, cancellation, invalid input and local
+metadata errors; they do not establish fresh-person usability.
+
 These checks require a human-owned Telegram application credential and an
 existing account in the selected environment. Use disposable Test-DC fixtures
 for test acceptance. Ordinary-account acceptance requires separately established
 eligibility, explicit production configuration, and a narrowly scoped data plan.
 Enter every credential through the local no-echo terminal, never through an agent.
-Qualify the exact signed control/daemon artifacts before adding credentials.
+Verify the exact control/daemon artifacts and their checksums before adding
+credentials. Published packages are unsigned; do not record them as signed or
+notarized acceptance.
 
 - Explicit configuration selects the intended environment before prompting.
 - Phone login succeeds in the selected environment.
@@ -66,7 +101,7 @@ separate human actions. Production capability alone does not establish live
 network behavior or release acceptance.
 
 MCP consumer acceptance additionally requires registering the built relay in a
-real agent client, discovering the eight static tools, and verifying unavailable
+real agent client, discovering the advertised tools, and verifying unavailable
 message access before login. After separately establishing eligibility and a
 scoped grant, discover the allowed chat, read history and zero-neighbor context,
 and verify the actual read receipt in another Telegram client. Revoke the grant

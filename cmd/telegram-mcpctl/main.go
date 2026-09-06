@@ -120,6 +120,9 @@ func runContext(
 	case "access":
 		return runAccessCommand(ctx, args, stdout, stderr, control)
 	case "scopes", "scope", "unscope":
+		if args[0] == "scope" && len(args) > 1 && args[1] == "setup" {
+			return runScopeSetupCommand(ctx, args, stdout, stderr, control, openTerminal)
+		}
 		return runScopeCommand(ctx, args, stdout, stderr, control)
 	case "peers", "saved-message", "grants", "grant", "revoke":
 		return runTextCommand(ctx, args, stdout, stderr, control)
@@ -269,6 +272,7 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcpctl grants")
 	fmt.Fprintln(writer, "  telegram-mcpctl grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible [--allow-images]")
 	fmt.Fprintln(writer, "  telegram-mcpctl revoke --peer PEER")
+	fmt.Fprintln(writer, "  telegram-mcpctl scope setup")
 	fmt.Fprintln(writer, "  telegram-mcpctl scopes")
 	fmt.Fprintln(writer, "  telegram-mcpctl scope --name NAME [--id ID] [--peer PEER ...]")
 	fmt.Fprintln(writer, "  telegram-mcpctl unscope --id ID")
