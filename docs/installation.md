@@ -10,6 +10,21 @@ registers existing executables; it does not download, copy, sign or replace them
 Do not overwrite binaries referenced by an existing installation. Run as your
 normal user, without `sudo` or an elevated Windows terminal.
 
+After preparing the binaries, run `telegram-mcpctl setup` from that directory.
+The interactive guide selects production or an explicit Test DC, collects API
+credentials and phone/QR authentication, offers access settings, starts the
+service and waits for account readiness. Obtain your own API ID and hash at
+https://my.telegram.org before starting. Input is hidden and comes directly
+from the OS console.
+
+Setup preserves recorded authentication and access settings when resuming.
+It asks before stopping an existing service or enabling Full read access.
+If interrupted, completed changes remain; inspect `status` and `doctor`, then
+run setup again. A running foreground daemon must be stopped separately.
+The guide can print standard MCP JSON or, after showing the proposed command,
+register a new `telegram` server with the installed Codex CLI. An existing
+Codex registration is not overwritten. Reconnect clients after service startup.
+
 For macOS or Linux, build from source using Go 1.27.1:
 
 ```sh

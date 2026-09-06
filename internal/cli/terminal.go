@@ -175,3 +175,14 @@ func renderQRCode(tokenURL string) (string, error) {
 func qrPixel(code *qr.Code, x, y int) bool {
 	return x >= 0 && y >= 0 && x < code.Size && y < code.Size && code.Black(x, y)
 }
+
+// Ask reads a bounded human response directly from the console. Input remains
+// hidden so setup never echoes submitted account identifiers or consent text.
+func (t *Terminal) Ask(ctx context.Context, label string) (string, error) {
+	value, err := t.readHidden(ctx, label, true)
+	defer clear(value)
+	if err != nil {
+		return "", err
+	}
+	return string(value), nil
+}
