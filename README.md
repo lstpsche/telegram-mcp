@@ -31,16 +31,41 @@ Search, catch-up, and unread inspection do not mark chats read. **Opening histor
 
 ## Installation
 
-Download a ZIP from [GitHub Releases](https://github.com/lstpsche/telegram-mcp/releases/latest). Each archive includes the three executables, setup documentation, licenses, and `SHA256SUMS`.
+Use the guided installer to select the right binary, verify checksums, prepare
+private permissions and start setup. No Go installation is needed.
 
-| Platform | v0.1.0 archive |
+**macOS / Linux**
+
+```sh
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/install.sh
+sh install.sh
+```
+
+**Windows PowerShell, without elevation**
+
+```powershell
+Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/install.ps1 -OutFile install.ps1
+.\install.ps1
+```
+
+The scripts download a checksum-verified control program, then verify
+the full release and its payload before installing. Downloads and checksums come
+from GitHub Releases; they establish integrity, not independent publisher identity.
+Setup collects credentials directly through your OS console and asks you to
+choose access. Read or inspect the downloaded script before running it if desired.
+
+You can also download and prepare an archive manually. Each ZIP includes the
+three executables, documentation, licenses and payload checksums.
+
+| Platform | v0.2.0 archive |
 | --- | --- |
-| macOS Apple Silicon | [darwin-arm64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.1.0/telegram-mcp-0.1.0-darwin-arm64.zip) |
-| macOS Intel | [darwin-amd64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.1.0/telegram-mcp-0.1.0-darwin-amd64.zip) |
-| Linux ARM64 | [linux-arm64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.1.0/telegram-mcp-0.1.0-linux-arm64.zip) |
-| Linux x86_64 | [linux-amd64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.1.0/telegram-mcp-0.1.0-linux-amd64.zip) |
-| Windows ARM64 | [windows-arm64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.1.0/telegram-mcp-0.1.0-windows-arm64.zip) |
-| Windows x86_64 | [windows-amd64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.1.0/telegram-mcp-0.1.0-windows-amd64.zip) |
+| macOS Apple Silicon | [darwin-arm64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-darwin-arm64.zip) |
+| macOS Intel | [darwin-amd64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-darwin-amd64.zip) |
+| Linux ARM64 | [linux-arm64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-linux-arm64.zip) |
+| Linux x86_64 | [linux-amd64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-linux-amd64.zip) |
+| Windows ARM64 | [windows-arm64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-windows-arm64.zip) |
+| Windows x86_64 | [windows-amd64](https://github.com/lstpsche/telegram-mcp/releases/download/v0.2.0/telegram-mcp-0.2.0-windows-amd64.zip) |
 
 Extract into a **new private directory at a stable, absolute path**. Verify the archive hash against the release's `release.json` and the extracted files against `SHA256SUMS`. Follow the [platform installation guide](docs/installation.md) to prepare permissions: Unix requires a directory owned by you with mode `0700`; Windows requires owner-only ACLs. Run as your normal user, without `sudo` or an elevated Windows terminal.
 
@@ -52,37 +77,29 @@ Prefer to compile locally? See [Development](#development) and the [source insta
 
 You need a Telegram account, your application's API ID and API hash, and an MCP client. Obtain application credentials through [Telegram's development tools](https://my.telegram.org). Before using real conversations with an AI system, establish eligibility under Telegram's terms and the rights and consent of the people affected; the setup flag records your attestation, not an exemption.
 
-The commands below use macOS/Linux syntax from the prepared binary directory. On Windows, use `.\telegram-mcpctl.exe` in place of `./telegram-mcpctl` after completing the [Windows permission setup](docs/installation.md).
+The installer starts `telegram-mcpctl setup`. If you prepared an archive manually,
+run `./telegram-mcpctl setup` (`.\telegram-mcpctl.exe setup` on Windows).
 
-1. **Configure and sign in.** Keep the daemon stopped during configuration and authentication. Credentials and login codes are entered interactively without echo.
+The guide handles:
 
-   ```sh
-   ./telegram-mcpctl configure --production --attest-eligible
-   ./telegram-mcpctl auth phone
-   ```
+1. **Account configuration and login.** Explicitly choose production or a Test DC,
+   then phone or QR authentication. Existing recorded authorization is preserved
+   when resuming; credentials and login codes are entered without echo.
+2. **Access.** Keep existing settings, create an exact restricted grant, or
+   explicitly enable Full read access. The restricted guide offers the newest
+   Saved Message or a numbered conversation list, with author, range, expiry,
+   images and read-receipt permission shown before confirmation. Signing in alone
+   grants no content access. Scopes do not restrict Full read authority.
+3. **Service startup.** Register startup at user login and wait for a responding,
+   account-ready daemon. Completed steps remain if setup is interrupted.
+4. **Client connection.** Print standard MCP JSON or register a new server using
+   the installed Codex CLI after confirmation. Existing client entries are
+   preserved. Reconnect your client and ask it to check Telegram status.
 
-   QR login is also available through `auth qr`. For disposable test accounts, select `configure --test-dc 2` instead. See [authentication](docs/authentication.md) for phone, QR, 2FA, and recovery.
-
-2. **Choose what the agent may read.** Restricted mode is the default: follow the [grant setup](docs/text-access.md) to authorize specific conversations, authors, message ranges, and expiry times. Signing in alone grants no content access.
-
-   If you intentionally want account-wide access to supported conversations, enable Full read access:
-
-   ```sh
-   ./telegram-mcpctl access full --accept-full-read
-   ```
-
-   This includes supported images and read acknowledgments, and exposes returned content to your connected agent and model provider. Restore restricted access with `./telegram-mcpctl access restricted`.
-
-3. **Start the background service.** This registers the binaries in the current directory for startup at user login. Keep that directory in place.
-
-   ```sh
-   ./telegram-mcpctl service install --bin-dir "$PWD"
-   ./telegram-mcpctl service start
-   ./telegram-mcpctl doctor
-   ./telegram-mcpctl agent-config
-   ```
-
-4. **Connect your MCP client.** Copy the configuration printed by `agent-config`, or use the examples below. Ask your agent to check Telegram status and list the conversations it can access.
+The default restricted grant is search-only unless you permit read receipts.
+After granting the newest Saved Message, try searching for a word in that item.
+Use `telegram-mcpctl access setup` to add or replace a grant later. See
+[message access](docs/text-access.md) for the exact authority and read-effect rules.
 
 You can also connect an unconfigured daemon and call `status` without Telegram credentials. It reports that authentication is required; content tools become usable only after authentication and access setup.
 
@@ -109,6 +126,24 @@ For clients using `mcpServers` JSON configuration, such as Cursor or Claude Desk
 On Windows, use the absolute path to `telegram-mcp.exe`; JSON paths need escaped backslashes. `telegram-mcpctl agent-config` prints the correct configuration for your installation.
 
 The client connects through standard **MCP stdio**. Start the daemon separately: the relay does not launch it automatically. After restarting or upgrading the daemon, reconnect your MCP client.
+
+## Updates
+
+Managed installations keep stable `telegram-mcp` and `telegram-mcpctl` programs
+under your OS user configuration directory in `Telegram MCP/install`:
+
+| Platform | Control program |
+| --- | --- |
+| macOS | `~/Library/Application Support/Telegram MCP/install/telegram-mcpctl` |
+| Linux | `${XDG_CONFIG_HOME:-$HOME/.config}/Telegram MCP/install/telegram-mcpctl` |
+| Windows | `%APPDATA%\Telegram MCP\install\telegram-mcpctl.exe` |
+
+Invoke that control program with `upgrade --version X.Y.Z`. It verifies the new
+release before switching the service, preserves account data and old binaries,
+and checks the new service responds. Reconnect your MCP client afterward; its
+managed relay path stays the same. Downgrades are not supported. See
+[installation and recovery](docs/installation.md) for interrupted upgrades and
+adopting an existing manual installation.
 
 ## Tools
 

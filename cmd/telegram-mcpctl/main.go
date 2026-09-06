@@ -73,6 +73,9 @@ func runContext(
 		return 0
 	}
 
+	if args[0] == "access" && len(args) > 1 && args[1] == "setup" {
+		return runAccessSetupCommand(ctx, args, stdout, stderr)
+	}
 	if args[0] == "upgrade" {
 		return runUpgradeCommand(ctx, args, stdout, stderr)
 	}
@@ -257,6 +260,7 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcpctl peers")
 	fmt.Fprintln(writer, "  telegram-mcpctl saved-message")
 	fmt.Fprintln(writer, "  telegram-mcpctl access")
+	fmt.Fprintln(writer, "  telegram-mcpctl access setup")
 	fmt.Fprintln(writer, "  telegram-mcpctl access full --accept-full-read")
 	fmt.Fprintln(writer, "  telegram-mcpctl access restricted")
 	fmt.Fprintln(writer, "Full read access includes supported conversations, all supported message authors and history, images, and read acknowledgments until revoked.")

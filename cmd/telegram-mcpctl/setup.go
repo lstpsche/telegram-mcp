@@ -38,7 +38,7 @@ func runSetupCommand(ctx context.Context, args []string, stdout, stderr io.Write
 		fmt.Fprintln(stderr, "telegram-mcpctl: setup accepts no arguments")
 		return 2
 	}
-	err := setupDefault(ctx, stdout)
+	err := setupDefault(ctx, stdout, false)
 	if err != nil {
 		fmt.Fprintln(stderr, "telegram-mcpctl: setup stopped; completed changes were retained. Use status and doctor before resuming setup.")
 		writeControlError(stderr, err)
@@ -47,7 +47,7 @@ func runSetupCommand(ctx context.Context, args []string, stdout, stderr io.Write
 	return 0
 }
 
-func setupDefault(ctx context.Context, output io.Writer) (result error) {
+func setupDefault(ctx context.Context, output io.Writer, accessOnly bool) (result error) {
 	local, err := defaultSupport()
 	if err != nil {
 		return err
@@ -70,6 +70,9 @@ func setupDefault(ctx context.Context, output io.Writer) (result error) {
 		return err
 	}
 	s := setupSession{control: control, local: local, prompt: prompt, output: output, binDir: filepath.Dir(executable), command: runClientCommand}
+	if accessOnly {
+		return s.runAccessSetup(ctx)
+	}
 	return s.run(ctx)
 }
 
@@ -232,7 +235,12 @@ func (s *setupSession) chooseAccess(ctx context.Context) error {
 	case "":
 		return nil
 	case "restricted":
-		return access.SetFullRead(ctx, false)
+		if full {
+			if err := access.SetFullRead(ctx, false); err != nil {
+				return err
+			}
+		}
+		return s.guideGrant(ctx, time.Now().UTC())
 	case "full":
 		if err := s.confirm(ctx, "Full read exposes all supported conversations, authors, history and images to the connected agent and model provider, and permits read acknowledgments. Named scopes do not restrict this authority."); err != nil {
 			return err

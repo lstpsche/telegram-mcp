@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf16"
 
 	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/policy"
@@ -209,11 +211,16 @@ func writeTextJSON(writer io.Writer, value any) error {
 	if err != nil {
 		return err
 	}
-	// JSON leaves DEL and C1 controls literal; escape them for terminal output.
+	// Escape DEL, C1 and format controls, including bidirectional overrides.
 	var safe strings.Builder
 	for _, char := range string(encoded) {
-		if char >= 0x7f && char <= 0x9f {
-			fmt.Fprintf(&safe, "\\u%04x", char)
+		if (char >= 0x7f && char <= 0x9f) || unicode.Is(unicode.Cf, char) {
+			if char > 0xffff {
+				high, low := utf16.EncodeRune(char)
+				fmt.Fprintf(&safe, "\\u%04x\\u%04x", high, low)
+			} else {
+				fmt.Fprintf(&safe, "\\u%04x", char)
+			}
 		} else {
 			safe.WriteRune(char)
 		}

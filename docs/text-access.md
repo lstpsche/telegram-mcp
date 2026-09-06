@@ -6,6 +6,36 @@ authorization: restricted grants or Full read access. Authentication, peer disco
 decisions, access-mode, grant and named-scope mutations belong to `telegram-mcpctl`; they are never MCP
 tools.
 
+Run `telegram-mcpctl access setup` for guided restricted grants, or choose
+`restricted` during `telegram-mcpctl setup`. The guide can discover the exact
+newest Saved Message reference, show a bounded numbered conversation list, or
+accept independently verified typed IDs. It never fetches message bodies for
+selection. Conversation titles are quoted and terminal control/format characters
+are escaped; selection binds the immutable ID, never the displayed name.
+
+The newest-Saved-Message option fills the exact peer, self author and one-message
+range. Other conversations require an explicit user-kind author ID, a
+self-authored or consented basis, and inclusive message bounds. A bound can be a
+positive number or a `tgmsg:v1:...` reference for the chosen conversation.
+Discovery is limited to the first 100 main-list dialogs; an absent conversation
+is not evidence that it does not exist. Exact IDs still require adapter metadata
+and supported peer validation when used.
+
+Choose a lifetime of 1–720 hours (24 by default), image permission (off by
+default), and a separate read-through ceiling (0/search-only by default).
+The guide displays the exact grant and asks for final eligibility attestation
+before saving; replacing an existing grant requires another explicit choice.
+Grant creation does not remove other existing grants. Images cannot be opened
+without the corresponding read-effect authority even when image permission is
+selected. Existing Full read access must be disabled to make restricted grants
+the governing authority; the guide explains this before changing the mode.
+
+For a first useful result, choose `saved`, leave the ceiling at 0, and ask your
+agent to search Saved Messages for a word in the selected item. To open its full
+context, explicitly authorize the receipt through that item; earlier messages
+can be marked read as part of the same effect. This is a human account operation,
+not part of automated installation checks.
+
 Restricted mode is the default, including after upgrading an existing installation.
 To enable Full read access, the account owner runs:
 
