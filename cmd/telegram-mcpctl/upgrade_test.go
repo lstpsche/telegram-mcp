@@ -78,7 +78,7 @@ func TestUpgradeSameVersionDoesNotUninstall(t *testing.T) {
 	if err := activateRelease(context.Background(), local, &service.Config{BinDir: "same"}, "same"); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(manager.actions, []string{"start"}) {
+	if !reflect.DeepEqual(manager.actions, []string{"install", "start"}) {
 		t.Fatal(manager.actions)
 	}
 }

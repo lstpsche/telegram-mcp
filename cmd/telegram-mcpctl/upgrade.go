@@ -59,7 +59,7 @@ func upgradeDefault(ctx context.Context, version string, output io.Writer) (resu
 				return err
 			}
 			if order < 0 {
-				return errors.New("downgrades are not supported")
+				return humanHint("downgrades are not supported")
 			}
 		}
 	}
@@ -95,8 +95,8 @@ func activateRelease(ctx context.Context, local support, installed *service.Conf
 		}
 		installed = nil
 	}
-	if installed == nil {
-		if _, err := local.service.Install(ctx, directory); err != nil {
+	if _, err := local.service.Install(ctx, directory); err != nil {
+		if installed == nil || !errors.Is(err, service.ErrAlreadyInstalled) {
 			return err
 		}
 	}
@@ -117,14 +117,14 @@ func verifyReleasePrograms(ctx context.Context, directory, version string, run f
 		prefix := "Telegram MCP " + name + " version=" + version + " commit="
 		line := strings.TrimSuffix(string(output), "\n")
 		if !strings.HasPrefix(line, prefix) {
-			return errors.New("release executable identity mismatch")
+			return humanHint("release executable identity mismatch")
 		}
 		revision := strings.TrimPrefix(line, prefix)
 		if len(revision) != 40 || strings.Trim(revision, "0123456789abcdef") != "" {
-			return errors.New("invalid release executable revision")
+			return humanHint("invalid release executable revision")
 		}
 		if commit != "" && revision != commit {
-			return errors.New("mixed release executables")
+			return humanHint("mixed release executables")
 		}
 		commit = revision
 	}

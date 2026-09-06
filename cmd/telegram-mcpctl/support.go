@@ -167,6 +167,9 @@ func writeSupportJSON(stdout, stderr io.Writer, value any) int {
 }
 
 func writeSupportError(writer io.Writer, err error) {
+	if writeHumanHint(writer, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		fmt.Fprintln(writer, "telegram-mcpctl: support operation cancelled; inspect the current service state before retrying")

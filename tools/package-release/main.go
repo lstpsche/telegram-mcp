@@ -3,6 +3,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -18,6 +19,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/lstpsche/telegram-mcp/internal/distribution"
 )
 
 type options struct{ Version, Output, Targets, Mode string }
@@ -78,17 +81,8 @@ func (o options) validate() error {
 	return nil
 }
 
-type releaseArtifact struct {
-	Platform string `json:"platform"`
-	Artifact string `json:"artifact"`
-	SHA256   string `json:"sha256"`
-}
-type releaseManifest struct {
-	Version       string            `json:"version"`
-	Commit        string            `json:"commit"`
-	Qualification string            `json:"qualification"`
-	Artifacts     []releaseArtifact `json:"artifacts"`
-}
+type releaseArtifact = distribution.Artifact
+type releaseManifest = distribution.Manifest
 
 func buildRelease(ctx context.Context, o options, run commandRunner) error {
 	if err := o.validate(); err != nil {
@@ -203,6 +197,10 @@ func buildRelease(ctx context.Context, o options, run commandRunner) error {
 		if err != nil {
 			return err
 		}
+		data, err = stampInstaller(data, name, o.Version)
+		if err != nil {
+			return err
+		}
 		if err := os.WriteFile(filepath.Join(o.Output, name), data, 0600); err != nil {
 			return err
 		}
@@ -225,6 +223,21 @@ func buildRelease(ctx context.Context, o options, run commandRunner) error {
 		}
 	}
 	return os.WriteFile(filepath.Join(o.Output, "release.json"), data, 0600)
+}
+
+// Release scripts use LF even when the source checkout uses Windows CRLF.
+func stampInstaller(data []byte, name, version string) ([]byte, error) {
+	data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	pattern := regexp.MustCompile(`(?m)^version=\$\{1:-[^}]+\}$`)
+	replacement := "version=${1:-" + version + "}"
+	if name == "install.ps1" {
+		pattern = regexp.MustCompile(`(?m)^param\(\[string\]\$Version = '[^']+'\)$`)
+		replacement = "param([string]$Version = '" + version + "')"
+	}
+	if len(pattern.FindAll(data, -1)) != 1 {
+		return nil, errors.New("installer default version is missing or ambiguous")
+	}
+	return pattern.ReplaceAllFunc(data, func([]byte) []byte { return []byte(replacement) }), nil
 }
 
 func archivePayload(payload, path string) (resultError error) {

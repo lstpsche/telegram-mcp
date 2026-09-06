@@ -15,8 +15,8 @@ trap 'rm -r -- "$bootstrap_dir"' EXIT
 trap 'exit 130' HUP INT TERM
 base="https://github.com/lstpsche/telegram-mcp/releases/download/v$version"
 asset="telegram-mcpctl-$version-$platform-$arch"
-curl --fail --location --proto '=https' --proto-redir '=https' --max-filesize 65536 --output "$bootstrap_dir/SHA256SUMS" "$base/SHA256SUMS"
-curl --fail --location --proto '=https' --proto-redir '=https' --max-filesize 134217728 --output "$bootstrap_dir/control" "$base/$asset"
+curl --fail --location --connect-timeout 15 --max-time 300 --proto '=https' --proto-redir '=https' --max-filesize 65536 --output "$bootstrap_dir/SHA256SUMS" "$base/SHA256SUMS"
+curl --fail --location --connect-timeout 15 --max-time 300 --proto '=https' --proto-redir '=https' --max-filesize 134217728 --output "$bootstrap_dir/control" "$base/$asset"
 expected=$(awk -v name="$asset" '$2 == name {print $1; count++} END {if (count != 1) exit 1}' "$bootstrap_dir/SHA256SUMS")
 if ! printf '%s\n' "$expected" | grep -Eq '^[a-f0-9]{64}$'; then echo 'Invalid release checksum.' >&2; exit 1; fi
 case "$platform" in darwin) actual=$(shasum -a 256 "$bootstrap_dir/control" | awk '{print $1}') ;; linux) actual=$(sha256sum "$bootstrap_dir/control" | awk '{print $1}') ;; esac

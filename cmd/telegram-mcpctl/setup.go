@@ -104,7 +104,7 @@ func (s *setupSession) run(ctx context.Context) error {
 				return err
 			}
 			if order < 0 {
-				return errors.New("managed downgrades are not supported")
+				return humanHint("managed downgrades are not supported")
 			}
 		}
 	}
@@ -118,7 +118,7 @@ func (s *setupSession) run(ctx context.Context) error {
 	}
 	if report.MCP || status.Daemon == daemon.SocketLive {
 		if installed == nil {
-			return errors.New("stop the foreground daemon before setup")
+			return humanHint("stop the foreground daemon before setup")
 		}
 		if err := s.confirm(ctx, "Setup needs to stop the service temporarily. Connected agents will need to reconnect."); err != nil {
 			return err
@@ -142,11 +142,11 @@ func (s *setupSession) run(ctx context.Context) error {
 		case "test1", "test2", "test3":
 			args = []string{"--test-dc", environment[4:]}
 		default:
-			return errors.New("choose an explicit account environment")
+			return humanHint("choose an explicit account environment")
 		}
 		env, dc, ok := parseConfiguration(args)
 		if !ok {
-			return errors.New("invalid account environment")
+			return humanHint("invalid account environment")
 		}
 		if err := s.control.Configure(ctx, env, dc, func(ctx context.Context) (int, []byte, error) {
 			id, err := s.prompt.ReadAPIID(ctx)
@@ -166,7 +166,7 @@ func (s *setupSession) run(ctx context.Context) error {
 			return err
 		}
 		if method != "phone" && method != "qr" {
-			return errors.New("choose phone or qr authentication")
+			return humanHint("choose phone or qr authentication")
 		}
 		if _, err := s.control.Authenticate(ctx, tgaccount.AuthMethod(method), s.prompt); err != nil {
 			return err
@@ -179,23 +179,16 @@ func (s *setupSession) run(ctx context.Context) error {
 		if err := s.confirm(ctx, "Switch the service to the binaries running this setup? Existing binaries and account data will be retained."); err != nil {
 			return err
 		}
-		if err := s.local.service.Stop(ctx); err != nil && !errors.Is(err, service.ErrServiceAbsent) {
-			return err
-		}
-		if err := s.local.service.Uninstall(ctx); err != nil {
-			return err
-		}
-		installed = nil
+	}
+	if err := activateRelease(ctx, s.local, installed, s.binDir); err != nil {
+		return err
+	}
+	installed, err = s.local.service.Inspect(ctx)
+	if err != nil {
+		return err
 	}
 	if installed == nil {
-		value, err := s.local.service.Install(ctx, s.binDir)
-		if err != nil {
-			return err
-		}
-		installed = &value
-	}
-	if err := s.local.service.Start(ctx); err != nil {
-		return err
+		return service.ErrNotInstalled
 	}
 	if _, err := waitForReady(ctx, s.local.inspect); err != nil {
 		return err
@@ -214,7 +207,7 @@ func (s *setupSession) run(ctx context.Context) error {
 func (s *setupSession) chooseAccess(ctx context.Context) error {
 	access, ok := s.control.(accessController)
 	if !ok {
-		return errors.New("access control unavailable")
+		return humanHint("access control unavailable")
 	}
 	full, err := access.FullRead(ctx)
 	if err != nil {
@@ -247,7 +240,7 @@ func (s *setupSession) chooseAccess(ctx context.Context) error {
 		}
 		return access.SetFullRead(ctx, true)
 	default:
-		return errors.New("invalid access choice")
+		return humanHint("invalid access choice")
 	}
 }
 
@@ -288,22 +281,34 @@ func (s *setupSession) connectClient(ctx context.Context, relay string) error {
 		return json.NewEncoder(s.output).Encode(map[string]any{"mcpServers": map[string]any{"telegram": map[string]string{"command": relay}}})
 	}
 	if choice != "codex" {
-		return errors.New("choose json or codex")
+		return humanHint("choose json or codex")
 	}
 	// The supported client CLI owns its configuration format and persistence.
 	data, err := s.command(ctx, "codex", "mcp", "list", "--json")
 	if err != nil {
-		return fmt.Errorf("inspect Codex registration: %w", err)
+		return &humanStepError{hint: "could not inspect Codex registrations; install the Codex CLI or select json", cause: err}
 	}
 	var servers []struct {
-		Name string `json:"name"`
+		Name      string `json:"name"`
+		Enabled   bool   `json:"enabled"`
+		Transport struct {
+			Type    string            `json:"type"`
+			Command string            `json:"command"`
+			Args    []string          `json:"args"`
+			Env     map[string]string `json:"env"`
+			EnvVars []string          `json:"env_vars"`
+			Cwd     *string           `json:"cwd"`
+		} `json:"transport"`
 	}
-	if err := json.Unmarshal(data, &servers); err != nil {
-		return errors.New("invalid Codex registration response")
+	if err := json.Unmarshal(data, &servers); err != nil || servers == nil {
+		return humanHint("invalid Codex registration response")
 	}
 	for _, server := range servers {
 		if server.Name == "telegram" {
-			return errors.New("Codex already has a telegram registration; inspect it explicitly or select json")
+			if server.Enabled && server.Transport.Type == "stdio" && server.Transport.Command == relay && len(server.Transport.Args) == 0 && len(server.Transport.Env) == 0 && len(server.Transport.EnvVars) == 0 && server.Transport.Cwd == nil {
+				return nil
+			}
+			return humanHint("Codex already has a telegram registration; inspect it explicitly or select json")
 		}
 	}
 	if err := writeTextJSON(s.output, struct{ Client, Name, Command string }{"codex", "telegram", relay}); err != nil {
@@ -333,7 +338,7 @@ type boundedClientOutput struct{ data []byte }
 
 func (b *boundedClientOutput) Write(p []byte) (int, error) {
 	if len(b.data)+len(p) > 1024*1024 {
-		return 0, errors.New("client response exceeds limit")
+		return 0, humanHint("client response exceeds limit")
 	}
 	b.data = append(b.data, p...)
 	return len(p), nil

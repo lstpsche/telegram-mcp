@@ -23,6 +23,10 @@ try {
 } finally {
     Remove-Item $probe.FullName
 }
+$parseTokens = $null
+$parseErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile((Join-Path $env:GITHUB_WORKSPACE 'install.ps1'), [ref]$parseTokens, [ref]$parseErrors) | Out-Null
+if ($parseErrors.Count -ne 0) { throw 'PowerShell installer syntax failed' }
 foreach ($command in @(
     @('build', './cmd/...'),
     @('test', '-count=1', '-timeout=15m', './...'),

@@ -158,3 +158,23 @@ func TestSetupClientConflictAndExplicitRegistration(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupReusesIdenticalClientRegistration(t *testing.T) {
+	calls := 0
+	s := setupSession{prompt: &setupAnswers{answers: []string{"codex"}}, output: io.Discard, command: func(context.Context, string, ...string) ([]byte, error) {
+		calls++
+		return []byte(`[{"name":"telegram","enabled":true,"transport":{"type":"stdio","command":"/private/relay","args":[],"env":{},"env_vars":[],"cwd":null}}]`), nil
+	}}
+	if err := s.connectClient(context.Background(), "/private/relay"); err != nil || calls != 1 {
+		t.Fatal(err, calls)
+	}
+}
+
+func TestHumanHintsNeverExposeExternalCause(t *testing.T) {
+	var output bytes.Buffer
+	err := &humanStepError{hint: "inspect the client configuration", cause: errors.New("secret external details")}
+	writeControlError(&output, err)
+	if strings.Contains(output.String(), "secret") || !strings.Contains(output.String(), err.hint) {
+		t.Fatal(output.String())
+	}
+}

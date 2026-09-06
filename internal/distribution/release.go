@@ -304,6 +304,10 @@ func validName(name string) bool {
 		return false
 	}
 	for _, part := range strings.Split(name, "/") {
+		stem := strings.ToUpper(strings.SplitN(part, ".", 2)[0])
+		if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || (len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9') {
+			return false
+		}
 		if strings.HasSuffix(part, ".") {
 			return false
 		}

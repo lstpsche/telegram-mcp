@@ -117,6 +117,12 @@ func TestPortableArchivesAndChecksums(t *testing.T) {
 			t.Fatal("asset checksum missing", name, err)
 		}
 	}
+	for _, name := range []string{"install.sh", "install.ps1"} {
+		data, err := os.ReadFile(filepath.Join(o.Output, name))
+		if err != nil || !strings.Contains(string(data), "1.0.0") || strings.Contains(string(data), "0.2.0") {
+			t.Fatal("installer does not select packaged version", name, err)
+		}
+	}
 	calls := strings.Join(f.calls, "\n")
 	for _, target := range []string{"GOOS=darwin GOARCH=arm64", "GOOS=linux GOARCH=amd64", "GOOS=windows GOARCH=arm64"} {
 		if !strings.Contains(calls, target) {
@@ -187,5 +193,20 @@ func TestRejectDocumentationOutput(t *testing.T) {
 	}
 	if _, err := os.Stat(o.Output); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("unsafe output created")
+	}
+}
+
+func TestInstallerScriptsNormalizeWindowsCheckout(t *testing.T) {
+	for name, source := range map[string]string{
+		"install.sh":  "#!/bin/sh\r\nversion=${1:-0.2.0}\r\n",
+		"install.ps1": "# Installer\r\nparam([string]$Version = '0.2.0')\r\n",
+	} {
+		data, err := stampInstaller([]byte(source), name, "0.3.0")
+		if err != nil || strings.Contains(string(data), "\r") || !strings.Contains(string(data), "0.3.0") {
+			t.Fatal(name, string(data), err)
+		}
+		if _, err := stampInstaller([]byte(source+source), name, "0.3.0"); err == nil {
+			t.Fatal("ambiguous version accepted", name)
+		}
 	}
 }

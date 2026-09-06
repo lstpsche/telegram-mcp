@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -47,7 +46,7 @@ func (s *setupSession) runAccessSetup(ctx context.Context) error {
 			return err
 		}
 		if installed == nil {
-			return errors.New("stop the foreground daemon before access setup")
+			return humanHint("stop the foreground daemon before access setup")
 		}
 		if err := s.confirm(ctx, "Stop the service while choosing conversation metadata? Connected clients will need to reconnect."); err != nil {
 			return err
@@ -58,7 +57,7 @@ func (s *setupSession) runAccessSetup(ctx context.Context) error {
 	}
 	access, ok := s.control.(accessController)
 	if !ok {
-		return errors.New("access control unavailable")
+		return humanHint("access control unavailable")
 	}
 	full, err := access.FullRead(ctx)
 	if err != nil {
@@ -89,7 +88,7 @@ func (s *setupSession) runAccessSetup(ctx context.Context) error {
 func (s *setupSession) guideGrant(ctx context.Context, now time.Time) error {
 	control, ok := s.control.(textController)
 	if !ok {
-		return errors.New("text controls unavailable")
+		return humanHint("text controls unavailable")
 	}
 	choice, err := s.prompt.Ask(ctx, "Grant: newest Saved Message (saved), choose a conversation (chats), or enter exact IDs (id): ")
 	if err != nil {
@@ -175,7 +174,7 @@ func (s *setupSession) guideGrant(ctx context.Context, now time.Time) error {
 			return err
 		}
 	default:
-		return errors.New("choose saved, chats or id")
+		return humanHint("choose saved, chats or id")
 	}
 	hours, err := s.prompt.Ask(ctx, "Grant lifetime in hours, 1 to 720 [24]: ")
 	if err != nil {
@@ -212,7 +211,7 @@ func (s *setupSession) guideGrant(ctx context.Context, now time.Time) error {
 		grant.Images = true
 	case "", "no":
 	default:
-		return errors.New("choose yes or no for images")
+		return humanHint("choose yes or no for images")
 	}
 	grant.Eligible = true
 	if err := grant.Validate(now); err != nil {

@@ -290,6 +290,9 @@ func writeStatus(writer io.Writer, status app.Status) {
 }
 
 func writeControlError(writer io.Writer, err error) {
+	if writeHumanHint(writer, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, app.ErrMigrationUnavailable):
 		fmt.Fprintln(writer, "telegram-mcpctl: migration requires a cgo-enabled macOS control binary signed with the existing Keychain identity; see docs/keychain.md")

@@ -22,10 +22,11 @@ try {
         $handler.AllowAutoRedirect = $false
         $client = [System.Net.Http.HttpClient]::new($handler)
         $client.Timeout = [TimeSpan]::FromMinutes(5)
+        $deadline = [Threading.CancellationTokenSource]::new([TimeSpan]::FromMinutes(5))
         try {
             for ($redirect = 0; $redirect -le 5; $redirect++) {
                 if (([Uri]$Url).Scheme -ne 'https') { throw 'Release downloads require HTTPS.' }
-                $response = $client.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+                $response = $client.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead, $deadline.Token).GetAwaiter().GetResult()
                 if ([int]$response.StatusCode -ge 300 -and [int]$response.StatusCode -lt 400) {
                     $next = [Uri]::new([Uri]$Url, $response.Headers.Location)
                     $response.Dispose()
@@ -39,7 +40,7 @@ try {
                     try {
                         $buffer = [byte[]]::new(65536)
                         [long]$total = 0
-                        while (($count = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                        while (($count = $inputStream.ReadAsync($buffer, 0, $buffer.Length, $deadline.Token).GetAwaiter().GetResult()) -gt 0) {
                             $total += $count
                             if ($total -gt $Limit) { throw 'Release download exceeds size limit.' }
                             $outputStream.Write($buffer, 0, $count)
@@ -49,7 +50,7 @@ try {
                 } finally { $response.Dispose() }
             }
             throw 'Too many release redirects.'
-        } finally { $client.Dispose(); $handler.Dispose() }
+        } finally { $deadline.Dispose(); $client.Dispose(); $handler.Dispose() }
     }
     $base = "https://github.com/lstpsche/telegram-mcp/releases/download/v$Version"
     $asset = "telegram-mcpctl-$Version-windows-$arch.exe"
