@@ -35,6 +35,7 @@ type Grant struct {
 	ExpiresAt   time.Time
 	Eligible    bool
 	Images      bool
+	Documents   bool
 	fullRead    bool
 }
 
@@ -67,7 +68,7 @@ func (g Grant) Deadline(limit time.Time) time.Time {
 }
 
 func fullReadGrant(peer model.PeerID) Grant {
-	return Grant{Peer: peer, MinID: 1, MaxID: math.MaxInt32, ReadThrough: math.MaxInt32, Images: true, fullRead: true}
+	return Grant{Peer: peer, MinID: 1, MaxID: math.MaxInt32, ReadThrough: math.MaxInt32, Images: true, Documents: true, fullRead: true}
 }
 
 func (g Grant) CheckCurrent(now time.Time) error {
@@ -100,7 +101,7 @@ func (g Grant) CheckMessage(candidate model.Candidate, self model.PeerID, now ti
 	if candidate.Ephemeral {
 		return model.TextError(model.ErrorEphemeralContent, ErrDenied)
 	}
-	if candidate.Forwarded || candidate.Quoted || candidate.Unsupported || (candidate.Image != nil && !g.Images) {
+	if candidate.Forwarded || candidate.Quoted || candidate.Unsupported || (candidate.Image != nil && !g.Images) || (candidate.Document != nil && !g.Documents) {
 		return model.TextError(model.ErrorPolicyDenied, ErrDenied)
 	}
 	return nil

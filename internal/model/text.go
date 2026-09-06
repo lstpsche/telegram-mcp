@@ -18,11 +18,12 @@ type Chat struct {
 }
 
 type Message struct {
-	Image  *ImageDescriptor `json:"image,omitempty"`
-	ID     MessageID        `json:"id"`
-	Author PeerID           `json:"author"`
-	Date   string           `json:"date"`
-	Text   string           `json:"text"`
+	Document *DocumentDescriptor `json:"document,omitempty"`
+	Image    *ImageDescriptor    `json:"image,omitempty"`
+	ID       MessageID           `json:"id"`
+	Author   PeerID              `json:"author"`
+	Date     string              `json:"date"`
+	Text     string              `json:"text"`
 }
 
 // Candidate carries normalization evidence only inside the application.
@@ -30,7 +31,8 @@ type Message struct {
 type Candidate struct {
 	// SentAt retains only timestamp evidence for date traversal, including excluded bodies.
 	SentAt      int64
-	Image       *ImageSource
+	Image       *MediaSource
+	Document    *MediaSource
 	Message     Message
 	Protected   bool
 	Ephemeral   bool
@@ -90,12 +92,13 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
-	Image            *ImageDescriptor `json:"image,omitempty"`
-	ID               MessageID        `json:"id"`
-	Author           PeerID           `json:"author"`
-	Date             string           `json:"date"`
-	Snippet          string           `json:"snippet"`
-	SnippetTruncated bool             `json:"snippet_truncated"`
+	Document         *DocumentDescriptor `json:"document,omitempty"`
+	Image            *ImageDescriptor    `json:"image,omitempty"`
+	ID               MessageID           `json:"id"`
+	Author           PeerID              `json:"author"`
+	Date             string              `json:"date"`
+	Snippet          string              `json:"snippet"`
+	SnippetTruncated bool                `json:"snippet_truncated"`
 }
 
 // Unread describes the entire granted dialog, not just its authorized body range.

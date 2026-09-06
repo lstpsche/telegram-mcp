@@ -22,7 +22,7 @@ func TestGuidedSavedGrantRequiresExactFinalConsent(t *testing.T) {
 			final = "yes"
 		}
 		control := &fakeTextController{}
-		s := setupSession{control: control, prompt: &setupAnswers{answers: []string{"saved", "yes", "24", "0", "no", final}}, output: io.Discard}
+		s := setupSession{control: control, prompt: &setupAnswers{answers: []string{"saved", "yes", "24", "0", "no", "no", final}}, output: io.Discard}
 		err := s.guideGrant(context.Background(), now)
 		if !accept {
 			if !errors.Is(err, context.Canceled) || control.saved.Eligible {
@@ -31,7 +31,7 @@ func TestGuidedSavedGrantRequiresExactFinalConsent(t *testing.T) {
 			continue
 		}
 		g := control.saved
-		if err != nil || g.Peer.String() != "tgpeer:v1:self:456" || g.Author.String() != "tgpeer:v1:user:456" || g.MinID != 120 || g.MaxID != 120 || g.ReadThrough != 0 || g.Images || g.Profile != policy.ProfileSelfAuthored || !g.ExpiresAt.Equal(now.Add(24*time.Hour)) {
+		if err != nil || g.Peer.String() != "tgpeer:v1:self:456" || g.Author.String() != "tgpeer:v1:user:456" || g.MinID != 120 || g.MaxID != 120 || g.ReadThrough != 0 || g.Images || g.Documents || g.Profile != policy.ProfileSelfAuthored || !g.ExpiresAt.Equal(now.Add(24*time.Hour)) {
 			t.Fatal(g, err)
 		}
 	}
@@ -41,11 +41,11 @@ func TestGuidedChatUsesNumberedImmutableIDAndEscapesTitle(t *testing.T) {
 	title := "untrusted\x1b[2J\u202e\U000e0001"
 	control := &fakeTextController{peers: []model.Chat{{ID: peer, Title: title}}}
 	var out bytes.Buffer
-	s := setupSession{control: control, prompt: &setupAnswers{answers: []string{"chats", "yes", "1", "tgpeer:v1:user:456", "consented", "100", "tgmsg:v1:chat:123:120", "2", "120", "yes", "yes"}}, output: &out}
+	s := setupSession{control: control, prompt: &setupAnswers{answers: []string{"chats", "yes", "1", "tgpeer:v1:user:456", "consented", "100", "tgmsg:v1:chat:123:120", "2", "120", "yes", "yes", "yes"}}, output: &out}
 	if err := s.guideGrant(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if control.saved.Peer != peer || control.saved.MinID != 100 || control.saved.ReadThrough != 120 || !control.saved.Images {
+	if control.saved.Peer != peer || control.saved.MinID != 100 || control.saved.ReadThrough != 120 || !control.saved.Images || !control.saved.Documents {
 		t.Fatal(control.saved)
 	}
 	if strings.ContainsAny(out.String(), "\x1b\u202e\U000e0001") {
@@ -89,7 +89,7 @@ func TestGuidedReplacementCanBeDeclined(t *testing.T) {
 	peer, _ := model.ParsePeerID("tgpeer:v1:self:456")
 	author, _ := model.ParsePeerID("tgpeer:v1:user:456")
 	c := &replacementControl{current: policy.Grant{Peer: peer, Author: author}}
-	s := setupSession{control: c, prompt: &setupAnswers{answers: []string{"saved", "yes", "24", "0", "no", "no"}}, output: io.Discard}
+	s := setupSession{control: c, prompt: &setupAnswers{answers: []string{"saved", "yes", "24", "0", "no", "no", "no"}}, output: io.Discard}
 	if err := s.guideGrant(context.Background(), time.Now()); !errors.Is(err, context.Canceled) || c.saved.Eligible {
 		t.Fatal("replacement not refused", err)
 	}

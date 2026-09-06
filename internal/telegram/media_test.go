@@ -29,7 +29,7 @@ func testDocumentMessage() *tg.Message {
 func imageCandidate(t *testing.T, message *tg.Message) model.Candidate {
 	t.Helper()
 	candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true})
-	if err != nil || !safeImage(candidate) {
+	if err != nil || !safeMedia(candidate) {
 		t.Fatalf("image normalization failed: %v", err)
 	}
 	return candidate
@@ -68,7 +68,7 @@ func TestImageNormalizationSupportsCaptionlessPhotosAndStaticDocuments(t *testin
 	}
 }
 
-func TestUnsafeImagesNeverExposeCaptionsOrDescriptors(t *testing.T) {
+func TestUnsafeMediasNeverExposeCaptionsOrDescriptors(t *testing.T) {
 	for name, mutate := range map[string]func(*tg.Message){
 		"protected":        func(m *tg.Message) { m.Noforwards = true },
 		"message ttl":      func(m *tg.Message) { m.TTLPeriod = 5 },
@@ -170,7 +170,7 @@ func imageTestAccount(t *testing.T, source func() *tg.Message, download func(*tg
 func TestImageDownloadRenewsExactReferenceOnceAndResumesBoundedOffset(t *testing.T) {
 	message := testPhotoMessage()
 	photo := message.Media.(*tg.MessageMediaPhoto).Photo.(*tg.Photo)
-	photo.Sizes[0].(*tg.PhotoSize).Size = imageChunkBytes + 5
+	photo.Sizes[0].(*tg.PhotoSize).Size = mediaChunkBytes + 5
 	expected := imageCandidate(t, message)
 	calls, sources := 0, 0
 	account := imageTestAccount(t, func() *tg.Message {
@@ -181,16 +181,16 @@ func TestImageDownloadRenewsExactReferenceOnceAndResumesBoundedOffset(t *testing
 		return message
 	}, func(q *tg.UploadGetFileRequest) (tg.UploadFileClass, error) {
 		calls++
-		if q.CDNSupported || q.Precise || q.Limit != imageChunkBytes {
+		if q.CDNSupported || q.Precise || q.Limit != mediaChunkBytes {
 			t.Fatal("unbounded image request")
 		}
 		if calls == 1 {
 			if q.Offset != 0 {
 				t.Fatal("initial offset")
 			}
-			return &tg.UploadFile{Type: &tg.StorageFileJpeg{}, Bytes: bytes.Repeat([]byte{7}, imageChunkBytes)}, nil
+			return &tg.UploadFile{Type: &tg.StorageFileJpeg{}, Bytes: bytes.Repeat([]byte{7}, mediaChunkBytes)}, nil
 		}
-		if q.Offset != imageChunkBytes {
+		if q.Offset != mediaChunkBytes {
 			t.Fatal("renewal restarted already downloaded bytes")
 		}
 		if calls == 2 {
@@ -202,7 +202,7 @@ func TestImageDownloadRenewsExactReferenceOnceAndResumesBoundedOffset(t *testing
 		return &tg.UploadFile{Type: &tg.StorageFileJpeg{}, Bytes: bytes.Repeat([]byte{8}, 5)}, nil
 	})
 	data, err := account.DownloadImage(context.Background(), expected)
-	if err != nil || len(data) != imageChunkBytes+5 || calls != 3 || sources != 2 || data[0] != 7 || data[len(data)-1] != 8 {
+	if err != nil || len(data) != mediaChunkBytes+5 || calls != 3 || sources != 2 || data[0] != 7 || data[len(data)-1] != 8 {
 		t.Fatalf("renewal result: bytes=%d calls=%d sources=%d err=%v", len(data), calls, sources, err)
 	}
 }
@@ -258,10 +258,10 @@ func TestImageDownloadMaximumSizeHasFiniteChunkBudget(t *testing.T) {
 		if calls == 1 {
 			return nil, tgerr.New(400, "FILE_REFERENCE_EXPIRED")
 		}
-		if q.Offset != int64(calls-2)*imageChunkBytes || q.Limit != imageChunkBytes {
+		if q.Offset != int64(calls-2)*mediaChunkBytes || q.Limit != mediaChunkBytes {
 			t.Fatal("unaligned image download")
 		}
-		return &tg.UploadFile{Type: &tg.StorageFileJpeg{}, Bytes: make([]byte, imageChunkBytes)}, nil
+		return &tg.UploadFile{Type: &tg.StorageFileJpeg{}, Bytes: make([]byte, mediaChunkBytes)}, nil
 	})
 	data, err := account.DownloadImage(context.Background(), imageCandidate(t, message))
 	if err != nil || len(data) != model.MaximumImageBytes || calls != 17 {
@@ -439,7 +439,7 @@ func TestCaptionlessImagesSupportProductionDataCenters(t *testing.T) {
 
 func TestImageDataCenterResolutionFailureReleasesNoPool(t *testing.T) {
 	account, _ := newReadTestAccount(t, func(context.Context, bin.Encoder, bin.Decoder) error { t.Fatal("unexpected RPC"); return nil })
-	api, pool, err := account.imageAPI(context.Background(), 99)
+	api, pool, err := account.mediaAPI(context.Background(), 99)
 	if err == nil || api != nil || pool != nil {
 		t.Fatal("unknown data center was accepted")
 	}

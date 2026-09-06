@@ -219,7 +219,7 @@ func TestSupergroupRevalidatesHistoryEntityAndExactImage(t *testing.T) {
 			if err := account.reads.storage.SetChannelAccessHash(context.Background(), 1, 42, 12345); err != nil {
 				t.Fatal(err)
 			}
-			location, err := account.exactImage(context.Background(), expected)
+			location, err := account.exactMedia(context.Background(), expected)
 			if change == "none" {
 				if err != nil || location == nil || location.source != *expected.Image {
 					t.Fatal("exact supergroup image rejected", err)

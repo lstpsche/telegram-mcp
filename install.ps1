@@ -1,5 +1,5 @@
 # Download the verified control program; it installs and checks the full release.
-param([string]$Version = '0.3.0')
+param([string]$Version = '0.4.0')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($Version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Use a stable X.Y.Z version.' }

@@ -11,7 +11,10 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/model"
 )
 
-func validateImageData(source model.ImageSource, data []byte) error {
+func validateImageData(source model.MediaSource, data []byte) error {
+	if source.IsDocument() {
+		return model.TextError(model.ErrorInvalidReference, nil)
+	}
 	if err := source.Validate(); err != nil {
 		return err
 	}

@@ -2,7 +2,7 @@
 
 These transport-independent contracts define the MCP input and output boundary.
 The daemon registers a static inventory: `status`, `list_chats`, `list_messages`,
-`get_message_context`, `search_messages`, `list_unread`, `list_scopes`, `catch_up`, and `open_image`. Authentication and
+`get_message_context`, `search_messages`, `list_unread`, `list_scopes`, `catch_up`, `open_image`, and `open_document`. Authentication and
 policy mutations are human-only.
 
 ## Available MCP behavior
@@ -212,9 +212,9 @@ cancellation, and a sanitized internal error.
   concurrency/rate/flood bounds apply to transport attempts and recovery.
 - Client-supplied limits never raise server count, byte, RPC, concurrency, or
   duration caps.
-- Search cursors and image handles are signed, expiring, epoch/revision-bound,
-  and reauthorized on every use. Search binds its query; image handles bind
-  the exact message and keyed image identity. Neither grants authority.
+- Search cursors and media handles are signed, expiring, epoch/revision-bound,
+  and reauthorized on every use. Search binds its query; media handles bind
+  the exact message and keyed media identity. Neither grants authority.
 - `open_image` accepts only a handle string (1–4096 characters). Its single
   metadata item contains `id`, `author`, `date`, and `image`; an additional
   native image block carries the original JPEG/PNG bytes. Permitted history
@@ -225,7 +225,7 @@ cancellation, and a sanitized internal error.
   while metadata mirrors retain the 256 KiB limit. No input limit is raised.
 
 Full read access is a human-only, authorization-epoch-bound policy setting.
-It authorizes all supported authors and positive message IDs, images, and
+It authorizes all supported authors and positive message IDs, images, PDF/plain-text attachments, and
 whole-prefix read effects in supported dialogs. It has no expiry; transient
 requests, cursors and handles retain their deadlines. Absence means restricted
 mode. Disablement restores preserved exact grants. Every mode change increments
@@ -244,3 +244,25 @@ The Boolean result itself is not a success flag. Like Telegram's
 [TDLib read handler](https://github.com/tdlib/td/blob/master/td/telegram/MessagesManager.cpp),
 the adapter distinguishes RPC errors from either returned Boolean; exact
 read-position readback remains required before content release.
+
+## Document delivery
+
+`open_document` accepts only a current signed document handle. Discovery in
+history, context, search and catch-up uses the optional `document` object with
+`handle`, `mime_type` and `size`. Restricted grants require the separate
+`documents` bit; Full read includes supported documents. Image permission does
+not imply document permission. The forward migration preserves existing grants,
+audit rows and retention, defaulting restricted document permission to false.
+
+Opening returns one metadata item (`id`, `author`, `date`, `document`) and one
+native content block: an embedded PDF resource or a plain-text block. It has
+state-affecting, non-idempotent annotations because delivery requires the
+separately authorized whole-prefix read acknowledgment. Exact-source checks and
+the final policy/audit boundary precede content release, including after the
+acknowledgment. Handles use a separate operation and signing domain from images.
+The embedded URI grants no authority and has no resource-read endpoint.
+
+PDFs are bounded originals with framing checks, not parsed or sanitized files.
+Text requires valid UTF-8 and rejects controls except tab/CR/LF. All attachments
+remain hostile input. See [document access](document-access.md) for byte limits,
+client compatibility, safe handling, read effects and failure semantics.

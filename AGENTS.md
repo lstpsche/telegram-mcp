@@ -18,8 +18,8 @@
   deployment, and acceptance are separate decisions. Production configuration
   requires explicit human eligibility attestation; Test DC selection is explicit.
   Credentials remain interactive and local. Text access requires exact restricted
-  grants or human-enabled Full read access. Restricted images require an additional
-  opt-in; Full read access includes supported images and read acknowledgments. Automated acceptance
+  grants or human-enabled Full read access. Restricted images and PDF/plain-text attachments require separate additional
+  opt-ins; Full read access includes supported images, documents and read acknowledgments. Automated acceptance
   uses synthetic local fixtures; implementation does not authorize real-data use.
 
 ## Trust and data rules

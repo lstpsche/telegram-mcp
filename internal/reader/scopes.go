@@ -252,7 +252,7 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 			return Result{}, err
 		}
 		coverage.QueriedPeers++
-		normalized, err := s.normalizeSearchWindow(grant, search, candidates, imageAuthority{epoch, revision})
+		normalized, err := s.normalizeSearchWindow(grant, search, candidates, mediaAuthority{epoch, revision})
 		if err != nil {
 			return Result{}, err
 		}

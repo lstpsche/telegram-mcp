@@ -43,7 +43,7 @@ func imageService(t *testing.T) (*Service, *imageFake, *policy.Repository, polic
 		t.Fatal(err)
 	}
 	c := candidate(g, 20, "")
-	c.Image = &model.ImageSource{Kind: "document", MIMEType: "image/png", Width: 2, Height: 3, Size: int64(data.Len()), Fingerprint: strings.Repeat("a", 64)}
+	c.Image = &model.MediaSource{Kind: "document", MIMEType: "image/png", Width: 2, Height: 3, Size: int64(data.Len()), Fingerprint: strings.Repeat("a", 64)}
 	f.items = []model.Candidate{c}
 	backend := &imageFake{fakeBackend: f, db: db, data: data.Bytes()}
 	s.backend = backend
@@ -130,10 +130,10 @@ func TestImageHandleDenialsPrecedeDownload(t *testing.T) {
 				parts := strings.Split(handle, ".")
 				raw, _ := base64.RawURLEncoding.DecodeString(parts[1])
 				parts[1] = base64.RawURLEncoding.EncodeToString(append([]byte(" "), raw...))
-				parts[2] = base64.RawURLEncoding.EncodeToString(s.imageMAC("image-handle-v1", parts[1]))
+				parts[2] = base64.RawURLEncoding.EncodeToString(s.mediaMAC("image-handle-v1", parts[1]))
 				handle = strings.Join(parts, ".")
 			case "expired":
-				now := s.now().Add(imageLifetime)
+				now := s.now().Add(mediaLifetime)
 				s.now = func() time.Time { return now }
 			case "key":
 				s.cursorKey[0]++
@@ -154,20 +154,20 @@ func TestImageHandleDenialsPrecedeDownload(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				d, err := s.imageDescriptor(f.items[0], g, imageAuthority{epoch, rev})
+				d, err := s.imageDescriptor(f.items[0], g, mediaAuthority{epoch, rev})
 				if err != nil {
 					t.Fatal(err)
 				}
 				handle = d.Handle
 			case "epoch":
-				h, err := s.decodeImageHandle(handle)
+				h, err := s.decodeMediaHandle(handle, false)
 				if err != nil {
 					t.Fatal(err)
 				}
 				h.Authority.Epoch = strings.Repeat("z", 43)
 				raw, _ := json.Marshal(h)
 				payload := base64.RawURLEncoding.EncodeToString(raw)
-				handle = "im1." + payload + "." + base64.RawURLEncoding.EncodeToString(s.imageMAC("image-handle-v1", payload))
+				handle = "im1." + payload + "." + base64.RawURLEncoding.EncodeToString(s.mediaMAC("image-handle-v1", payload))
 			}
 			result, err := s.OpenImage(context.Background(), "req_image_invalid", handle)
 			if err == nil || result.Image != nil || len(result.JSON) != 0 || f.downloads != 0 || f.historyCalls != 0 || f.ackCalls != 0 {
@@ -204,7 +204,7 @@ func TestImageFailuresNeverReleaseBytes(t *testing.T) {
 			case "readiness":
 				f.onDownload = func() { f.notReady = true }
 			case "expiry":
-				f.onDownload = func() { now := s.now().Add(imageLifetime); s.now = func() time.Time { return now } }
+				f.onDownload = func() { now := s.now().Add(mediaLifetime); s.now = func() time.Time { return now } }
 			case "audit":
 				if _, err := f.db.Exec("DROP TABLE text_audit"); err != nil {
 					t.Fatal(err)
@@ -233,13 +233,13 @@ func FuzzImageHandle(f *testing.F) {
 	s := &Service{now: func() time.Time { return time.Unix(1000, 0) }}
 	peer, _ := model.NewPeerID(model.PeerKindChat, 42)
 	id, _ := model.NewMessageID(peer, 20)
-	handle := imageHandle{Operation: "open_image", Message: id, Digest: strings.Repeat("a", 43), Authority: imageAuthority{Epoch: strings.Repeat("e", 43), Revision: 1}, Expires: 1100}
+	handle := mediaHandle{Operation: "open_image", Message: id, Digest: strings.Repeat("a", 43), Authority: mediaAuthority{Epoch: strings.Repeat("e", 43), Revision: 1}, Expires: 1100}
 	raw, _ := json.Marshal(handle)
 	payload := base64.RawURLEncoding.EncodeToString(raw)
-	f.Add("im1." + payload + "." + base64.RawURLEncoding.EncodeToString(s.imageMAC("image-handle-v1", payload)))
+	f.Add("im1." + payload + "." + base64.RawURLEncoding.EncodeToString(s.mediaMAC("image-handle-v1", payload)))
 	f.Fuzz(func(t *testing.T, token string) {
-		h, err := s.decodeImageHandle(token)
-		if err == nil && (h.Operation != "open_image" || h.Expires <= s.now().Unix() || h.Expires > s.now().Add(imageLifetime).Unix() || h.Message.String() == "") {
+		h, err := s.decodeMediaHandle(token, false)
+		if err == nil && (h.Operation != "open_image" || h.Expires <= s.now().Unix() || h.Expires > s.now().Add(mediaLifetime).Unix() || h.Message.String() == "") {
 			t.Fatal("invalid accepted handle")
 		}
 	})

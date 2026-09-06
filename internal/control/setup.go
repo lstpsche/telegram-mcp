@@ -238,7 +238,7 @@ func (s *setupSession) chooseAccess(ctx context.Context) error {
 		}
 		return s.guideGrant(ctx, time.Now().UTC())
 	case "full":
-		if err := s.confirm(ctx, "Full read exposes all supported conversations, authors, history and images to the connected agent and model provider, and permits read acknowledgments. Named scopes do not restrict this authority."); err != nil {
+		if err := s.confirm(ctx, "Full read exposes all supported conversations, authors, history, images and PDF/plain-text attachments to the connected agent and model provider, and permits read acknowledgments. Named scopes do not restrict this authority."); err != nil {
 			return err
 		}
 		return access.SetFullRead(ctx, true)

@@ -823,7 +823,7 @@ func TestUnconfiguredDaemonServesStaticToolsWithoutReadingSecrets(t *testing.T) 
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 9 {
+	if err != nil || len(tools.Tools) != 10 {
 		t.Fatalf("tools=%v error=%v", tools, err)
 	}
 	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "status"}); err != nil {

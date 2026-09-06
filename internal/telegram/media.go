@@ -15,12 +15,12 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/model"
 )
 
-const imageChunkBytes = 64 * 1024
+const mediaChunkBytes = 64 * 1024
 
-// imageLocation exists only while normalizing or downloading the exact source.
+// mediaLocation exists only while normalizing or downloading the exact source.
 // Its reference, access hash, and Telegram media ID never leave this adapter.
-type imageLocation struct {
-	source   model.ImageSource
+type mediaLocation struct {
+	source   model.MediaSource
 	dc       int
 	location tg.InputFileLocationClass
 }
@@ -31,7 +31,7 @@ type photoRendition struct {
 	size          int64
 }
 
-func normalizeImage(message *tg.Message) *imageLocation {
+func normalizeMedia(message *tg.Message) *mediaLocation {
 	if message.Mentioned && message.MediaUnread || message.VideoProcessingPending || message.PaidSuggestedPostStars || message.PaidSuggestedPostTon || message.PaidMessageStars != 0 || !message.SuggestedPost.Zero() {
 		return nil
 	}
@@ -82,11 +82,11 @@ func normalizeImage(message *tg.Message) *imageLocation {
 			return a.kind < b.kind
 		})
 		size := sizes[0]
-		source := imageIdentity("photo", "image/jpeg", photo.ID, size)
-		return &imageLocation{source: source, dc: photo.DCID, location: &tg.InputPhotoFileLocation{ID: photo.ID, AccessHash: photo.AccessHash, FileReference: photo.FileReference, ThumbSize: size.kind}}
+		source := mediaIdentity("photo", "image/jpeg", photo.ID, size)
+		return &mediaLocation{source: source, dc: photo.DCID, location: &tg.InputPhotoFileLocation{ID: photo.ID, AccessHash: photo.AccessHash, FileReference: photo.FileReference, ThumbSize: size.kind}}
 	case *tg.MessageMediaDocument:
 		document, ok := media.Document.(*tg.Document)
-		if !ok || document == nil || media.Spoiler || media.Video || media.Round || media.Voice || media.Nopremium || media.TTLSeconds != 0 || media.Flags.Has(2) || len(media.AltDocuments) != 0 || media.VideoCover != nil || media.VideoTimestamp != 0 || document.ID == 0 || document.AccessHash == 0 || len(document.FileReference) == 0 || len(document.FileReference) > 4096 || document.DCID < 1 || len(document.VideoThumbs) != 0 || (document.MimeType != "image/jpeg" && document.MimeType != "image/png") || len(document.Attributes) > 2 {
+		if !ok || document == nil || media.Spoiler || media.Video || media.Round || media.Voice || media.Nopremium || media.TTLSeconds != 0 || media.Flags.Has(2) || len(media.AltDocuments) != 0 || media.VideoCover != nil || media.VideoTimestamp != 0 || document.ID == 0 || document.AccessHash == 0 || len(document.FileReference) == 0 || len(document.FileReference) > 4096 || document.DCID < 1 || len(document.VideoThumbs) != 0 || (document.MimeType != "image/jpeg" && document.MimeType != "image/png" && document.MimeType != "application/pdf" && document.MimeType != "text/plain") || len(document.Attributes) > 2 {
 			return nil
 		}
 		var dimensions *tg.DocumentAttributeImageSize
@@ -107,20 +107,29 @@ func normalizeImage(message *tg.Message) *imageLocation {
 				return nil
 			}
 		}
-		if dimensions == nil {
-			return nil
+		isDocument := document.MimeType == "application/pdf" || document.MimeType == "text/plain"
+		rendition := photoRendition{size: document.Size}
+		if isDocument {
+			if dimensions != nil {
+				return nil
+			}
+		} else {
+			if dimensions == nil {
+				return nil
+			}
+			rendition.width, rendition.height = dimensions.W, dimensions.H
 		}
-		source := imageIdentity("document", document.MimeType, document.ID, photoRendition{width: dimensions.W, height: dimensions.H, size: document.Size})
+		source := mediaIdentity("document", document.MimeType, document.ID, rendition)
 		if source.Validate() != nil {
 			return nil
 		}
-		return &imageLocation{source: source, dc: document.DCID, location: &tg.InputDocumentFileLocation{ID: document.ID, AccessHash: document.AccessHash, FileReference: document.FileReference}}
+		return &mediaLocation{source: source, dc: document.DCID, location: &tg.InputDocumentFileLocation{ID: document.ID, AccessHash: document.AccessHash, FileReference: document.FileReference}}
 	default:
 		return nil
 	}
 }
 
-func imageIdentity(kind, mime string, id int64, rendition photoRendition) model.ImageSource {
+func mediaIdentity(kind, mime string, id int64, rendition photoRendition) model.MediaSource {
 	// This canonical digest excludes mutable authorization and routing metadata.
 	identity := struct {
 		Kind, MIMEType string
@@ -131,18 +140,28 @@ func imageIdentity(kind, mime string, id int64, rendition photoRendition) model.
 	}{kind, mime, id, rendition.kind, rendition.width, rendition.height, rendition.size}
 	encoded, _ := json.Marshal(identity) // Fixed primitive fields cannot fail to encode.
 	digest := sha256.Sum256(encoded)
-	return model.ImageSource{Kind: kind, MIMEType: mime, Width: rendition.width, Height: rendition.height, Size: rendition.size, Fingerprint: hex.EncodeToString(digest[:])}
+	return model.MediaSource{Kind: kind, MIMEType: mime, Width: rendition.width, Height: rendition.height, Size: rendition.size, Fingerprint: hex.EncodeToString(digest[:])}
 }
 
-func safeImage(candidate model.Candidate) bool {
-	return candidate.Image != nil && candidate.Image.Validate() == nil && !candidate.Protected && !candidate.Ephemeral && !candidate.Forwarded && !candidate.Quoted && !candidate.Unsupported
+func candidateMedia(candidate model.Candidate) *model.MediaSource {
+	if candidate.Image != nil && candidate.Document == nil && !candidate.Image.IsDocument() {
+		return candidate.Image
+	}
+	if candidate.Document != nil && candidate.Image == nil && candidate.Document.IsDocument() {
+		return candidate.Document
+	}
+	return nil
 }
 
-func (a *Account) exactImage(ctx context.Context, expected model.Candidate) (*imageLocation, error) {
+func safeMedia(candidate model.Candidate) bool {
+	return candidateMedia(candidate) != nil && candidateMedia(candidate).Validate() == nil && !candidate.Protected && !candidate.Ephemeral && !candidate.Forwarded && !candidate.Quoted && !candidate.Unsupported
+}
+
+func (a *Account) exactMedia(ctx context.Context, expected model.Candidate) (*mediaLocation, error) {
 	if !a.Ready() {
 		return nil, model.TextError(model.ErrorFreshnessDegraded, nil)
 	}
-	if !safeImage(expected) {
+	if !safeMedia(expected) {
 		return nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	peer, id := expected.Message.ID.Peer(), expected.Message.ID.TelegramID()
@@ -168,7 +187,7 @@ func (a *Account) exactImage(ctx context.Context, expected model.Candidate) (*im
 	if err != nil {
 		return nil, err
 	}
-	if len(candidates) != 1 || !safeImage(candidates[0]) || candidates[0].Message.ID != expected.Message.ID || candidates[0].Message.Author != expected.Message.Author || *candidates[0].Image != *expected.Image {
+	if len(candidates) != 1 || !safeMedia(candidates[0]) || candidates[0].Message.ID != expected.Message.ID || candidates[0].Message.Author != expected.Message.Author || *candidateMedia(candidates[0]) != *candidateMedia(expected) {
 		return nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	// normalizePage validated the constructor and exact candidate above.
@@ -177,8 +196,8 @@ func (a *Account) exactImage(ctx context.Context, expected model.Candidate) (*im
 	if !ok {
 		return nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
-	location := normalizeImage(message)
-	if location == nil || location.source != *expected.Image {
+	location := normalizeMedia(message)
+	if location == nil || location.source != *candidateMedia(expected) {
 		return nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	if err := a.reads.synchronize(ctx); err != nil {
@@ -189,7 +208,7 @@ func (a *Account) exactImage(ctx context.Context, expected model.Candidate) (*im
 
 // The SDK resolves DC IDs against the selected environment's current DC options.
 // Media metadata supplies an ID, never an endpoint or a Test-DC-only range.
-func (a *Account) imageAPI(ctx context.Context, dc int) (*tg.Client, gotdtelegram.CloseInvoker, error) {
+func (a *Account) mediaAPI(ctx context.Context, dc int) (*tg.Client, gotdtelegram.CloseInvoker, error) {
 	if dc < 1 || a.openImageDC == nil {
 		return nil, nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
@@ -198,7 +217,7 @@ func (a *Account) imageAPI(ctx context.Context, dc int) (*tg.Client, gotdtelegra
 		return nil, nil, readError(err)
 	}
 	if pool == nil {
-		return nil, nil, model.TextError(model.ErrorTelegramUnavailable, errors.New("Telegram image pool is missing"))
+		return nil, nil, model.TextError(model.ErrorTelegramUnavailable, errors.New("Telegram media pool is missing"))
 	}
 	var invoker tg.Invoker = pool
 	// Explicit pools avoid the primary API's automatic FILE_MIGRATE routing.
@@ -211,14 +230,28 @@ func (a *Account) imageAPI(ctx context.Context, dc int) (*tg.Client, gotdtelegra
 
 // DownloadImage fetches only the unchanged source approved by the caller.
 // The caller remains responsible for policy and read acknowledgment before use.
-func (a *Account) DownloadImage(ctx context.Context, expected model.Candidate) (data []byte, resultErr error) {
+func (a *Account) DownloadImage(ctx context.Context, expected model.Candidate) ([]byte, error) {
+	if expected.Image == nil || expected.Document != nil || expected.Image.IsDocument() {
+		return nil, model.TextError(model.ErrorInvalidReference, nil)
+	}
+	return a.downloadMedia(ctx, expected)
+}
+
+func (a *Account) DownloadDocument(ctx context.Context, expected model.Candidate) ([]byte, error) {
+	if expected.Document == nil || expected.Image != nil || !expected.Document.IsDocument() {
+		return nil, model.TextError(model.ErrorInvalidReference, nil)
+	}
+	return a.downloadMedia(ctx, expected)
+}
+
+func (a *Account) downloadMedia(ctx context.Context, expected model.Candidate) (data []byte, resultErr error) {
 	bounded, cancel := context.WithTimeout(ctx, readDeadline)
 	defer cancel()
-	location, err := a.exactImage(bounded, expected)
+	location, err := a.exactMedia(bounded, expected)
 	if err != nil {
 		return nil, err
 	}
-	api, pool, err := a.imageAPI(bounded, location.dc)
+	api, pool, err := a.mediaAPI(bounded, location.dc)
 	if err != nil {
 		return nil, err
 	}
@@ -252,11 +285,11 @@ func (a *Account) DownloadImage(ctx context.Context, expected model.Candidate) (
 		if !a.Ready() {
 			return nil, model.TextError(model.ErrorFreshnessDegraded, nil)
 		}
-		result, err := api.UploadGetFile(bounded, &tg.UploadGetFileRequest{Location: location.location, Offset: int64(len(buffer)), Limit: imageChunkBytes})
+		result, err := api.UploadGetFile(bounded, &tg.UploadGetFileRequest{Location: location.location, Offset: int64(len(buffer)), Limit: mediaChunkBytes})
 		if err != nil {
 			if !renewed && tgerr.Is(err, "FILE_REFERENCE_EXPIRED", "FILE_REFERENCE_INVALID") {
 				renewed = true
-				refreshed, refreshErr := a.exactImage(bounded, expected)
+				refreshed, refreshErr := a.exactMedia(bounded, expected)
 				if refreshErr != nil {
 					return nil, refreshErr
 				}
@@ -268,7 +301,7 @@ func (a *Account) DownloadImage(ctx context.Context, expected model.Candidate) (
 							return nil, readError(closeErr)
 						}
 					}
-					api, pool, refreshErr = a.imageAPI(bounded, refreshed.dc)
+					api, pool, refreshErr = a.mediaAPI(bounded, refreshed.dc)
 					if refreshErr != nil {
 						return nil, refreshErr
 					}
@@ -280,22 +313,24 @@ func (a *Account) DownloadImage(ctx context.Context, expected model.Candidate) (
 		}
 		file, ok := result.(*tg.UploadFile)
 		if !ok {
-			return nil, model.TextError(model.ErrorTelegramUnavailable, errors.New("Telegram image response is unsupported"))
+			return nil, model.TextError(model.ErrorTelegramUnavailable, errors.New("Telegram media response is unsupported"))
 		}
 		validType := false
 		switch file.Type.(type) {
 		case *tg.StorageFileUnknown, *tg.StorageFilePartial:
 			// These constructors make no encoding claim. The caller validates
-			// the complete bytes against the authorized JPEG/PNG descriptor.
+			// the complete bytes against the authorized media descriptor.
 			validType = true
 		case *tg.StorageFileJpeg:
 			validType = location.source.MIMEType == "image/jpeg"
+		case *tg.StorageFilePdf:
+			validType = location.source.MIMEType == "application/pdf"
 		case *tg.StorageFilePng:
 			validType = location.source.MIMEType == "image/png"
 		}
-		expectedBytes := min(imageChunkBytes, int(location.source.Size)-len(buffer))
+		expectedBytes := min(mediaChunkBytes, int(location.source.Size)-len(buffer))
 		if !validType || len(file.Bytes) != expectedBytes {
-			return nil, model.TextError(model.ErrorInvalidReference, errors.New("Telegram image chunk does not match its descriptor"))
+			return nil, model.TextError(model.ErrorInvalidReference, errors.New("Telegram media chunk does not match its descriptor"))
 		}
 		buffer = append(buffer, file.Bytes...)
 	}

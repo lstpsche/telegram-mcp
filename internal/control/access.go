@@ -41,7 +41,7 @@ func runAccessCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		err = access.SetFullRead(ctx, enable)
 		if err == nil {
 			if enable {
-				_, err = fmt.Fprintln(stdout, "Full read access enabled: supported conversations, all supported authors and history, images, and read acknowledgments are available to the connected agent until revoked or the account changes.")
+				_, err = fmt.Fprintln(stdout, "Full read access enabled: supported conversations, all supported authors and history, images, PDF/plain-text attachments, and read acknowledgments are available to the connected agent until revoked or the account changes.")
 			} else {
 				_, err = fmt.Fprintln(stdout, "Full read access disabled. Existing restricted grants apply; previously delivered content and read acknowledgments cannot be recalled.")
 			}

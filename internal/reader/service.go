@@ -29,8 +29,9 @@ type Backend interface {
 // Result is serialized before the upstream effect. JSON is also used verbatim
 // as the structured result, so both MCP content representations agree.
 type Result struct {
-	JSON  json.RawMessage
-	Image *ImageContent
+	JSON     json.RawMessage
+	Image    *ImageContent
+	Document *DocumentContent
 }
 
 type Service struct {
@@ -240,7 +241,11 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 		if message.ID.TelegramID() > through {
 			through = message.ID.TelegramID()
 		}
-		message.Image, err = s.imageDescriptor(candidate, grant, imageAuthority{epoch, revision})
+		message.Image, err = s.imageDescriptor(candidate, grant, mediaAuthority{epoch, revision})
+		if err != nil {
+			return Result{}, err
+		}
+		message.Document, err = s.documentDescriptor(candidate, grant, mediaAuthority{epoch, revision})
 		if err != nil {
 			return Result{}, err
 		}

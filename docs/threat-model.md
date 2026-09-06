@@ -272,7 +272,7 @@ no image and reports uncertainty. No remote snapshot or human-view claim is made
 ## Account-wide authority and supergroup reads
 
 Full read access trades per-author/range isolation for a single explicit human
-opt-in. It includes supported future conversations/messages, images, and the
+opt-in. It includes supported future conversations/messages, images, PDF/plain-text attachments, and the
 whole dialog prefix affected by receipts. Only the local control plane can
 change it; there is no access-mode MCP tool or participant consent workflow.
 The setting records account authority, not rights over others' content. Existing
@@ -338,3 +338,35 @@ Portable release archives contain executables and documentation, never account
 state. Native platform execution and real-account acceptance are separate from
 cross-compilation. See [metadata maintenance](metadata-maintenance.md) and
 [distribution](distribution.md).
+
+## Original document disclosure
+
+PDF and plain-text disclosure is a separate restricted grant bit, default false
+for new and migrated grants. Full read includes supported documents. Existing
+image opt-ins do not authorize document content. Captions and captionless
+document descriptors follow the same author/range/exclusion checks. Discovery
+never downloads bytes. Document handles have a separate signing domain and
+operation, with epoch, policy revision, expiry and keyed exact-source identity.
+Cross-use with image handles is rejected before Telegram access.
+
+The downloader reuses bounded media transport and exact-source normalization.
+Only declared PDF/plain-text MIME types and inert filename-only attribute sets
+are accepted; filenames are discarded, never used as paths or trust signals.
+Text encoding is not guessed. Exact byte counts, small byte caps, finite chunk
+and renewal counts, deadlines and an output budget constrain resource use.
+No document parser, OCR engine, external converter, shell command, external URL
+fetch or additional dependency is introduced. Attachment bytes remain transient.
+
+PDF framing checks do not establish that a PDF is valid or safe. Original PDFs
+may contain JavaScript, embedded files, actions, links, encryption, malicious
+objects or hostile instructions. The daemon neither interprets nor sanitizes
+these structures. Safe rendering and avoiding execution/network side effects
+are client responsibilities; embedded-resource support varies by client.
+Plain text is also untrusted model input, never an instruction from the server.
+
+The current grant and actual acknowledgment prefix are authorized before fetch.
+Byte validation and unchanged-source checks happen before acknowledgment, and
+source identity and policy/audit checks happen again before release. Any failure
+withholds content and clears the downloaded buffer; failures after a receipt
+attempt report uncertain read effects. Telegram edits are not an atomic
+snapshot, and process-memory clearing is not a forensic erasure guarantee.

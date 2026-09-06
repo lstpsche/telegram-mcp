@@ -25,7 +25,7 @@ Choose a lifetime of 1–720 hours (24 by default), image permission (off by
 default), and a separate read-through ceiling (0/search-only by default).
 The guide displays the exact grant and asks for final eligibility attestation
 before saving; replacing an existing grant requires another explicit choice.
-Grant creation does not remove other existing grants. Images cannot be opened
+Grant creation does not remove other existing grants. Images and documents cannot be opened
 without the corresponding read-effect authority even when image permission is
 selected. Existing Full read access must be disabled to make restricted grants
 the governing authority; the guide explains this before changing the mode.
@@ -47,7 +47,7 @@ telegram-mcp access restricted
 ```
 
 The flag explicitly authorizes disclosure of supported conversations, all supported
-message authors, past and future message IDs, images, and whole-prefix read
+message authors, past and future message IDs, images, PDF/plain-text attachments, and whole-prefix read
 acknowledgments to the connected agent and its model provider. No per-participant
 prompt, author list, message range, or expiry renewal is required. Unsupported
 content remains excluded as described below. This setting records account access
@@ -61,7 +61,7 @@ use `access restricted` to remove account-wide authority. Changes share the cont
 policy lock; busy means retry after the in-flight request completes. Successful
 revocation prevents later release under that authority, but cannot recall earlier
 responses or undo read receipts. Mode changes invalidate issued search/discovery
-cursors and image handles. These commands do not open credentials or Telegram.
+cursors and media handles. These commands do not open credentials or Telegram.
 
 In Full mode, unscoped `list_chats` scans at most `limit` dialogs (default 20,
 maximum 100) per call; `list_unread` scans at most 100. Both accept a `cursor` and
@@ -235,13 +235,15 @@ created by scope management. Grant revocation retains the member as excluded;
 logout or an authorization epoch change removes scopes and membership.
 
 The MCP tools `list_chats`, `list_messages`, `get_message_context`,
-`search_messages`, `list_unread`, `list_scopes` and `open_image` use the same
+`search_messages`, `list_unread`, `list_scopes`, `open_image` and `open_document` use the same
 policy boundary. Lists expose only authorized peers. History and context recheck
 current authority and content exclusions after normalization; restricted grants
 also enforce author, range, expiry and eligibility. Protected, expiring,
 forwarded, imported, quoted, unsupported media and service content is excluded.
 Photos and static JPEG/PNG attachments require Full mode or `--allow-images`; see
-[image access](image-access.md) for supported variants and delivery. Filtering
+[image access](image-access.md) for supported variants and delivery.
+PDF/plain-text attachments require Full mode or a separate `--allow-documents`
+permission; see [document access](document-access.md). Filtering
 and bounded truncation are reported as partial. Context never returns unrelated
 neighbors when its target is unavailable or unauthorized. Every history/context
 response describes its read effect; message bodies are released only after the

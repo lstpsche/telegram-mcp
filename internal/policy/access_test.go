@@ -51,7 +51,7 @@ func TestFullReadAuthorityLifecycle(t *testing.T) {
 	if err := authority.CheckRead(2147483647, later); err != nil {
 		t.Fatal(err)
 	}
-	if !authority.Images || !authority.ExpiresAt.IsZero() || authority.Deadline(later) != later {
+	if !authority.Images || !authority.Documents || !authority.ExpiresAt.IsZero() || authority.Deadline(later) != later {
 		t.Fatal("full authority invented expiry or withheld images")
 	}
 	for _, unsafe := range []model.Candidate{{Message: c.Message, Protected: true}, {Message: c.Message, Ephemeral: true}, {Message: c.Message, Unsupported: true}, {Message: c.Message, Forwarded: true}} {

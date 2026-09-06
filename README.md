@@ -15,6 +15,7 @@ Telegram MCP is an **unofficial client using Telegram's API**, with no Telegram 
 | **Catch up** | Get a briefing across a named group of chats for an explicit date range |
 | **Search** | Find messages in an authorized conversation or across a named scope |
 | **Read context** | Open message history and the conversation around a search result |
+| **Open documents** | Read original PDFs and UTF-8 plain-text attachments |
 | **View images** | Deliver supported JPEG/PNG photos and document attachments directly to the agent |
 | **Navigate** | Discover authorized chats, named scopes, and unread counts |
 | **Control access** | Choose exact, expiring grants or explicitly enable Full read access |
@@ -35,7 +36,7 @@ On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsch
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcp install --version 0.3.0 --setup
+telegram-mcp install --version 0.4.0 --setup
 ```
 
 The second command creates a private per-user installation and starts setup.
@@ -49,14 +50,14 @@ Download and inspect the script before running it if desired.
 
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
-  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.3.0/install.sh
+  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.4.0/install.sh
 sh install.sh
 ```
 
 **Windows PowerShell, without elevation**
 
 ```powershell
-Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.3.0/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.4.0/install.ps1 -OutFile install.ps1
 .\install.ps1
 ```
 
@@ -65,7 +66,7 @@ checksums. Downloads and checksums come from GitHub Releases; they establish
 integrity, not independent publisher identity. Credentials stay in your local
 interactive console.
 
-For manual installation, download an archive from [v0.3.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.3.0).
+For manual installation, download an archive from [v0.4.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.4.0).
 Archives support macOS, Linux and Windows on amd64 and arm64, and contain
 `telegram-mcp`, `telegram-mcpd`, documentation and checksums. Extract into a new
 private directory and follow the [platform instructions](docs/installation.md).
@@ -178,6 +179,8 @@ adopting an existing manual installation.
 
 ## Tools
 
+PDF/plain-text attachment support is available from v0.4.0. See [document access](docs/document-access.md).
+
 | Tool | Purpose |
 | --- | --- |
 | `status` | Check account and message-engine readiness without fetching Telegram content |
@@ -187,7 +190,8 @@ adopting an existing manual installation.
 | `search_messages` | Search an authorized conversation or named scope |
 | `list_unread` | Inspect unread counts and manual unread flags |
 | `list_scopes` | Discover human-managed groups of conversations |
-| `catch_up` | Retrieve snippets and image references across a scope for an explicit time window |
+| `catch_up` | Retrieve snippets and attachment references across a scope for an explicit time window |
+| `open_document` | Open an authorized original PDF resource or plain-text attachment |
 | `open_image` | Open an authorized image as native MCP image content |
 
 Named scopes let you group conversations for a project or recurring briefing. Manage them with the human `scope`, `scopes`, and `unscope` commands; agents discover their IDs through `list_scopes`. Scopes narrow existing access rather than granting new permissions. See [scope and access setup](docs/text-access.md).
@@ -196,7 +200,7 @@ For paginated tools, continue while `next_cursor` is non-null, even when a page 
 
 ## Supported Content
 
-Supported conversations are Saved Messages, non-bot private chats, basic groups, and ordinary non-forum supergroups. Supported images are ordinary JPEG/PNG photos and static document attachments.
+Supported conversations are Saved Messages, non-bot private chats, basic groups, and ordinary non-forum supergroups. Supported images are ordinary JPEG/PNG photos and static document attachments. Supported documents include original PDFs up to 1 MiB and UTF-8 plain-text attachments up to 256 KiB. PDF interpretation requires client support; no text extraction or OCR is performed.
 
 Broadcast channels, forums/topics, bot chats, Secret Chats, and bot/anonymous authors are excluded. Forwarded, quoted, protected, expiring, and unsupported media content is also filtered. A supported conversation can therefore contain messages that the server will not return.
 

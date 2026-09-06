@@ -279,7 +279,7 @@ func TestImagePermissionRequiresOptInAndPreservesContentBounds(t *testing.T) {
 	now := time.Now()
 	grant := validGrant(t, now)
 	id, _ := model.NewMessageID(grant.Peer, 18)
-	candidate := model.Candidate{Message: model.Message{ID: id, Author: grant.Author}, Image: &model.ImageSource{}}
+	candidate := model.Candidate{Message: model.Message{ID: id, Author: grant.Author}, Image: &model.MediaSource{}}
 	if err := grant.CheckMessage(candidate, grant.Author, now); !errors.Is(err, ErrDenied) {
 		t.Fatal("text grant permitted image metadata", err)
 	}

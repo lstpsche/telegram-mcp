@@ -14,7 +14,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/model"
 )
 
-func syntheticImageBytes(t testing.TB, mime string) (model.ImageSource, []byte) {
+func syntheticImageBytes(t testing.TB, mime string) (model.MediaSource, []byte) {
 	t.Helper()
 	pixels := image.NewRGBA(image.Rect(0, 0, 3, 2))
 	pixels.Set(1, 1, color.RGBA{R: 200, G: 120, B: 30, A: 255})
@@ -28,7 +28,7 @@ func syntheticImageBytes(t testing.TB, mime string) (model.ImageSource, []byte) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return model.ImageSource{Kind: "document", MIMEType: mime, Width: 3, Height: 2, Size: int64(encoded.Len()), Fingerprint: strings.Repeat("a", 64)}, encoded.Bytes()
+	return model.MediaSource{Kind: "document", MIMEType: mime, Width: 3, Height: 2, Size: int64(encoded.Len()), Fingerprint: strings.Repeat("a", 64)}, encoded.Bytes()
 }
 
 func TestValidateImageData(t *testing.T) {
@@ -50,12 +50,12 @@ func TestValidateImageData(t *testing.T) {
 			}
 			cases := []struct {
 				name     string
-				change   func(*model.ImageSource, []byte) []byte
+				change   func(*model.MediaSource, []byte) []byte
 				category model.ErrorCategory
 			}{
-				{"declared-size", func(s *model.ImageSource, b []byte) []byte { s.Size++; return b }, model.ErrorInvalidReference},
-				{"dimensions", func(s *model.ImageSource, b []byte) []byte { s.Width++; return b }, model.ErrorInvalidReference},
-				{"mime", func(s *model.ImageSource, b []byte) []byte {
+				{"declared-size", func(s *model.MediaSource, b []byte) []byte { s.Size++; return b }, model.ErrorInvalidReference},
+				{"dimensions", func(s *model.MediaSource, b []byte) []byte { s.Width++; return b }, model.ErrorInvalidReference},
+				{"mime", func(s *model.MediaSource, b []byte) []byte {
 					s.Kind = "document"
 					if s.MIMEType == "image/jpeg" {
 						s.MIMEType = "image/png"
@@ -64,17 +64,17 @@ func TestValidateImageData(t *testing.T) {
 					}
 					return b
 				}, model.ErrorInvalidReference},
-				{"fingerprint", func(s *model.ImageSource, b []byte) []byte { s.Fingerprint = "private"; return b }, model.ErrorInvalidReference},
-				{"oversized-source", func(s *model.ImageSource, b []byte) []byte { s.Size = model.MaximumImageBytes + 1; return b }, model.ErrorMediaTooLarge},
-				{"oversized-body", func(s *model.ImageSource, b []byte) []byte { return make([]byte, model.MaximumImageBytes+1) }, model.ErrorMediaTooLarge},
-				{"truncated", func(s *model.ImageSource, b []byte) []byte { b = b[:len(b)-1]; s.Size = int64(len(b)); return b }, model.ErrorInvalidReference},
-				{"trailing-data", func(s *model.ImageSource, b []byte) []byte {
+				{"fingerprint", func(s *model.MediaSource, b []byte) []byte { s.Fingerprint = "private"; return b }, model.ErrorInvalidReference},
+				{"oversized-source", func(s *model.MediaSource, b []byte) []byte { s.Size = model.MaximumImageBytes + 1; return b }, model.ErrorMediaTooLarge},
+				{"oversized-body", func(s *model.MediaSource, b []byte) []byte { return make([]byte, model.MaximumImageBytes+1) }, model.ErrorMediaTooLarge},
+				{"truncated", func(s *model.MediaSource, b []byte) []byte { b = b[:len(b)-1]; s.Size = int64(len(b)); return b }, model.ErrorInvalidReference},
+				{"trailing-data", func(s *model.MediaSource, b []byte) []byte {
 					b = append(b, []byte("private trailing payload")...)
 					s.Size = int64(len(b))
 					return b
 				}, model.ErrorInvalidReference},
-				{"concatenated-images", func(s *model.ImageSource, b []byte) []byte { b = append(b, b...); s.Size = int64(len(b)); return b }, model.ErrorInvalidReference},
-				{"bad-magic", func(s *model.ImageSource, b []byte) []byte { b[0] = 0; return b }, model.ErrorInvalidReference},
+				{"concatenated-images", func(s *model.MediaSource, b []byte) []byte { b = append(b, b...); s.Size = int64(len(b)); return b }, model.ErrorInvalidReference},
+				{"bad-magic", func(s *model.MediaSource, b []byte) []byte { b[0] = 0; return b }, model.ErrorInvalidReference},
 			}
 			for _, tc := range cases {
 				t.Run(tc.name, func(t *testing.T) {
@@ -178,7 +178,7 @@ func FuzzValidateImageData(f *testing.F) {
 		f.Add(mime, data)
 	}
 	f.Fuzz(func(t *testing.T, mime string, data []byte) {
-		source := model.ImageSource{Kind: "document", MIMEType: mime, Width: 3, Height: 2, Size: int64(len(data)), Fingerprint: strings.Repeat("a", 64)}
+		source := model.MediaSource{Kind: "document", MIMEType: mime, Width: 3, Height: 2, Size: int64(len(data)), Fingerprint: strings.Repeat("a", 64)}
 		if err := validateImageData(source, data); err == nil {
 			decoded, _, err := image.Decode(bytes.NewReader(data))
 			if err != nil || decoded.Bounds().Dx() != 3 || decoded.Bounds().Dy() != 2 {
