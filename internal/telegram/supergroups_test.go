@@ -109,6 +109,9 @@ func TestSupergroupRejectsUnsupportedMetadataBeforeHistory(t *testing.T) {
 				group.ID = 43
 			}
 			account, _ := newReadTestAccount(t, func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
+				if _, ok := in.(*tg.UpdatesGetStateRequest); ok && kind == "forum" {
+					return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Qts: 0, Date: 100, Seq: 1})
+				}
 				if _, ok := in.(*tg.ChannelsGetChannelsRequest); !ok {
 					t.Fatal("unsupported group fetched content")
 				}

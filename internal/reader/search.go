@@ -170,7 +170,7 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		date, err := time.Parse(time.RFC3339Nano, message.Date)
-		if err != nil || date.IsZero() || (query.Window != nil && date.Unix() != candidate.SentAt) || message.Author.Kind() != model.PeerKindUser || (message.Text == "" && candidate.Image == nil && candidate.Document == nil) || !utf8.ValidString(message.Text) {
+		if err != nil || date.IsZero() || (query.Window != nil && date.Unix() != candidate.SentAt) || message.Author.Kind() != model.PeerKindUser || (message.Text == "" && candidate.Image == nil && candidate.Document == nil && candidate.Voice == nil) || !utf8.ValidString(message.Text) {
 			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		if len(message.Text) > 64*1024 {
@@ -189,7 +189,11 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		if err != nil {
 			return searchWindow{}, err
 		}
-		items = append(items, model.SearchHit{Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated})
+		voice, err := s.voiceDescriptor(candidate, grant, authority)
+		if err != nil {
+			return searchWindow{}, err
+		}
+		items = append(items, model.SearchHit{Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated})
 	}
 
 	sort.Slice(items, func(i, j int) bool { return items[i].ID.TelegramID() > items[j].ID.TelegramID() })

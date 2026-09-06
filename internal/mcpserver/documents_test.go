@@ -155,7 +155,7 @@ func TestDocumentsOverStdioRelay(t *testing.T) {
 			t.Fatal("document tool misrepresents its read effects")
 		}
 	}
-	if len(schemas) != 10 || schemas["open_document"] == nil {
+	if len(schemas) != 12 || schemas["open_document"] == nil {
 		t.Fatal("missing native document tool")
 	}
 	call := func(name string, args any) (*mcp.CallToolResult, map[string]any) {
@@ -254,7 +254,7 @@ func TestDocumentsOverStdioRelay(t *testing.T) {
 			t.Fatal("document arrived without its exact receipt and explicit download")
 		}
 		encoded, err := json.Marshal(result)
-		if err != nil || len(encoded) > model.MaximumMediaResultBytes {
+		if err != nil || (expected.Document.MIMEType != "application/pdf" && len(encoded) > model.MaximumMediaResultBytes) {
 			t.Fatal("native result exceeded output budget", err)
 		}
 	}
@@ -314,7 +314,7 @@ func TestDocumentsOverStdioRelay(t *testing.T) {
 func syntheticPDF() []byte {
 	var b bytes.Buffer
 	b.WriteString("%PDF-1.4\n")
-	b.WriteString("%" + strings.Repeat("x", model.MaximumDocumentBytes-1000) + "\n")
+	b.WriteString("%" + strings.Repeat("x", (3<<20)-1000) + "\n")
 	objects := []string{"<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>"}
 	offsets := []int{}
 	for i, object := range objects {

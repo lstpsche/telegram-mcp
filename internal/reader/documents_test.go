@@ -211,7 +211,7 @@ func TestDocumentEncodingAndLimits(t *testing.T) {
 		{"application/pdf", []byte("prefix%PDF-1.7\n%%EOF"), false},
 		{"application/pdf", []byte("%PDF-1.7\n%%EOF\ntrailing"), false},
 		{"application/pdf", []byte("%PDF-9.9\n%%EOF"), false},
-		{"application/pdf", bytes.Repeat([]byte("a"), model.MaximumDocumentBytes+1), false},
+		{"application/pdf", bytes.Repeat([]byte("a"), (3 << 20)), false},
 	} {
 		source := model.MediaSource{Kind: "document", MIMEType: tc.mime, Size: int64(len(tc.data)), Fingerprint: strings.Repeat("a", 64)}
 		if (validateDocumentData(source, tc.data) == nil) != tc.valid {

@@ -231,8 +231,8 @@ requests, cursors and handles retain their deadlines. Absence means restricted
 mode. Disablement restores preserved exact grants. Every mode change increments
 the existing policy revision; logout and epoch rotation clear the setting.
 
-Ordinary non-forum supergroups use channel-kind IDs. Broadcasts, forums and
-inaccessible/protected groups remain excluded. Live history/search responses
+Ordinary non-forum supergroups use channel-kind IDs. Broadcasts and inaccessible/protected groups remain excluded. Forum content
+requires an exact topic identity, as described in [topic access](topic-access.md). Live history/search responses
 must include the exact permitted entity and a positive channel pts, but channel
 pts is not stored or used as proof of continuous channel updates. Supergroup
 receipts require a successful `channels.readHistory` RPC, exact dialog readback at
@@ -262,7 +262,15 @@ the final policy/audit boundary precede content release, including after the
 acknowledgment. Handles use a separate operation and signing domain from images.
 The embedded URI grants no authority and has no resource-read endpoint.
 
-PDFs are bounded originals with framing checks, not parsed or sanitized files.
+PDFs are original files with framing checks, without a fixed application byte cap.
+They are not parsed or sanitized.
 Text requires valid UTF-8 and rejects controls except tab/CR/LF. All attachments
 remain hostile input. See [document access](document-access.md) for byte limits,
 client compatibility, safe handling, read effects and failure semantics.
+
+## Topics and voice notes
+
+[Topic access](topic-access.md) defines exact topic identities, discovery and
+topic-only receipts. Parent grants do not authorize descendants.
+[Voice access](voice-access.md) defines the separate permission and native audio
+delivery contract. Voice delivery reports a history read effect, never playback.

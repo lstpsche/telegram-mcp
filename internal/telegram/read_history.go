@@ -54,9 +54,10 @@ func (r *readRuntime) inputPeer(ctx context.Context, peer model.PeerID) (tg.Inpu
 	}
 }
 
-func ordinaryUser(user *tg.User) bool {
-	return user != nil && user.ID > 0 && !user.Bot && !user.Deleted && !user.Min && !user.Restricted
+func readableUser(user *tg.User) bool {
+	return user != nil && user.ID > 0 && !user.Deleted && !user.Min && !user.Restricted
 }
+
 func ordinaryChat(chat *tg.Chat) bool {
 	return chat != nil && chat.ID > 0 && !chat.Deactivated && !chat.Left && chat.MigratedTo == nil && !chat.Flags.Has(6) && !chat.Noforwards
 }
@@ -68,7 +69,7 @@ func validateDialogEntities(peer model.PeerID, users []tg.UserClass, chats []tg.
 	for _, value := range users {
 		if peer.Kind() == model.PeerKindUser && value.GetID() == peer.TelegramID() {
 			user, ok := value.(*tg.User)
-			if !ok || !ordinaryUser(user) {
+			if !ok || !readableUser(user) {
 				return model.TextError(model.ErrorUnsupportedPeer, nil)
 			}
 			matched = true
@@ -77,7 +78,7 @@ func validateDialogEntities(peer model.PeerID, users []tg.UserClass, chats []tg.
 	for _, value := range chats {
 		if peer.Kind() == model.PeerKindChannel && value.GetID() == peer.TelegramID() {
 			group, ok := value.(*tg.Channel)
-			if !ok || !ordinarySupergroup(group) {
+			if !ok || !(ordinarySupergroup(group) && peer.TopicID() == 0 || forumGroup(group) && peer.TopicID() != 0) {
 				return model.TextError(model.ErrorUnsupportedPeer, nil)
 			}
 			matched = true
@@ -107,6 +108,7 @@ func (a *Account) Chat(ctx context.Context, peer model.PeerID) (model.Chat, erro
 		return model.Chat{}, err
 	}
 	var title string
+	forum := false
 	switch input := input.(type) {
 	case *tg.InputPeerSelf:
 		title = "Saved Messages"
@@ -119,7 +121,7 @@ func (a *Account) Chat(ctx context.Context, peer model.PeerID) (model.Chat, erro
 			return model.Chat{}, model.TextError(model.ErrorUnsupportedPeer, nil)
 		}
 		user, ok := users[0].(*tg.User)
-		if !ok || !ordinaryUser(user) || user.ID != peer.TelegramID() {
+		if !ok || !readableUser(user) || user.ID != peer.TelegramID() {
 			return model.Chat{}, model.TextError(model.ErrorUnsupportedPeer, nil)
 		}
 		title = strings.TrimSpace(user.FirstName + " " + user.LastName)
@@ -136,10 +138,22 @@ func (a *Account) Chat(ctx context.Context, peer model.PeerID) (model.Chat, erro
 			return model.Chat{}, model.TextError(model.ErrorUnsupportedPeer, nil)
 		}
 		group, ok := groups[0].(*tg.Channel)
-		if !ok || group.ID != peer.TelegramID() || !ordinarySupergroup(group) {
+		if !ok || group.ID != peer.TelegramID() || !(ordinarySupergroup(group) || forumGroup(group)) {
 			return model.Chat{}, model.TextError(model.ErrorUnsupportedPeer, nil)
 		}
-		title = group.Title
+		forum = group.Forum
+		if peer.TopicID() != 0 {
+			if !forum {
+				return model.Chat{}, model.TextError(model.ErrorUnsupportedPeer, nil)
+			}
+			topic, err := a.topic(bounded, peer)
+			if err != nil {
+				return model.Chat{}, err
+			}
+			title = topic.Title
+		} else {
+			title = group.Title
+		}
 		if err := a.reads.saveChannels(bounded, groups); err != nil {
 			return model.Chat{}, err
 		}
@@ -164,7 +178,7 @@ func (a *Account) Chat(ctx context.Context, peer model.PeerID) (model.Chat, erro
 	if err := a.reads.synchronize(bounded); err != nil {
 		return model.Chat{}, model.TextError(model.ErrorFreshnessDegraded, err)
 	}
-	return model.Chat{ID: peer, Title: title}, nil
+	return model.Chat{ID: peer, Title: title, Forum: forum && peer.TopicID() == 0}, nil
 }
 
 func (r *readRuntime) saveUsers(ctx context.Context, users []tg.UserClass) error {
@@ -215,7 +229,7 @@ func (r *readRuntime) normalizePage(ctx context.Context, peer model.PeerID, resu
 	default:
 		return nil, model.TextError(model.ErrorUnsupportedPeer, nil)
 	}
-	if len(page.GetMessages()) > limit || len(page.GetChats()) > 200 || len(page.GetTopics()) != 0 {
+	if len(page.GetMessages()) > limit || len(page.GetChats()) > 200 || (peer.TopicID() == 0 && len(page.GetTopics()) != 0) || len(page.GetTopics()) > 100 {
 		return nil, model.TextError(model.ErrorResultTooLarge, nil)
 	}
 	if err := r.saveUsers(ctx, page.GetUsers()); err != nil {
@@ -224,7 +238,7 @@ func (r *readRuntime) normalizePage(ctx context.Context, peer model.PeerID, resu
 	authors := make(map[int64]bool, len(page.GetUsers()))
 	for _, value := range page.GetUsers() {
 		if user, ok := value.(*tg.User); ok {
-			authors[user.ID] = ordinaryUser(user)
+			authors[user.ID] = readableUser(user)
 		}
 	}
 	authors[r.self.Load()] = true
@@ -273,15 +287,17 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 		}
 	}
 	// Direct notes to ourselves also carry SavedPeerID. Other saved origins
-	// and topic-bearing dialogs remain outside the supported content boundary.
+	// remain outside the supported content boundary.
 	unsupportedSavedDialog := message.SavedPeerID != nil && (peer.Kind() != model.PeerKindSelf || peer.TelegramID() != self || !matchesPeer(peer, message.SavedPeerID))
-	candidate.Unsupported = message.Post || message.Legacy || message.Offline || message.FromScheduled || unsupportedSavedDialog || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.ReplyMarkup != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
-	var image, document *model.MediaSource
+	candidate.Unsupported = message.Post || message.Legacy || message.Offline || message.FromScheduled || unsupportedSavedDialog || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
+	var image, document, voice *model.MediaSource
 	if message.Media != nil {
 		if _, empty := message.Media.(*tg.MessageMediaEmpty); !empty {
 			location := normalizeMedia(message)
 			if location == nil {
 				candidate.Unsupported = true
+			} else if location.source.IsVoice() {
+				voice = &location.source
 			} else if location.source.IsDocument() {
 				document = &location.source
 			} else {
@@ -295,8 +311,26 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 			candidate.Unsupported = true
 		} else {
 			candidate.Quoted = candidate.Quoted || reply.Quote || reply.QuoteText != "" || len(reply.QuoteEntities) > 0 || !reply.ReplyFrom.Zero() || reply.ReplyMedia != nil
-			candidate.Unsupported = candidate.Unsupported || reply.ForumTopic || reply.ReplyToPeerID != nil || reply.ReplyToTopID != 0 || reply.ReplyToScheduled
+			candidate.Unsupported = candidate.Unsupported || (peer.TopicID() == 0 && (reply.ForumTopic || reply.ReplyToTopID != 0)) || reply.ReplyToPeerID != nil || reply.ReplyToScheduled
 			candidate.Ephemeral = candidate.Ephemeral || reply.ReplyToEphemeral
+		}
+	}
+	if peer.TopicID() != 0 {
+		topic := int32(1)
+		if reply, ok := message.ReplyTo.(*tg.MessageReplyHeader); ok && !reply.ForumTopic && reply.ReplyToTopID != 0 {
+			return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		if reply, ok := message.ReplyTo.(*tg.MessageReplyHeader); ok && reply.ForumTopic {
+			if reply.ReplyToTopID > 0 && reply.ReplyToTopID <= math.MaxInt32 {
+				topic = int32(reply.ReplyToTopID)
+			} else if reply.ReplyToMsgID > 0 && reply.ReplyToMsgID <= math.MaxInt32 {
+				topic = int32(reply.ReplyToMsgID)
+			} else {
+				return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
+			}
+		}
+		if topic != peer.TopicID() {
+			return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 	}
 	var author int64
@@ -315,7 +349,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	if author > 0 {
 		candidate.Message.Author, _ = model.NewPeerID(model.PeerKindUser, author)
 	}
-	candidate.Unsupported = candidate.Unsupported || author <= 0 || !authors[author] || message.Date <= 0 || (message.Message == "" && image == nil && document == nil)
+	candidate.Unsupported = candidate.Unsupported || author <= 0 || !authors[author] || message.Date <= 0 || (message.Message == "" && image == nil && document == nil && voice == nil)
 	if !utf8.ValidString(message.Message) || len(message.Message) > 64*1024 {
 		return model.Candidate{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
@@ -324,6 +358,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 		candidate.Message.Date = time.Unix(int64(message.Date), 0).UTC().Format(time.RFC3339)
 		candidate.Image = image
 		candidate.Document = document
+		candidate.Voice = voice
 	}
 	return candidate, nil
 }
@@ -353,8 +388,10 @@ func (a *Account) History(ctx context.Context, q model.HistoryQuery) ([]model.Ca
 	bounded, cancel := context.WithTimeout(ctx, readDeadline)
 	defer cancel()
 	// Do not fetch a body until the current peer's class/protection is checked.
-	if _, err := a.Chat(bounded, q.Peer); err != nil {
+	if chat, err := a.Chat(bounded, q.Peer); err != nil {
 		return nil, err
+	} else if chat.Forum {
+		return nil, model.TextError(model.ErrorUnsupportedPeer, nil)
 	}
 	input, err := a.reads.inputPeer(bounded, q.Peer)
 	if err != nil {
@@ -365,7 +402,7 @@ func (a *Account) History(ctx context.Context, q model.HistoryQuery) ([]model.Ca
 		if q.MaxID < math.MaxInt32 {
 			maxID = int(q.MaxID) + 1
 		}
-		result, err := a.reads.api.MessagesGetHistory(bounded, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, AddOffset: add, Limit: limit, MinID: int(q.MinID) - 1, MaxID: maxID})
+		result, err := a.reads.historyPage(bounded, q.Peer, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, AddOffset: add, Limit: limit, MinID: int(q.MinID) - 1, MaxID: maxID})
 		if err != nil {
 			return nil, readError(err)
 		}
@@ -385,7 +422,7 @@ func (a *Account) History(ctx context.Context, q model.HistoryQuery) ([]model.Ca
 		}
 		// Keep the lookup peer-scoped: global getMessages IDs could fetch a body
 		// belonging to another dialog before its mismatch could be detected.
-		result, fetchErr := a.reads.api.MessagesGetHistory(bounded, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: int(q.Target), AddOffset: -1, Limit: 1, MinID: int(q.Target) - 1, MaxID: maximum})
+		result, fetchErr := a.reads.historyPage(bounded, q.Peer, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: int(q.Target), AddOffset: -1, Limit: 1, MinID: int(q.Target) - 1, MaxID: maximum})
 		if fetchErr != nil {
 			return nil, readError(fetchErr)
 		}

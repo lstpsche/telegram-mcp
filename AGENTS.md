@@ -12,14 +12,14 @@
   control plane and must not become MCP tools.
 - Keep v1 single-account, local, read-first, and portable across macOS, Linux and Windows. Do not add writes,
   HTTP listeners, raw MTProto tools, message indexing, embeddings, multi-account
-  state, broadcast channels, bot chats, or Secret Chats without a new plan and
+  state, broadcast channels or Secret Chats without a new plan and
   threat review.
 - Test-DC authentication, production login, real-data use, publication,
   deployment, and acceptance are separate decisions. Production configuration
   requires explicit human eligibility attestation; Test DC selection is explicit.
   Credentials remain interactive and local. Text access requires exact restricted
   grants or human-enabled Full read access. Restricted images and PDF/plain-text attachments require separate additional
-  opt-ins; Full read access includes supported images, documents and read acknowledgments. Automated acceptance
+  opt-ins; restricted voice notes require their own opt-in. Full read access includes supported images, documents, voice notes and read acknowledgments. Automated acceptance
   uses synthetic local fixtures; implementation does not authorize real-data use.
 
 ## Trust and data rules

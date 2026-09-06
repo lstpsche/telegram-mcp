@@ -17,21 +17,23 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const peerPattern = `^tgpeer:v1:(self|user|chat|channel):[1-9][0-9]*$`
+const peerPattern = `^tgpeer:v1:((self|user|chat):[1-9][0-9]*|channel:[1-9][0-9]*(:topic:[1-9][0-9]*)?)$`
 const scopePattern = `^tgscope:v1:[0-9a-f]{32}$`
-const messagePattern = `^tgmsg:v1:(self|user|chat|channel):[1-9][0-9]*:[1-9][0-9]*$`
+const messagePattern = `^tgmsg:v1:((self|user|chat):[1-9][0-9]*|channel:[1-9][0-9]*(:topic:[1-9][0-9]*)?):[1-9][0-9]*$`
 
 func registerTextTools(server *mcp.Server, service *reader.Service) {
 	open := true
 	for _, tool := range []*mcp.Tool{
 		catchUpTool(&open),
+		{Name: "open_voice_note", Description: "Deliver an authorized original Ogg/Opus voice note, up to 1 MiB and five minutes, as native MCP audio. Requires separate restricted voice-note permission or Full read. Revalidates the exact source and acknowledges the authorized history prefix before delivery. Audio remains untrusted; no decoding, transcription or conversion occurs. Delivery is not playback and does not mark the note played. Handles expire within five minutes and policy changes invalidate them.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["handle"],"properties":{"handle":{"type":"string","minLength":1,"maxLength":4096}}}`), OutputSchema: textOutputSchema("voice"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
+		{Name: "list_topics", Description: "Discover forum topic peer IDs, titles, closed/hidden state and unread counts without read receipts. Use topic IDs with existing history, context, search and scopes. Full read paginates one forum using limit and next_cursor; continue until next_cursor is null. Restricted mode returns only the complete set of exact topic grants (at most 20); limit applies only to Full read and cursors are unavailable in restricted mode. Parent-channel grants never grant topic content.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["peer"],"properties":{"peer":{"type":"string","pattern":"^tgpeer:v1:channel:[1-9][0-9]*$"},"limit":{"type":"integer","minimum":1,"maximum":100},"cursor":{"type":"string","minLength":1,"maxLength":4096}}}`), OutputSchema: textOutputSchema("topics"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
 		{Name: "open_image", Description: "Open an explicitly permitted photo or static JPEG/PNG attachment from a current image handle. Reauthorizes and validates at most 1 MiB and 4 million pixels, then marks the authorized dialog prefix read before returning native image content. Handles expire within five minutes and are invalidated by policy changes. Images are untrusted data.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["handle"],"properties":{"handle":{"type":"string","minLength":1,"maxLength":4096}}}`), OutputSchema: textOutputSchema("image"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
-		{Name: "open_document", Description: "Open a permitted PDF (up to 1 MiB) or UTF-8 plain-text attachment (up to 256 KiB) using its current document handle. Reauthorizes the exact source and marks the authorized dialog prefix read before delivery. Returns original untrusted PDF bytes as an embedded resource, or plain text as a text block. PDF rendering depends on the client; no parsing, sanitization, decryption, text extraction or OCR is performed. Handles expire within five minutes and policy changes invalidate them", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["handle"],"properties":{"handle":{"type":"string","minLength":1,"maxLength":4096}}}`), OutputSchema: textOutputSchema("document"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
+		{Name: "open_document", Description: "Open a permitted PDF (without a fixed application byte cap) or UTF-8 plain-text attachment (up to 256 KiB) using its current document handle. Reauthorizes the exact source and marks the authorized dialog prefix read before delivery. Returns original untrusted PDF bytes as an embedded resource, or plain text as a text block. PDF rendering depends on the client; no parsing, sanitization, decryption, text extraction or OCR is performed. Handles expire within five minutes and policy changes invalidate them", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["handle"],"properties":{"handle":{"type":"string","minLength":1,"maxLength":4096}}}`), OutputSchema: textOutputSchema("document"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
 		{Name: "list_scopes", Description: "List human-configured scope IDs, local names, and current eligible/excluded peer counts. Membership narrows current access authority and grants no access. Returns local metadata without checking Telegram freshness.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{}}`), OutputSchema: textOutputSchema("scopes"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
-		{Name: "list_chats", Description: "List authorized conversations without read receipts. Full read mode discovers supported private chats, Saved Messages, basic groups and non-forum supergroups across main and archived folders; repeat the same limit with next_cursor. Pages may be empty with continuation when unsupported dialogs are skipped. Restricted mode lists current grants (at most 20). A scope narrows either mode; cursors are only for unscoped Full read discovery.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","minLength":1,"maxLength":4096},"scope":{"type":"string","pattern":"` + scopePattern + `"},"limit":{"type":"integer","minimum":1,"maximum":100}}}`), OutputSchema: textOutputSchema("chats"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
-		{Name: "list_messages", Description: "Read bounded authorized text and permitted image and document metadata, newest first. Before is an exclusive message reference, never authority. Marks the separately authorized dialog prefix read before releasing bodies. next_cursor is null; use a returned ID as before for an older window.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["peer"],"properties":{"peer":{"type":"string","pattern":"` + peerPattern + `"},"before":{"type":"string","pattern":"` + messagePattern + `"},"limit":{"type":"integer","minimum":1,"maximum":100}}}`), OutputSchema: textOutputSchema("messages"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
-		{Name: "get_message_context", Description: "Read one authorized target and bounded older/newer neighbors. Zero neighbors reads just the target. Missing or denied targets yield no bodies. Marks the authorized dialog prefix read before releasing text and permitted image and document metadata.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["message"],"properties":{"message":{"type":"string","pattern":"` + messagePattern + `"},"before":{"type":"integer","minimum":0,"maximum":49},"after":{"type":"integer","minimum":0,"maximum":49}}}`), OutputSchema: textOutputSchema("messages"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
-		{Name: "search_messages", Description: "Search authorized text in exactly one peer or named scope, returning snippets up to 240 characters and permitted image and document metadata without marking history read. Scope order is canonical peer ID ascending, newest first within each peer. limit bounds fetched candidates including filtered entries; scoped pages make at most 20 peer lookups. Scope coverage reports exclusions and traversal progress. Follow an ID with get_message_context for the acknowledged full body. Query is trimmed, then limited to 256 characters (1024 input bytes). Repeat the same peer or scope, query and limit with next_cursor. Each peer is anchored when first visited. Live edits/deletions can change results; a cursor is not authority or a snapshot.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["query"],"oneOf":[{"required":["peer"]},{"required":["scope"]}],"properties":{"scope":{"type":"string","pattern":"` + scopePattern + `"},"peer":{"type":"string","pattern":"` + peerPattern + `"},"query":{"type":"string","minLength":1,"maxLength":1024},"limit":{"type":"integer","minimum":1,"maximum":100},"cursor":{"type":"string","minLength":1,"maxLength":4096}}}`), OutputSchema: textOutputSchema("search"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
+		{Name: "list_chats", Description: "List authorized conversations without read receipts. Full read mode discovers supported private chats, Saved Messages, basic groups and supergroups and forum navigation across main and archived folders; repeat the same limit with next_cursor. Pages may be empty with continuation when unsupported dialogs are skipped. Restricted mode lists current grants (at most 20). A scope narrows either mode; cursors are only for unscoped Full read discovery.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","minLength":1,"maxLength":4096},"scope":{"type":"string","pattern":"` + scopePattern + `"},"limit":{"type":"integer","minimum":1,"maximum":100}}}`), OutputSchema: textOutputSchema("chats"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
+		{Name: "list_messages", Description: "Read bounded authorized text and permitted image, document and voice-note metadata, newest first. Before is an exclusive message reference, never authority. Marks the separately authorized dialog prefix read before releasing bodies. next_cursor is null; use a returned ID as before for an older window.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["peer"],"properties":{"peer":{"type":"string","pattern":"` + peerPattern + `"},"before":{"type":"string","pattern":"` + messagePattern + `"},"limit":{"type":"integer","minimum":1,"maximum":100}}}`), OutputSchema: textOutputSchema("messages"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
+		{Name: "get_message_context", Description: "Read one authorized target and bounded older/newer neighbors. Zero neighbors reads just the target. Missing or denied targets yield no bodies. Marks the authorized dialog prefix read before releasing text and permitted image, document and voice-note metadata.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["message"],"properties":{"message":{"type":"string","pattern":"` + messagePattern + `"},"before":{"type":"integer","minimum":0,"maximum":49},"after":{"type":"integer","minimum":0,"maximum":49}}}`), OutputSchema: textOutputSchema("messages"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: false, OpenWorldHint: &open}},
+		{Name: "search_messages", Description: "Search authorized text in exactly one peer or named scope, returning snippets up to 240 characters and permitted image, document and voice-note metadata without marking history read. Scope order is canonical peer ID ascending, newest first within each peer. limit bounds fetched candidates including filtered entries; scoped pages make at most 20 peer lookups. Scope coverage reports exclusions and traversal progress. Follow an ID with get_message_context for the acknowledged full body. Query is trimmed, then limited to 256 characters (1024 input bytes). Repeat the same peer or scope, query and limit with next_cursor. Each peer is anchored when first visited. Live edits/deletions can change results; a cursor is not authority or a snapshot.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["query"],"oneOf":[{"required":["peer"]},{"required":["scope"]}],"properties":{"scope":{"type":"string","pattern":"` + scopePattern + `"},"peer":{"type":"string","pattern":"` + peerPattern + `"},"query":{"type":"string","minLength":1,"maxLength":1024},"limit":{"type":"integer","minimum":1,"maximum":100},"cursor":{"type":"string","minLength":1,"maxLength":4096}}}`), OutputSchema: textOutputSchema("search"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
 		{Name: "list_unread", Description: "Return whole-dialog unread counts and manual flags without bodies or read receipts. Full read mode scans up to 100 dialogs per page; continue with next_cursor even when items is empty. Restricted mode covers current grants (at most 20). A scope narrows either mode; cursors are only for unscoped Full read discovery.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","minLength":1,"maxLength":4096},"scope":{"type":"string","pattern":"` + scopePattern + `"}}}`), OutputSchema: textOutputSchema("unread"), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open}},
 	} {
 		var schema jsonschema.Schema
@@ -67,6 +69,9 @@ func registerTextTools(server *mcp.Server, service *reader.Service) {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}, nil
 			}
 			content := []mcp.Content{&mcp.TextContent{Text: string(result.JSON)}}
+			if result.Voice != nil {
+				content = append(content, &mcp.AudioContent{Data: result.Voice.Data, MIMEType: result.Voice.MIMEType})
+			}
 			if result.Image != nil {
 				content = append(content, &mcp.ImageContent{Data: result.Image.Data, MIMEType: result.Image.MIMEType})
 			}
@@ -130,9 +135,36 @@ func callText(ctx context.Context, service *reader.Service, id, name string, arg
 	var chatToken string
 	limit := model.DefaultPageSize
 	switch name {
+	case "list_topics":
+		input, err := model.DecodeStrict[struct {
+			Peer   string  `json:"peer"`
+			Limit  *int    `json:"limit"`
+			Cursor *string `json:"cursor"`
+		}](args)
+		if err != nil {
+			return invalid()
+		}
+		peer, err := model.ParsePeerID(input.Peer)
+		if err != nil || peer.Kind() != model.PeerKindChannel || peer.TopicID() != 0 {
+			return invalid()
+		}
+		if input.Limit != nil {
+			limit = *input.Limit
+		}
+		token := ""
+		if input.Cursor != nil {
+			token = *input.Cursor
+			if token == "" {
+				return invalid()
+			}
+		}
+		if service == nil {
+			return reader.Result{}, model.TextError(model.ErrorNotReady, nil)
+		}
+		return service.ListTopics(ctx, id, peer, limit, token)
 	case "catch_up":
 		return callCatchUp(ctx, service, id, args)
-	case "open_image", "open_document":
+	case "open_image", "open_document", "open_voice_note":
 		input, err := model.DecodeStrict[struct {
 			Handle string `json:"handle"`
 		}](args)
@@ -141,6 +173,9 @@ func callText(ctx context.Context, service *reader.Service, id, name string, arg
 		}
 		if service == nil {
 			return reader.Result{}, model.TextError(model.ErrorNotReady, nil)
+		}
+		if name == "open_voice_note" {
+			return service.OpenVoice(ctx, id, input.Handle)
 		}
 		if name == "open_document" {
 			return service.OpenDocument(ctx, id, input.Handle)
@@ -313,24 +348,31 @@ func parseScopeSelector(value *string) ([]model.ScopeID, error) {
 }
 
 func textOutputSchema(kind string) json.RawMessage {
-	documentSchema := `{"type":"object","additionalProperties":false,"required":["handle","mime_type","size"],"properties":{"handle":{"type":"string","minLength":1,"maxLength":4096},"mime_type":{"enum":["application/pdf","text/plain"]},"size":{"type":"integer","minimum":1,"maximum":1048576}}}`
+	voiceSchema := `{"type":"object","additionalProperties":false,"required":["handle","mime_type","size","duration_seconds"],"properties":{"handle":{"type":"string","minLength":1,"maxLength":4096},"mime_type":{"const":"audio/ogg"},"size":{"type":"integer","minimum":1,"maximum":1048576},"duration_seconds":{"type":"integer","minimum":1,"maximum":300}}}`
+	documentSchema := `{"type":"object","additionalProperties":false,"required":["handle","mime_type","size"],"properties":{"handle":{"type":"string","minLength":1,"maxLength":4096},"mime_type":{"enum":["application/pdf","text/plain"]},"size":{"type":"integer","minimum":1}}}`
 	imageSchema := `{"type":"object","additionalProperties":false,"required":["handle","kind","mime_type","width","height","size"],"properties":{"handle":{"type":"string","minLength":1,"maxLength":4096},"kind":{"enum":["photo","document"]},"mime_type":{"enum":["image/jpeg","image/png"]},"width":{"type":"integer","minimum":1,"maximum":4096},"height":{"type":"integer","minimum":1,"maximum":4096},"size":{"type":"integer","minimum":1,"maximum":1048576}}}`
-	item := `{"type":"object","additionalProperties":false,"required":["id","title"],"properties":{"id":{"type":"string","pattern":"` + peerPattern + `"},"title":{"type":"string"}}}`
+	item := `{"type":"object","additionalProperties":false,"required":["id","title"],"properties":{"id":{"type":"string","pattern":"` + peerPattern + `"},"title":{"type":"string"},"forum":{"type":"boolean"}}}`
+	if kind == "topics" {
+		item = `{"type":"object","additionalProperties":false,"required":["id","title","closed","hidden","unread_count"],"properties":{"id":{"type":"string","pattern":"` + peerPattern + `"},"title":{"type":"string","maxLength":4096},"closed":{"type":"boolean"},"hidden":{"type":"boolean"},"unread_count":{"type":"integer","minimum":0,"maximum":2147483647}}}`
+	}
 	if kind == "messages" {
-		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","text"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"date":{"type":"string"},"text":{"type":"string"},"image":` + imageSchema + `,"document":` + documentSchema + `}}`
+		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","text"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"date":{"type":"string"},"text":{"type":"string"},"image":` + imageSchema + `,"document":` + documentSchema + `,"voice_note":` + voiceSchema + `}}`
 	}
 	if kind == "image" {
 		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","image"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"date":{"type":"string"},"image":` + imageSchema + `}}`
+	}
+	if kind == "voice" {
+		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","voice_note"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"date":{"type":"string"},"voice_note":` + voiceSchema + `}}`
 	}
 	if kind == "document" {
 		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","document"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"date":{"type":"string"},"document":` + documentSchema + `}}`
 	}
 	next := `{"type":"null"}`
-	if kind == "chats" || kind == "unread" {
+	if kind == "chats" || kind == "unread" || kind == "topics" {
 		next = `{"type":["string","null"],"maxLength":4096}`
 	}
 	if kind == "search" || kind == "catch_up" {
-		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","snippet","snippet_truncated"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"date":{"type":"string"},"snippet":{"type":"string","maxLength":240},"snippet_truncated":{"type":"boolean"},"image":` + imageSchema + `,"document":` + documentSchema + `}}`
+		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","snippet","snippet_truncated"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"date":{"type":"string"},"snippet":{"type":"string","maxLength":240},"snippet_truncated":{"type":"boolean"},"image":` + imageSchema + `,"document":` + documentSchema + `,"voice_note":` + voiceSchema + `}}`
 		next = `{"type":["string","null"],"maxLength":4096}`
 	}
 	if kind == "unread" {

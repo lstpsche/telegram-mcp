@@ -46,7 +46,7 @@ func TestEmptySearchRevalidatesPeerWithoutRequiringResultEntities(t *testing.T) 
 							changed := searched && mode == "changed"
 							switch kind {
 							case model.PeerKindUser:
-								return encodeReadResponse(out, &tg.UserClassVector{Elems: []tg.UserClass{&tg.User{ID: 42, Bot: changed}}})
+								return encodeReadResponse(out, &tg.UserClassVector{Elems: []tg.UserClass{&tg.User{ID: 42, Restricted: changed}}})
 							case model.PeerKindChat:
 								return encodeReadResponse(out, &tg.MessagesChats{Chats: []tg.ChatClass{&tg.Chat{ID: 42, Noforwards: changed, Photo: &tg.ChatPhotoEmpty{}}}})
 							default:
@@ -257,7 +257,7 @@ func TestMessagePageRevalidatesReturnedPeerConstructors(t *testing.T) {
 					case "empty":
 						page.Users = []tg.UserClass{&tg.UserEmpty{ID: 2}}
 					case "changed":
-						page.Users[0].(*tg.User).Bot = true
+						page.Users[0].(*tg.User).Restricted = true
 					}
 				} else {
 					message.PeerID = &tg.PeerChat{ChatID: 2}

@@ -160,7 +160,7 @@ func TestImageHandleDenialsPrecedeDownload(t *testing.T) {
 				}
 				handle = d.Handle
 			case "epoch":
-				h, err := s.decodeMediaHandle(handle, false)
+				h, err := s.decodeMediaHandle(handle, mediaImage)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -238,7 +238,7 @@ func FuzzImageHandle(f *testing.F) {
 	payload := base64.RawURLEncoding.EncodeToString(raw)
 	f.Add("im1." + payload + "." + base64.RawURLEncoding.EncodeToString(s.mediaMAC("image-handle-v1", payload)))
 	f.Fuzz(func(t *testing.T, token string) {
-		h, err := s.decodeMediaHandle(token, false)
+		h, err := s.decodeMediaHandle(token, mediaImage)
 		if err == nil && (h.Operation != "open_image" || h.Expires <= s.now().Unix() || h.Expires > s.now().Add(mediaLifetime).Unix() || h.Message.String() == "") {
 			t.Fatal("invalid accepted handle")
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 	_ "modernc.org/sqlite"
 )
 
@@ -49,7 +49,7 @@ func TestOpenAppliesEmbeddedMigrationsAndSecurityPragmas(t *testing.T) {
 	if err := database.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 12 {
+	if migrationCount != 13 {
 		t.Fatalf("migration count = %d, want 12", migrationCount)
 	}
 	var tableCount int

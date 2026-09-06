@@ -30,15 +30,15 @@ func (s *Service) documentDescriptor(candidate model.Candidate, grant policy.Gra
 		return nil, model.TextError(model.ErrorPolicyDenied, nil)
 	}
 	source := *candidate.Document
-	if candidate.Image != nil || !source.IsDocument() {
+	if candidate.Image != nil || candidate.Voice != nil || !source.IsDocument() {
 		return nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	if err := source.Validate(); err != nil {
 		return nil, err
 	}
-	operation, _, _ := mediaOperation(true)
-	handle := mediaHandle{Operation: operation, Message: candidate.Message.ID, Digest: s.mediaDigest(source, true), Authority: authority, Expires: grant.Deadline(s.now().Add(mediaLifetime)).Unix()}
-	token, err := s.signMediaHandle(handle, true)
+	operation, _, _ := mediaOperation(mediaDocument)
+	handle := mediaHandle{Operation: operation, Message: candidate.Message.ID, Digest: s.mediaDigest(source, mediaDocument), Authority: authority, Expires: grant.Deadline(s.now().Add(mediaLifetime)).Unix()}
+	token, err := s.signMediaHandle(handle, mediaDocument)
 	if err != nil {
 		return nil, err
 	}

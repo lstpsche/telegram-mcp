@@ -358,13 +358,20 @@ func (a *Account) Acknowledge(ctx context.Context, peer model.PeerID, through in
 	if through <= 0 {
 		return model.TextError(model.ErrorInvalidInput, nil)
 	}
-	// Refresh peer protection/bot membership immediately before a read effect.
-	if _, err := a.Chat(bounded, peer); err != nil {
+	// Refresh peer protection and availability immediately before a read effect.
+	chat, err := a.Chat(bounded, peer)
+	if err != nil {
 		return err
+	}
+	if chat.Forum {
+		return model.TextError(model.ErrorUnsupportedPeer, nil)
 	}
 	input, err := a.reads.inputPeer(bounded, peer)
 	if err != nil {
 		return err
+	}
+	if peer.TopicID() != 0 {
+		return a.acknowledgeTopic(bounded, peer, input, through)
 	}
 	if channel, ok := input.(*tg.InputPeerChannel); ok {
 		return a.acknowledgeSupergroup(bounded, peer, channel, through)

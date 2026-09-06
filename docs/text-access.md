@@ -104,10 +104,10 @@ Telegram dialog discovery and update recovery can transiently receive message
 objects in upstream responses; these are discarded and are not stored or
 returned by discovery. Establish eligibility for discovery before invoking it.
 Titles are untrusted display data; use the immutable typed ID for authority.
-The adapter supports ordinary Saved Messages, non-bot users, basic groups, and
-ordinary non-forum supergroups. Supergroups use `tgpeer:v1:channel:<id>`;
-that ID kind does not authorize broadcast channels. Broadcast channels, forums,
-topics, bot chats, Secret Chats, protected or inaccessible groups are excluded.
+The adapter supports ordinary Saved Messages, users and bots, basic groups, and
+ordinary supergroups and individual forum topics. Supergroups use `tgpeer:v1:channel:<id>`;
+that ID kind does not authorize broadcast channels. Broadcast channels, Secret Chats, protected or inaccessible groups are excluded.
+Forum content requires an exact [topic ID](topic-access.md).
 Use discovery to establish typed IDs and current adapter-owned access hashes;
 missing hashes fail explicitly instead of guessing from Bot API encodings.
 
@@ -156,7 +156,9 @@ telegram-mcp grant \
 
 Replace the example identifiers, range and expiry with independently verified
 values. The peer and author require strict versioned IDs; usernames, titles,
-links and Bot API ID encodings are not accepted. The author must be user-kind.
+links and Bot API ID encodings are not accepted. The author must be user-kind. Bots may author messages in supported conversations;
+their messages follow the same grants and exclusions as human-authored messages.
+Private bot dialogs follow these same rules.
 Message bounds are positive decimal IDs without leading zeros. The read
 ceiling also accepts zero, which authorizes no acknowledgment. Expiry is an
 RFC3339 timestamp in the future, at most 30 days from creation. Each grant
@@ -343,3 +345,6 @@ Logout or authorization rotation clears checkpoints, hashes, grants, Full read a
 Unexpired search cursors survive an ordinary restart only while the signing
 key, epoch and policy binding remain unchanged; context still refetches and
 reauthorizes its target, including any edits or deletion.
+
+Original voice notes require Full read or `--allow-voice-notes`; see
+[voice access](voice-access.md) for audio limits and receipt semantics.

@@ -137,6 +137,7 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 	if err := a.reads.saveChannels(bounded, groups); err != nil {
 		return model.DialogPage{}, err
 	}
+	forums := map[model.PeerID]bool{}
 	supported := make(map[model.PeerID]string)
 	self, err := model.NewPeerID(model.PeerKindSelf, a.reads.self.Load())
 	if err != nil {
@@ -145,7 +146,7 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 	supported[self] = "Saved Messages"
 	for _, value := range users {
 		user, ok := value.(*tg.User)
-		if !ok || !ordinaryUser(user) || user.ID == self.TelegramID() {
+		if !ok || !readableUser(user) || user.ID == self.TelegramID() {
 			continue
 		}
 		if hash, ok := user.GetAccessHash(); !ok || hash == 0 {
@@ -168,7 +169,7 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 			id, err = model.NewPeerID(model.PeerKindChat, group.ID)
 			title = group.Title
 		case *tg.Channel:
-			if !ordinarySupergroup(group) {
+			if !(ordinarySupergroup(group) || forumGroup(group)) {
 				continue
 			}
 			if hash, ok := group.GetAccessHash(); !ok || hash == 0 {
@@ -176,6 +177,7 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 			}
 			id, err = model.NewPeerID(model.PeerKindChannel, group.ID)
 			title = group.Title
+			forums[id] = group.Forum
 		default:
 			continue
 		}
@@ -200,7 +202,7 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 		if !utf8.ValidString(title) || len(title) > 4096 {
 			return model.DialogPage{}, model.TextError(model.ErrorResultTooLarge, nil)
 		}
-		result.Items = append(result.Items, model.DialogEntry{Chat: model.Chat{ID: id, Title: title}, Unread: model.Unread{Peer: id, Count: dialog.UnreadCount, Marked: dialog.UnreadMark}})
+		result.Items = append(result.Items, model.DialogEntry{Chat: model.Chat{ID: id, Title: title, Forum: forums[id]}, Unread: model.Unread{Peer: id, Count: dialog.UnreadCount, Marked: dialog.UnreadMark}})
 	}
 	if !complete {
 		if last == nil {

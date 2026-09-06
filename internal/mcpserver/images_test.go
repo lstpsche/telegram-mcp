@@ -181,7 +181,7 @@ func TestNativeImagesOverStdioRelay(t *testing.T) {
 			t.Fatal("image tool misrepresents its read effects")
 		}
 	}
-	if len(schemas) != 10 || schemas["open_image"] == nil {
+	if len(schemas) != 12 || schemas["open_image"] == nil {
 		t.Fatal("missing native image tool")
 	}
 	call := func(name string, args any) (*mcp.CallToolResult, map[string]any) {

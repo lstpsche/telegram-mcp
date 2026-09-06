@@ -13,11 +13,13 @@ const MaximumRPCIDBytes = 1024
 
 // Chat and Message contain untrusted display data. They are never audit records.
 type Chat struct {
+	Forum bool   `json:"forum,omitempty"`
 	ID    PeerID `json:"id"`
 	Title string `json:"title"`
 }
 
 type Message struct {
+	Voice    *VoiceDescriptor    `json:"voice_note,omitempty"`
 	Document *DocumentDescriptor `json:"document,omitempty"`
 	Image    *ImageDescriptor    `json:"image,omitempty"`
 	ID       MessageID           `json:"id"`
@@ -29,6 +31,7 @@ type Message struct {
 // Candidate carries normalization evidence only inside the application.
 // Unsafe source bodies must not be copied into Message.Text.
 type Candidate struct {
+	Voice *MediaSource
 	// SentAt retains only timestamp evidence for date traversal, including excluded bodies.
 	SentAt      int64
 	Image       *MediaSource
@@ -92,6 +95,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	Voice            *VoiceDescriptor    `json:"voice_note,omitempty"`
 	Document         *DocumentDescriptor `json:"document,omitempty"`
 	Image            *ImageDescriptor    `json:"image,omitempty"`
 	ID               MessageID           `json:"id"`

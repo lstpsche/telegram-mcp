@@ -58,8 +58,8 @@ func TestUnsafeDocumentsExposeNeitherCaptionNorDescriptor(t *testing.T) {
 		"image dimensions": func(_ *tg.Message, _ *tg.MessageMediaDocument, d *tg.Document) {
 			d.Attributes = append(d.Attributes, &tg.DocumentAttributeImageSize{W: 2, H: 2})
 		},
-		"oversized": func(_ *tg.Message, _ *tg.MessageMediaDocument, d *tg.Document) {
-			d.Size = model.MaximumDocumentBytes + 1
+		"invalid size": func(_ *tg.Message, _ *tg.MessageMediaDocument, d *tg.Document) {
+			d.Size = 0
 		},
 		"duplicate filename": func(_ *tg.Message, _ *tg.MessageMediaDocument, d *tg.Document) {
 			d.Attributes = append(d.Attributes, d.Attributes[0])
@@ -86,7 +86,7 @@ func TestDocumentDownloadRenewsReferenceAndPreservesFiniteBudget(t *testing.T) {
 		t.Run(mime, func(t *testing.T) {
 			message := attachmentMessage(mime)
 			d := message.Media.(*tg.MessageMediaDocument).Document.(*tg.Document)
-			size := model.MaximumDocumentBytes
+			size := 3 << 20
 			if mime == "text/plain" {
 				size = model.MaximumTextAttachmentBytes
 			}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 
@@ -32,7 +33,7 @@ type photoRendition struct {
 }
 
 func normalizeMedia(message *tg.Message) *mediaLocation {
-	if message.Mentioned && message.MediaUnread || message.VideoProcessingPending || message.PaidSuggestedPostStars || message.PaidSuggestedPostTon || message.PaidMessageStars != 0 || !message.SuggestedPost.Zero() {
+	if (message.Mentioned && message.MediaUnread && !voiceDocument(message)) || message.VideoProcessingPending || message.PaidSuggestedPostStars || message.PaidSuggestedPostTon || message.PaidMessageStars != 0 || !message.SuggestedPost.Zero() {
 		return nil
 	}
 	switch media := message.Media.(type) {
@@ -86,13 +87,19 @@ func normalizeMedia(message *tg.Message) *mediaLocation {
 		return &mediaLocation{source: source, dc: photo.DCID, location: &tg.InputPhotoFileLocation{ID: photo.ID, AccessHash: photo.AccessHash, FileReference: photo.FileReference, ThumbSize: size.kind}}
 	case *tg.MessageMediaDocument:
 		document, ok := media.Document.(*tg.Document)
-		if !ok || document == nil || media.Spoiler || media.Video || media.Round || media.Voice || media.Nopremium || media.TTLSeconds != 0 || media.Flags.Has(2) || len(media.AltDocuments) != 0 || media.VideoCover != nil || media.VideoTimestamp != 0 || document.ID == 0 || document.AccessHash == 0 || len(document.FileReference) == 0 || len(document.FileReference) > 4096 || document.DCID < 1 || len(document.VideoThumbs) != 0 || (document.MimeType != "image/jpeg" && document.MimeType != "image/png" && document.MimeType != "application/pdf" && document.MimeType != "text/plain") || len(document.Attributes) > 2 {
+		if !ok || document == nil || media.Spoiler || media.Video || media.Round || media.Nopremium || media.TTLSeconds != 0 || media.Flags.Has(2) || len(media.AltDocuments) != 0 || media.VideoCover != nil || media.VideoTimestamp != 0 || document.ID == 0 || document.AccessHash == 0 || len(document.FileReference) == 0 || len(document.FileReference) > 4096 || document.DCID < 1 || len(document.VideoThumbs) != 0 || (document.MimeType != "image/jpeg" && document.MimeType != "image/png" && document.MimeType != "application/pdf" && document.MimeType != "text/plain" && document.MimeType != "audio/ogg") || len(document.Attributes) > 2 {
 			return nil
 		}
+		var audio *tg.DocumentAttributeAudio
 		var dimensions *tg.DocumentAttributeImageSize
 		filename := false
 		for _, value := range document.Attributes {
 			switch value := value.(type) {
+			case *tg.DocumentAttributeAudio:
+				if audio != nil || !value.Voice || value.Duration <= 0 || value.Duration > model.MaximumVoiceDuration || value.Title != "" || value.Performer != "" || len(value.Waveform) > 1024 {
+					return nil
+				}
+				audio = value
 			case *tg.DocumentAttributeImageSize:
 				if dimensions != nil {
 					return nil
@@ -109,7 +116,18 @@ func normalizeMedia(message *tg.Message) *mediaLocation {
 		}
 		isDocument := document.MimeType == "application/pdf" || document.MimeType == "text/plain"
 		rendition := photoRendition{size: document.Size}
-		if isDocument {
+		isVoice := document.MimeType == "audio/ogg"
+		if media.Voice && !isVoice {
+			return nil
+		}
+		if isVoice {
+			if audio == nil || dimensions != nil {
+				return nil
+			}
+		} else if audio != nil {
+			return nil
+		}
+		if isDocument || isVoice {
 			if dimensions != nil {
 				return nil
 			}
@@ -119,7 +137,15 @@ func normalizeMedia(message *tg.Message) *mediaLocation {
 			}
 			rendition.width, rendition.height = dimensions.W, dimensions.H
 		}
-		source := mediaIdentity("document", document.MimeType, document.ID, rendition)
+		kind := "document"
+		if isVoice {
+			kind = "voice"
+			rendition.kind = fmt.Sprintf("opus:%d", audio.Duration)
+		}
+		source := mediaIdentity(kind, document.MimeType, document.ID, rendition)
+		if isVoice {
+			source.Duration = audio.Duration
+		}
 		if source.Validate() != nil {
 			return nil
 		}
@@ -144,13 +170,45 @@ func mediaIdentity(kind, mime string, id int64, rendition photoRendition) model.
 }
 
 func candidateMedia(candidate model.Candidate) *model.MediaSource {
-	if candidate.Image != nil && candidate.Document == nil && !candidate.Image.IsDocument() {
-		return candidate.Image
+	count := 0
+	var result *model.MediaSource
+	for _, source := range []*model.MediaSource{candidate.Image, candidate.Document, candidate.Voice} {
+		if source != nil {
+			count++
+			result = source
+		}
 	}
-	if candidate.Document != nil && candidate.Image == nil && candidate.Document.IsDocument() {
-		return candidate.Document
+	if count != 1 {
+		return nil
 	}
-	return nil
+	if candidate.Voice != nil && !result.IsVoice() || candidate.Document != nil && !result.IsDocument() || candidate.Image != nil && (result.IsDocument() || result.IsVoice()) {
+		return nil
+	}
+	return result
+}
+
+func voiceDocument(message *tg.Message) bool {
+	media, ok := message.Media.(*tg.MessageMediaDocument)
+	if !ok {
+		return false
+	}
+	d, ok := media.Document.(*tg.Document)
+	if !ok {
+		return false
+	}
+	for _, attribute := range d.Attributes {
+		if a, ok := attribute.(*tg.DocumentAttributeAudio); ok && a.Voice {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Account) DownloadVoice(ctx context.Context, expected model.Candidate) ([]byte, error) {
+	if expected.Voice == nil || expected.Image != nil || expected.Document != nil || !expected.Voice.IsVoice() {
+		return nil, model.TextError(model.ErrorInvalidReference, nil)
+	}
+	return a.downloadMedia(ctx, expected)
 }
 
 func safeMedia(candidate model.Candidate) bool {
@@ -168,8 +226,12 @@ func (a *Account) exactMedia(ctx context.Context, expected model.Candidate) (*me
 	if id <= 0 {
 		return nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
-	if _, err := a.Chat(ctx, peer); err != nil {
+	chat, err := a.Chat(ctx, peer)
+	if err != nil {
 		return nil, err
+	}
+	if chat.Forum {
+		return nil, model.TextError(model.ErrorUnsupportedPeer, nil)
 	}
 	input, err := a.reads.inputPeer(ctx, peer)
 	if err != nil {
@@ -179,7 +241,7 @@ func (a *Account) exactMedia(ctx context.Context, expected model.Candidate) (*me
 	if id < math.MaxInt32 {
 		maximum = int(id) + 1
 	}
-	result, err := a.reads.api.MessagesGetHistory(ctx, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: int(id), AddOffset: -1, Limit: 1, MinID: int(id) - 1, MaxID: maximum})
+	result, err := a.reads.historyPage(ctx, peer, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: int(id), AddOffset: -1, Limit: 1, MinID: int(id) - 1, MaxID: maximum})
 	if err != nil {
 		return nil, readError(err)
 	}
@@ -231,14 +293,14 @@ func (a *Account) mediaAPI(ctx context.Context, dc int) (*tg.Client, gotdtelegra
 // DownloadImage fetches only the unchanged source approved by the caller.
 // The caller remains responsible for policy and read acknowledgment before use.
 func (a *Account) DownloadImage(ctx context.Context, expected model.Candidate) ([]byte, error) {
-	if expected.Image == nil || expected.Document != nil || expected.Image.IsDocument() {
+	if expected.Image == nil || expected.Document != nil || expected.Voice != nil || expected.Image.IsDocument() || expected.Image.IsVoice() {
 		return nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	return a.downloadMedia(ctx, expected)
 }
 
 func (a *Account) DownloadDocument(ctx context.Context, expected model.Candidate) ([]byte, error) {
-	if expected.Document == nil || expected.Image != nil || !expected.Document.IsDocument() {
+	if expected.Document == nil || expected.Image != nil || expected.Voice != nil || !expected.Document.IsDocument() {
 		return nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	return a.downloadMedia(ctx, expected)
@@ -255,7 +317,7 @@ func (a *Account) downloadMedia(ctx context.Context, expected model.Candidate) (
 	if err != nil {
 		return nil, err
 	}
-	buffer := make([]byte, 0, int(location.source.Size))
+	buffer := make([]byte, 0, int(min(location.source.Size, int64(mediaChunkBytes))))
 	defer func() {
 		if pool != nil {
 			if err := pool.Close(); err != nil {
@@ -275,8 +337,10 @@ func (a *Account) downloadMedia(ctx context.Context, expected model.Candidate) (
 		}
 	}()
 	renewed := false
-	for calls := 0; int64(len(buffer)) < location.source.Size; calls++ {
-		if calls >= 17 {
+	// Exact-size chunks bound work; allow one additional reference renewal.
+	maximumCalls := (location.source.Size-1)/mediaChunkBytes + 2
+	for calls := int64(0); int64(len(buffer)) < location.source.Size; calls++ {
+		if calls >= maximumCalls {
 			return nil, model.TextError(model.ErrorResultTooLarge, nil)
 		}
 		if err := bounded.Err(); err != nil {
@@ -328,7 +392,7 @@ func (a *Account) downloadMedia(ctx context.Context, expected model.Candidate) (
 		case *tg.StorageFilePng:
 			validType = location.source.MIMEType == "image/png"
 		}
-		expectedBytes := min(mediaChunkBytes, int(location.source.Size)-len(buffer))
+		expectedBytes := int(min(int64(mediaChunkBytes), location.source.Size-int64(len(buffer))))
 		if !validType || len(file.Bytes) != expectedBytes {
 			return nil, model.TextError(model.ErrorInvalidReference, errors.New("Telegram media chunk does not match its descriptor"))
 		}

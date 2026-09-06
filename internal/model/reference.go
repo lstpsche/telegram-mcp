@@ -40,8 +40,9 @@ func (k PeerKind) IsValid() bool {
 // PeerID is a kinded, immutable Telegram peer reference. Its JSON form is a
 // string so identifiers never lose precision in JavaScript clients.
 type PeerID struct {
-	kind PeerKind
-	id   uint64
+	kind  PeerKind
+	id    uint64
+	topic uint32
 }
 
 func NewPeerID(kind PeerKind, telegramID int64) (PeerID, error) {
@@ -59,24 +60,55 @@ func ParsePeerID(value string) (PeerID, error) {
 		return PeerID{}, referenceError("peer", "invalid length")
 	}
 	parts := strings.Split(value, ":")
-	if len(parts) != 4 || parts[0] != "tgpeer" || parts[1] != referenceVersion {
+	if (len(parts) != 4 && len(parts) != 6) || parts[0] != "tgpeer" || parts[1] != referenceVersion {
 		return PeerID{}, referenceError("peer", "invalid shape or version")
 	}
 
-	return parsePeerParts(parts[2], parts[3], "peer")
+	peer, err := parsePeerParts(parts[2], parts[3], "peer")
+	if err != nil {
+		return PeerID{}, err
+	}
+	if len(parts) == 6 {
+		topic, err := parseCanonicalPositive(parts[5], math.MaxInt32)
+		if err != nil || parts[4] != "topic" {
+			return PeerID{}, referenceError("peer", "invalid topic")
+		}
+		return NewTopicPeer(peer, int32(topic))
+	}
+	return peer, nil
+}
+
+// NewTopicPeer identifies one topic inside a forum. Parent authority is distinct.
+func NewTopicPeer(parent PeerID, topic int32) (PeerID, error) {
+	if !parent.valid() || parent.kind != PeerKindChannel || parent.topic != 0 || topic <= 0 {
+		return PeerID{}, referenceError("peer", "invalid topic")
+	}
+	parent.topic = uint32(topic)
+	return parent, nil
+}
+func (id PeerID) TopicID() int32 { return int32(id.topic) }
+func (id PeerID) Parent() PeerID {
+	id.topic = 0
+	return id
 }
 
 func (id PeerID) Kind() PeerKind { return id.kind }
 
 func (id PeerID) TelegramID() int64 { return int64(id.id) }
 
-func (id PeerID) valid() bool { return id.kind.IsValid() && id.id > 0 && id.id <= math.MaxInt64 }
+func (id PeerID) valid() bool {
+	return id.kind.IsValid() && id.id > 0 && id.id <= math.MaxInt64 && (id.topic == 0 || (id.kind == PeerKindChannel && id.topic <= math.MaxInt32))
+}
 
 func (id PeerID) String() string {
 	if !id.valid() {
 		return ""
 	}
-	return "tgpeer:" + referenceVersion + ":" + string(id.kind) + ":" + strconv.FormatUint(id.id, 10)
+	value := "tgpeer:" + referenceVersion + ":" + string(id.kind) + ":" + strconv.FormatUint(id.id, 10)
+	if id.topic != 0 {
+		value += ":topic:" + strconv.FormatUint(uint64(id.topic), 10)
+	}
+	return value
 }
 
 func (id PeerID) MarshalText() ([]byte, error) {
@@ -136,15 +168,15 @@ func ParseMessageID(value string) (MessageID, error) {
 		return MessageID{}, referenceError("message", "invalid length")
 	}
 	parts := strings.Split(value, ":")
-	if len(parts) != 5 || parts[0] != "tgmsg" || parts[1] != referenceVersion {
+	if (len(parts) != 5 && len(parts) != 7) || parts[0] != "tgmsg" || parts[1] != referenceVersion {
 		return MessageID{}, referenceError("message", "invalid shape or version")
 	}
 
-	peer, err := parsePeerParts(parts[2], parts[3], "message")
+	peer, err := ParsePeerID("tgpeer:" + strings.Join(parts[1:len(parts)-1], ":"))
 	if err != nil {
 		return MessageID{}, referenceError("message", "invalid peer")
 	}
-	messageID, err := parseCanonicalPositive(parts[4], math.MaxInt32)
+	messageID, err := parseCanonicalPositive(parts[len(parts)-1], math.MaxInt32)
 	if err != nil {
 		return MessageID{}, referenceError("message", err.Error())
 	}
@@ -163,8 +195,7 @@ func (id MessageID) String() string {
 	if !id.valid() {
 		return ""
 	}
-	return "tgmsg:" + referenceVersion + ":" + string(id.peer.kind) + ":" +
-		strconv.FormatUint(id.peer.id, 10) + ":" + strconv.FormatUint(uint64(id.messageID), 10)
+	return "tgmsg:" + strings.TrimPrefix(id.peer.String(), "tgpeer:") + ":" + strconv.FormatUint(uint64(id.messageID), 10)
 }
 
 func (id MessageID) MarshalText() ([]byte, error) {

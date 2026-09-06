@@ -64,7 +64,7 @@ func TestSearchUnreadAndContextOverStdio(t *testing.T) {
 			t.Fatal("metadata tool has incorrect side effects")
 		}
 	}
-	if len(schemas) != 10 || schemas["search_messages"] == nil || schemas["list_unread"] == nil {
+	if len(schemas) != 12 || schemas["search_messages"] == nil || schemas["list_unread"] == nil {
 		t.Fatal("missing tools")
 	}
 	call := func(name string, args any) map[string]any {

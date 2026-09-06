@@ -117,6 +117,8 @@ func runContext(
 			return runScopeSetupCommand(ctx, args, stdout, stderr, control, openTerminal)
 		}
 		return runScopeCommand(ctx, args, stdout, stderr, control)
+	case "topics":
+		return runTopicsCommand(ctx, args, stdout, stderr, control)
 	case "peers", "saved-message", "grants", "grant", "revoke":
 		return runTextCommand(ctx, args, stdout, stderr, control)
 	case "status":
@@ -261,10 +263,11 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcp access setup")
 	fmt.Fprintln(writer, "  telegram-mcp access full --accept-full-read")
 	fmt.Fprintln(writer, "  telegram-mcp access restricted")
-	fmt.Fprintln(writer, "Full read access includes supported conversations, all supported message authors and history, images, PDF/plain-text attachments, and read acknowledgments until revoked.")
+	fmt.Fprintln(writer, "Full read access includes supported conversations, all supported message authors and history, images, PDF/plain-text attachments, voice notes, and read acknowledgments until revoked.")
 	fmt.Fprintln(writer, "Content is disclosed to the connected agent and its model provider. Enabling access does not establish permission under Telegram terms.")
+	fmt.Fprintln(writer, "  telegram-mcp topics --peer FORUM [--offset-date N --offset-message N --offset-topic N]")
 	fmt.Fprintln(writer, "  telegram-mcp grants")
-	fmt.Fprintln(writer, "  telegram-mcp grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible [--allow-images] [--allow-documents]")
+	fmt.Fprintln(writer, "  telegram-mcp grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible [--allow-images] [--allow-documents] [--allow-voice-notes]")
 	fmt.Fprintln(writer, "  telegram-mcp revoke --peer PEER")
 	fmt.Fprintln(writer, "  telegram-mcp scope setup")
 	fmt.Fprintln(writer, "  telegram-mcp scopes")

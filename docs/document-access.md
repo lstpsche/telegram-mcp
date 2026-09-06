@@ -48,17 +48,21 @@ Office documents, audio and other encodings are excluded. A text file labeled
 
 Limits and checks:
 
-- PDF: 1 MiB maximum, a PDF 1.0–1.7 or 2.0 header at byte zero, and a final
+- PDF: no fixed application byte cap; a PDF 1.0–1.7 or 2.0 header at byte zero, and a final
   `%%EOF` marker followed only by whitespace. These are framing checks, not
   structural or security validation of the PDF.
 - Text: 256 KiB maximum, valid UTF-8, and no control characters except tab,
   carriage return and newline. Invalid encodings are rejected rather than
   guessed, converted or replaced. Empty attachments are excluded.
-- Both: downloaded length must equal the authorized size. Downloads use at
-  most sixteen 64 KiB chunks plus one reference-renewal attempt, with the
-  existing operation deadline and bounded DC routing. CDN redirects and
-  incompatible transport types are rejected. The complete MCP result is
-  bounded to 2 MiB, including metadata, native content and framing.
+- Both: downloaded length must equal the authorized size. Downloads use exact
+  64 KiB chunks and at most one reference-renewal attempt. The call budget scales
+  with the declared size; the operation deadline and DC routing checks remain.
+  Allocation grows with received bytes, rather than reserving the declared size.
+  CDN redirects and incompatible transport types are rejected.
+- PDF responses are not subject to the 2 MiB image/voice/text response budget.
+  They remain inline base64 resources, so large files consume memory and may
+  exceed the receiving client's limits or the operation deadline. No partial PDF
+  is returned. Plain-text attachments retain their existing response budget.
 
 Protected, expiring, forwarded, quoted, spoiler, paid and unsupported media
 variants retain the existing exclusions. Supported documents may carry an

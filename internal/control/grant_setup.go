@@ -188,7 +188,7 @@ func (s *setupSession) guideGrant(ctx context.Context, now time.Time) error {
 		return policy.ErrInvalidGrant
 	}
 	grant.ExpiresAt = now.Truncate(time.Second).Add(time.Duration(lifetime) * time.Hour)
-	if _, err := fmt.Fprintln(s.output, "Search needs no receipt. Opening history, context, images or documents can mark every earlier message in the conversation read, including messages outside this grant."); err != nil {
+	if _, err := fmt.Fprintln(s.output, "Search needs no receipt. Opening history, context, images, documents or voice notes can mark every earlier message in the conversation read, including messages outside this grant."); err != nil {
 		return err
 	}
 	ceiling, err := s.prompt.Ask(ctx, "Permit that read effect through message number (0 or Enter = search only): ")
@@ -224,11 +224,22 @@ func (s *setupSession) guideGrant(ctx context.Context, now time.Time) error {
 	default:
 		return humanHint("choose yes or no for documents")
 	}
+	voice, err := s.prompt.Ask(ctx, "Allow original voice-note audio? yes or no [no]: ")
+	if err != nil {
+		return err
+	}
+	switch voice {
+	case "yes":
+		grant.VoiceNotes = true
+	case "", "no":
+	default:
+		return humanHint("choose yes or no for voice notes")
+	}
 	grant.Eligible = true
 	if err := grant.Validate(now); err != nil {
 		return err
 	}
-	if (grant.Images || grant.Documents) && grant.ReadThrough == 0 {
+	if (grant.Images || grant.Documents || grant.VoiceNotes) && grant.ReadThrough == 0 {
 		if _, err := fmt.Fprintln(s.output, "Attachments may be discovered, but opening them remains denied without read-effect permission."); err != nil {
 			return err
 		}

@@ -31,8 +31,10 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	}
 	bounded, cancel := context.WithTimeout(ctx, readDeadline)
 	defer cancel()
-	if _, err := a.Chat(bounded, q.Peer); err != nil {
+	if chat, err := a.Chat(bounded, q.Peer); err != nil {
 		return nil, err
+	} else if chat.Forum {
+		return nil, model.TextError(model.ErrorUnsupportedPeer, nil)
 	}
 	input, err := a.reads.inputPeer(bounded, q.Peer)
 	if err != nil {
@@ -47,9 +49,13 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	}
 	var response tg.MessagesMessagesClass
 	if q.Window != nil {
-		response, err = a.reads.api.MessagesGetHistory(bounded, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, OffsetDate: int(q.Window.Until), Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
+		response, err = a.reads.historyPage(bounded, q.Peer, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, OffsetDate: int(q.Window.Until), Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
 	} else {
-		response, err = a.reads.api.MessagesSearch(bounded, &tg.MessagesSearchRequest{Peer: input, Q: query, Filter: &tg.InputMessagesFilterEmpty{}, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
+		request := &tg.MessagesSearchRequest{Peer: input, Q: query, Filter: &tg.InputMessagesFilterEmpty{}, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum}
+		if q.Peer.TopicID() != 0 {
+			request.SetTopMsgID(int(q.Peer.TopicID()))
+		}
+		response, err = a.reads.api.MessagesSearch(bounded, request)
 	}
 	if err != nil {
 		return nil, readError(err)
@@ -101,6 +107,13 @@ func (a *Account) Unread(ctx context.Context, peer model.PeerID) (model.Unread, 
 	defer cancel()
 	if _, err := a.Chat(bounded, peer); err != nil {
 		return model.Unread{}, err
+	}
+	if peer.TopicID() != 0 {
+		t, err := a.topic(bounded, peer)
+		if err != nil {
+			return model.Unread{}, err
+		}
+		return model.Unread{Peer: peer, Count: t.UnreadCount}, nil
 	}
 	input, err := a.reads.inputPeer(bounded, peer)
 	if err != nil {

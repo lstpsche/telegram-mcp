@@ -30,7 +30,8 @@ type Backend interface {
 // as the structured result, so both MCP content representations agree.
 type Result struct {
 	JSON     json.RawMessage
-	Image    *ImageContent
+	Image    *MediaContent
+	Voice    *MediaContent
 	Document *DocumentContent
 }
 
@@ -246,6 +247,11 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 			return Result{}, err
 		}
 		message.Document, err = s.documentDescriptor(candidate, grant, mediaAuthority{epoch, revision})
+		if err != nil {
+			return Result{}, err
+		}
+
+		message.Voice, err = s.voiceDescriptor(candidate, grant, mediaAuthority{epoch, revision})
 		if err != nil {
 			return Result{}, err
 		}

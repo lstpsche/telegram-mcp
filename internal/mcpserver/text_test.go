@@ -119,7 +119,7 @@ func TestAuthorizedTextWorkflowOverStdioRelay(t *testing.T) {
 	for _, tool := range inventory.Tools {
 		names[tool.Name] = tool
 	}
-	if len(names) != 10 || names["status"] == nil || names["list_chats"] == nil || names["list_messages"] == nil || names["get_message_context"] == nil {
+	if len(names) != 12 || names["status"] == nil || names["list_chats"] == nil || names["list_messages"] == nil || names["get_message_context"] == nil {
 		t.Fatal("unexpected tool inventory")
 	}
 	if names["list_messages"].Annotations.ReadOnlyHint || names["get_message_context"].Annotations.ReadOnlyHint {

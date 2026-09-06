@@ -167,7 +167,7 @@ already allowed by the old items; it does not widen their ACLs.
 
 ## Excluded or deferred risk
 
-Broadcast channels, bot chats, Secret Chats, protected content, expiring media,
+Broadcast channels, Secret Chats, protected content, expiring media,
 writes, HTTP, multi-account state, local content indexing, and broad experimental
 eligibility are absent from v1. Adding any of them requires a separate threat
 and contract plan.
@@ -303,9 +303,11 @@ distinguishes refetching a pinned prefix from date-based ordinary pagination;
 ordinary requests exclude already visited pins. A missing or unpinned
 boundary fails explicitly. No response or pinned-list cache is introduced.
 
-Supergroup lookups validate `Megagroup` and reject broadcast/forum/minimal,
+Supergroup lookups validate `Megagroup` and reject broadcast/minimal,
 forbidden, left, restricted and protected entities both before content fetch and
-on the returned page. Bot and anonymous/channel authors remain excluded.
+on the returned page. Bot-authored messages are allowed under the same exact author/range grants or
+Full read authority as human-authored messages. Anonymous/channel authors remain
+excluded. Private bot dialogs use the same user-kind identity and read policy.
 `channels.readHistory` does not return common affected pts. An error-free RPC
 (either Boolean value) alone is insufficient: an exact subsequent dialog must
 report an inbox read position at least as high as requested. Common checkpoint
@@ -352,8 +354,11 @@ Cross-use with image handles is rejected before Telegram access.
 The downloader reuses bounded media transport and exact-source normalization.
 Only declared PDF/plain-text MIME types and inert filename-only attribute sets
 are accepted; filenames are discarded, never used as paths or trust signals.
-Text encoding is not guessed. Exact byte counts, small byte caps, finite chunk
-and renewal counts, deadlines and an output budget constrain resource use.
+Text encoding is not guessed. Exact byte counts, a chunk count derived from
+source size, one renewal and deadlines constrain downloads. Allocation grows
+with received chunks. PDFs have no fixed application byte or response cap;
+inline base64 delivery consumes memory proportional to file size and may exceed
+client limits. Images, voice notes and plain text retain their byte/output caps.
 No document parser, OCR engine, external converter, shell command, external URL
 fetch or additional dependency is introduced. Attachment bytes remain transient.
 
@@ -370,3 +375,26 @@ source identity and policy/audit checks happen again before release. Any failure
 withholds content and clears the downloaded buffer; failures after a receipt
 attempt report uncertain read effects. Telegram edits are not an atomic
 snapshot, and process-memory clearing is not a forensic erasure guarantee.
+
+## Topic isolation and original voice delivery
+
+Topic identity includes both the channel and positive topic ID. Exact grants,
+scopes, message references, cursors and media handles preserve both components.
+Parent-forum grants cannot expand to topic content. Topic reads use scoped RPCs
+and reject cross-topic messages; receipts use `messages.readDiscussion` with
+exact topic readback. Whole-forum acknowledgments are rejected. Metadata-only
+discovery discards incidental message bodies and stores no topic titles.
+
+Voice authority is separate from images and documents and defaults off for
+existing restricted grants. Native audio delivery reuses bounded downloads,
+source revalidation, policy leases and verified history receipts. The Ogg/Opus
+parser checks framing and headers within the byte bound; it is not a codec or
+a guarantee that a client will interpret audio. No playback receipt is sent.
+Audio and embedded metadata remain hostile input. No transcription provider,
+media cache, filenames or waveform persistence is introduced.
+
+Private bot chats reuse the private-user discovery, identity, author, policy and
+read-receipt boundaries. Bot flags do not grant authority. Keyboard/button markup
+is omitted from delivered messages; the server never invokes callbacks, sends
+commands, starts a bot or follows its links. Message text and supported media
+remain hostile data. Bot-account authentication is still unsupported.

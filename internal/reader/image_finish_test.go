@@ -48,7 +48,11 @@ func TestOpenMediaRejectsAuthorityLossDuringAudit(t *testing.T) {
 					t.Fatal(err)
 				}
 				s.policy = repository
-				result, err := s.openMedia(ctx, "req_image_audit_release", handle, document)
+				kind := mediaImage
+				if document {
+					kind = mediaDocument
+				}
+				result, err := s.openMedia(ctx, "req_image_audit_release", handle, kind)
 				if !auditHookRan || backend.ackCalls != 1 || backend.downloads != 1 || backend.historyCalls != 3 {
 					t.Fatalf("fixture did not reach audit after receipt: hook=%t ack=%d download=%d history=%d err=%v", auditHookRan, backend.ackCalls, backend.downloads, backend.historyCalls, err)
 				}

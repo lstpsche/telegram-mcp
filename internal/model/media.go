@@ -18,6 +18,7 @@ type MediaSource struct {
 	Width       int
 	Height      int
 	Size        int64
+	Duration    int `json:",omitempty"`
 	Fingerprint string
 }
 
@@ -25,16 +26,25 @@ func (i MediaSource) IsDocument() bool {
 	return i.Kind == "document" && (i.MIMEType == "application/pdf" || i.MIMEType == "text/plain")
 }
 
+func (i MediaSource) IsVoice() bool { return i.Kind == "voice" && i.MIMEType == "audio/ogg" }
 func (i MediaSource) Validate() error {
+	if i.IsVoice() {
+		if i.Width != 0 || i.Height != 0 || i.Duration <= 0 || i.Duration > MaximumVoiceDuration || !imageFingerprintPattern.MatchString(i.Fingerprint) {
+			return TextError(ErrorInvalidReference, nil)
+		}
+		if i.Size <= 0 || i.Size > MaximumVoiceBytes {
+			return TextError(ErrorMediaTooLarge, nil)
+		}
+		return nil
+	}
+	if i.Duration != 0 {
+		return TextError(ErrorInvalidReference, nil)
+	}
 	if i.IsDocument() {
 		if i.Width != 0 || i.Height != 0 || !imageFingerprintPattern.MatchString(i.Fingerprint) {
 			return TextError(ErrorInvalidReference, nil)
 		}
-		limit := int64(MaximumDocumentBytes)
-		if i.MIMEType == "text/plain" {
-			limit = MaximumTextAttachmentBytes
-		}
-		if i.Size <= 0 || i.Size > limit {
+		if i.Size <= 0 || (i.MIMEType == "text/plain" && i.Size > MaximumTextAttachmentBytes) {
 			return TextError(ErrorMediaTooLarge, nil)
 		}
 		return nil
@@ -58,14 +68,22 @@ type ImageDescriptor struct {
 	Size     int64  `json:"size"`
 }
 
-const (
-	MaximumDocumentBytes       = 1 << 20
-	MaximumTextAttachmentBytes = 256 << 10
-)
+const MaximumTextAttachmentBytes = 256 << 10
 
 // DocumentDescriptor omits remote filenames and download locations.
 type DocumentDescriptor struct {
 	Handle   string `json:"handle"`
 	MIMEType string `json:"mime_type"`
 	Size     int64  `json:"size"`
+}
+
+const MaximumVoiceBytes = 1 << 20
+const MaximumVoiceDuration = 300
+
+// VoiceDescriptor describes original Ogg/Opus audio, never a remote location.
+type VoiceDescriptor struct {
+	Handle   string `json:"handle"`
+	MIMEType string `json:"mime_type"`
+	Size     int64  `json:"size"`
+	Duration int    `json:"duration_seconds"`
 }

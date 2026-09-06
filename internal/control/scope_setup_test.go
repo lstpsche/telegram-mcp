@@ -57,7 +57,7 @@ func (c *scopeSetupControl) Peers(context.Context) ([]model.Chat, error) {
 func TestFreshSetupConnectsGrantedPeerToScope(t *testing.T) {
 	control := &scopeSetupControl{}
 	prompt := &setupAnswers{fakeTerminal: fakeTerminal{apiID: 12, apiHash: []byte("secret")}, answers: []string{
-		"test2", "phone", "restricted", "saved", "yes", "24", "0", "no", "no", "yes",
+		"test2", "phone", "restricted", "saved", "yes", "24", "0", "no", "no", "no", "yes",
 		"yes", "project", "1", "yes", "json",
 	}}
 	manager := &setupService{}
@@ -77,7 +77,7 @@ func TestFreshSetupConnectsGrantedPeerToScope(t *testing.T) {
 	if err := s.run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(control.scopes.saved.Peers, []model.PeerID{control.saved.Peer}) || control.scopes.saved.Name != "project" || control.accessWrites != 0 || control.saved.ReadThrough != 0 || control.saved.Images || control.saved.Documents {
+	if !reflect.DeepEqual(control.scopes.saved.Peers, []model.PeerID{control.saved.Peer}) || control.scopes.saved.Name != "project" || control.accessWrites != 0 || control.saved.ReadThrough != 0 || control.saved.Images || control.saved.Documents || control.saved.VoiceNotes {
 		t.Fatal("scope or authority differs from confirmed choices", control)
 	}
 	if len(prompt.answers) != 0 || !reflect.DeepEqual(manager.actions, []string{"install", "start"}) || !strings.Contains(output.String(), `"mcpServers"`) || strings.Contains(output.String(), "secret") {

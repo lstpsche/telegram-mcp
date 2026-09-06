@@ -14,9 +14,16 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/policy"
 )
 
+type mediaKind uint8
+
+const (
+	mediaImage mediaKind = iota
+	mediaDocument
+	mediaVoice
+)
 const mediaLifetime = 5 * time.Minute
 
-type ImageContent struct {
+type MediaContent struct {
 	Data     []byte
 	MIMEType string
 }
@@ -49,17 +56,19 @@ func (s *Service) mediaMAC(domain, value string) []byte {
 	return mac.Sum(nil)
 }
 
-func (s *Service) mediaDigest(source model.MediaSource, document bool) string {
+func (s *Service) mediaDigest(source model.MediaSource, kind mediaKind) string {
 	domain := "image-source-v1"
-	if document {
+	if kind == mediaDocument {
 		domain = "document-source-v1"
+	} else if kind == mediaVoice {
+		domain = "voice-source-v1"
 	}
 	encoded, _ := json.Marshal(source) // Fixed scalar fields cannot fail to encode.
 	return base64.RawURLEncoding.EncodeToString(s.mediaMAC(domain, string(encoded)))
 }
 
-func (s *Service) signMediaHandle(handle mediaHandle, document bool) (string, error) {
-	_, prefix, domain := mediaOperation(document)
+func (s *Service) signMediaHandle(handle mediaHandle, kind mediaKind) (string, error) {
+	_, prefix, domain := mediaOperation(kind)
 	encoded, err := json.Marshal(handle)
 	if err != nil {
 		return "", model.TextError(model.ErrorInternal, err)
@@ -76,7 +85,7 @@ func (s *Service) imageDescriptor(candidate model.Candidate, grant policy.Grant,
 		return nil, model.TextError(model.ErrorPolicyDenied, nil)
 	}
 	source := *candidate.Image
-	if source.IsDocument() {
+	if candidate.Document != nil || candidate.Voice != nil || source.IsDocument() || source.IsVoice() {
 		return nil, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	if err := source.Validate(); err != nil {
@@ -84,23 +93,26 @@ func (s *Service) imageDescriptor(candidate model.Candidate, grant policy.Grant,
 	}
 	deadline := s.now().Add(mediaLifetime)
 	deadline = grant.Deadline(deadline)
-	handle := mediaHandle{Operation: "open_image", Message: candidate.Message.ID, Digest: s.mediaDigest(source, false), Authority: authority, Expires: deadline.Unix()}
-	token, err := s.signMediaHandle(handle, false)
+	handle := mediaHandle{Operation: "open_image", Message: candidate.Message.ID, Digest: s.mediaDigest(source, mediaImage), Authority: authority, Expires: deadline.Unix()}
+	token, err := s.signMediaHandle(handle, mediaImage)
 	if err != nil {
 		return nil, err
 	}
 	return &model.ImageDescriptor{Handle: token, Kind: source.Kind, MIMEType: source.MIMEType, Width: source.Width, Height: source.Height, Size: source.Size}, nil
 }
 
-func mediaOperation(document bool) (operation, prefix, domain string) {
-	if document {
+func mediaOperation(kind mediaKind) (operation, prefix, domain string) {
+	if kind == mediaDocument {
 		return "open_document", "doc1", "document-handle-v1"
+	}
+	if kind == mediaVoice {
+		return "open_voice_note", "vn1", "voice-handle-v1"
 	}
 	return "open_image", "im1", "image-handle-v1"
 }
 
-func (s *Service) decodeMediaHandle(token string, document bool) (mediaHandle, error) {
-	operation, prefix, domain := mediaOperation(document)
+func (s *Service) decodeMediaHandle(token string, kind mediaKind) (mediaHandle, error) {
+	operation, prefix, domain := mediaOperation(kind)
 	invalid := func() (mediaHandle, error) { return mediaHandle{}, model.TextError(model.ErrorInvalidReference, nil) }
 	if len(token) > 4096 {
 		return invalid()
@@ -141,29 +153,37 @@ type imageItem struct {
 // OpenImage releases original bytes only after authorization, validation, a hooked
 // receipt and a final exact-source check. Remote edits are not an atomic snapshot.
 func (s *Service) OpenImage(ctx context.Context, requestID, token string) (result Result, resultErr error) {
-	return s.openMedia(ctx, requestID, token, false)
+	return s.openMedia(ctx, requestID, token, mediaImage)
 }
 
 func (s *Service) OpenDocument(ctx context.Context, requestID, token string) (Result, error) {
-	return s.openMedia(ctx, requestID, token, true)
+	return s.openMedia(ctx, requestID, token, mediaDocument)
 }
 
-func mediaSource(candidate model.Candidate, document bool) *model.MediaSource {
-	if document {
-		if candidate.Image != nil {
-			return nil
+func mediaSource(candidate model.Candidate, kind mediaKind) *model.MediaSource {
+	count := 0
+	for _, source := range []*model.MediaSource{candidate.Image, candidate.Document, candidate.Voice} {
+		if source != nil {
+			count++
 		}
-		return candidate.Document
 	}
-	if candidate.Document != nil {
+	if count != 1 {
 		return nil
 	}
-	return candidate.Image
+	switch kind {
+	case mediaImage:
+		return candidate.Image
+	case mediaDocument:
+		return candidate.Document
+	case mediaVoice:
+		return candidate.Voice
+	}
+	return nil
 }
 
-func (s *Service) openMedia(ctx context.Context, requestID, token string, document bool) (result Result, resultErr error) {
-	operation, _, _ := mediaOperation(document)
-	handle, err := s.decodeMediaHandle(token, document)
+func (s *Service) openMedia(ctx context.Context, requestID, token string, kind mediaKind) (result Result, resultErr error) {
+	operation, _, _ := mediaOperation(kind)
+	handle, err := s.decodeMediaHandle(token, kind)
 	if err != nil {
 		return Result{}, err
 	}
@@ -171,7 +191,13 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, docume
 		return Result{}, model.TextError(model.ErrorNotReady, nil)
 	}
 	var download func(context.Context, model.Candidate) ([]byte, error)
-	if document {
+	if kind == mediaVoice {
+		backend, ok := s.backend.(voiceBackend)
+		if !ok {
+			return Result{}, model.TextError(model.ErrorNotReady, nil)
+		}
+		download = backend.DownloadVoice
+	} else if kind == mediaDocument {
 		backend, ok := s.backend.(documentBackend)
 		if !ok {
 			return Result{}, model.TextError(model.ErrorNotReady, nil)
@@ -214,7 +240,7 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, docume
 	if err != nil {
 		return Result{}, err
 	}
-	if (!document && !grant.Images) || (document && !grant.Documents) || (grant.Profile == policy.ProfileSelfAuthored && grant.Author != s.backend.SelfID()) || handle.Authority != (mediaAuthority{epoch, revision}) || handle.Expires > grant.Deadline(s.now().Add(mediaLifetime)).Unix() {
+	if (kind == mediaImage && !grant.Images) || (kind == mediaDocument && !grant.Documents) || (kind == mediaVoice && !grant.VoiceNotes) || (grant.Profile == policy.ProfileSelfAuthored && grant.Author != s.backend.SelfID()) || handle.Authority != (mediaAuthority{epoch, revision}) || handle.Expires > grant.Deadline(s.now().Add(mediaLifetime)).Unix() {
 		return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
 	}
 	check := func() error {
@@ -244,22 +270,22 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, docume
 		if err != nil {
 			return model.Candidate{}, err
 		}
-		if len(candidates) != 1 || candidates[0].Message.ID != handle.Message || mediaSource(candidates[0], document) == nil {
+		if len(candidates) != 1 || candidates[0].Message.ID != handle.Message || mediaSource(candidates[0], kind) == nil {
 			return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		candidate := candidates[0]
 		if err := grant.CheckMessage(candidate, s.backend.SelfID(), s.now()); err != nil {
 			return model.Candidate{}, err
 		}
-		media := mediaSource(candidate, document)
-		if media.IsDocument() != document {
+		media := mediaSource(candidate, kind)
+		if media.IsDocument() != (kind == mediaDocument) || media.IsVoice() != (kind == mediaVoice) {
 			return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		if err := media.Validate(); err != nil {
 			return model.Candidate{}, err
 		}
 		date, err := time.Parse(time.RFC3339Nano, candidate.Message.Date)
-		if err != nil || date.IsZero() || candidate.Message.Author.Kind() != model.PeerKindUser || s.mediaDigest(*media, document) != handle.Digest {
+		if err != nil || date.IsZero() || candidate.Message.Author.Kind() != model.PeerKindUser || s.mediaDigest(*media, kind) != handle.Digest {
 			return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		return candidate, check()
@@ -268,8 +294,10 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, docume
 	if err != nil {
 		return Result{}, err
 	}
-	immutableSource := *mediaSource(candidate, document)
-	if document {
+	immutableSource := *mediaSource(candidate, kind)
+	if kind == mediaVoice {
+		candidate.Voice = &immutableSource
+	} else if kind == mediaDocument {
 		candidate.Document = &immutableSource
 	} else {
 		candidate.Image = &immutableSource
@@ -282,7 +310,9 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, docume
 	if err := check(); err != nil {
 		return Result{}, err
 	}
-	if document {
+	if kind == mediaVoice {
+		err = validateVoiceData(immutableSource, data)
+	} else if kind == mediaDocument {
 		err = validateDocumentData(immutableSource, data)
 	} else {
 		err = validateImageData(immutableSource, data)
@@ -298,7 +328,10 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, docume
 		return Result{}, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	effect := model.ReadEffect{Kind: model.ReadEffectHistoryMarkedRead, ThroughMessageID: &handle.Message}
-	if document {
+	if kind == mediaVoice {
+		descriptor := &model.VoiceDescriptor{Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size, Duration: immutableSource.Duration}
+		result, err = prepare(requestID, []voiceItem{{ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Voice: descriptor}}, s.now(), false, effect, nil, nil)
+	} else if kind == mediaDocument {
 		descriptor := &model.DocumentDescriptor{Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size}
 		result, err = prepare(requestID, []documentItem{{ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Document: descriptor}}, s.now(), false, effect, nil, nil)
 	} else {
@@ -310,17 +343,21 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, docume
 	}
 	// Text serialization already checks both metadata mirrors. Add the single
 	// native content block and bounded resource URI plus JSON-RPC framing before any read effect.
-	contentBytes := base64.StdEncoding.EncodedLen(len(data))
-	if document && immutableSource.MIMEType == "text/plain" {
-		encoded, encodeErr := json.Marshal(string(data))
-		if encodeErr != nil {
-			return Result{}, model.TextError(model.ErrorInternal, encodeErr)
+	// PDFs retain their original size; image, voice and plain-text budgets remain.
+	if kind != mediaDocument || immutableSource.MIMEType != "application/pdf" {
+		contentBytes := base64.StdEncoding.EncodedLen(len(data))
+		if kind == mediaDocument && immutableSource.MIMEType == "text/plain" {
+			encoded, encodeErr := json.Marshal(string(data))
+			if encodeErr != nil {
+				return Result{}, model.TextError(model.ErrorInternal, encodeErr)
+			}
+			contentBytes = len(encoded)
 		}
-		contentBytes = len(encoded)
+		if contentBytes+model.MaximumTextResultBytes+8192 > model.MaximumMediaResultBytes {
+			return Result{}, model.TextError(model.ErrorResultTooLarge, nil)
+		}
 	}
-	if contentBytes+model.MaximumTextResultBytes+8192 > model.MaximumMediaResultBytes {
-		return Result{}, model.TextError(model.ErrorResultTooLarge, nil)
-	}
+
 	if err := check(); err != nil {
 		return Result{}, err
 	}
@@ -335,10 +372,12 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, docume
 	if current.Message.Author != candidate.Message.Author || current.Message.Date != candidate.Message.Date {
 		return Result{}, model.TextError(model.ErrorInvalidReference, nil)
 	}
-	if document {
+	if kind == mediaVoice {
+		result.Voice = &MediaContent{Data: data, MIMEType: immutableSource.MIMEType}
+	} else if kind == mediaDocument {
 		result.Document = &DocumentContent{Data: data, MIMEType: immutableSource.MIMEType, URI: "telegram-document:" + token}
 	} else {
-		result.Image = &ImageContent{Data: data, MIMEType: immutableSource.MIMEType}
+		result.Image = &MediaContent{Data: data, MIMEType: immutableSource.MIMEType}
 	}
 	count = 1
 	return result, nil
