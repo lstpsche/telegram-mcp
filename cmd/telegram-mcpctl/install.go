@@ -32,6 +32,10 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		return 1
 	}
 	if setup {
+		if err := verifyReleasePrograms(ctx, directory, args[2], runClientCommand); err != nil {
+			fmt.Fprintln(stderr, "telegram-mcpctl: release executable identity check failed")
+			return 1
+		}
 		command := exec.CommandContext(ctx, filepath.Join(directory, distribution.Binary("telegram-mcpctl")), "setup")
 		command.Stdin = os.Stdin
 		command.Stdout = stdout

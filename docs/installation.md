@@ -150,7 +150,25 @@ credentials, sessions and runtime files. Stop and uninstall remain possible when
 an old executable has been removed or has unsafe permissions. Missing or already
 running states are explicit errors.
 
-For an upgrade, prepare a fresh binary directory, stop and uninstall the old
+Managed installations publish stable regular `telegram-mcp` and `telegram-mcpctl`
+entry programs directly under `Telegram MCP/install`. Use the stable control
+program for subsequent commands. It delegates to the version selected by the
+validated service registration; no version-pointer file or symlink is used.
+The stable relay only transfers bytes to the existing account endpoint and is
+not overwritten during upgrades. `agent-config` selects this stable relay path.
+
+Run `telegram-mcpctl upgrade --version X.Y.Z` through the stable control program.
+The command verifies a complete release and all three program version identities
+before stopping the old service. It installs and starts the new registration,
+waits for a responding MCP server, and retains old binaries and account data.
+Managed downgrades are refused because metadata migrations are forward-only.
+After a failed activation, inspect `doctor`; rerunning the same upgrade can
+continue from an absent or already-selected registration. No rollback or
+content-readiness claim is made on failure. Existing manual installations can
+be explicitly adopted through this command; update client paths once to the
+stable relay. Subsequent managed upgrades need only client reconnection.
+
+For a manual upgrade, prepare a fresh binary directory, stop and uninstall the old
 registration, then install and start the new directory. Update the MCP client's
 relay path. The installer does not restore old binaries after an error. Metadata
 migrations are forward-only; downgrading is not a general recovery procedure.

@@ -43,6 +43,9 @@ type terminalFactory func() (terminal, error)
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if handled, code := dispatchControl(ctx, os.Args[1:]); handled {
+		os.Exit(code)
+	}
 	os.Exit(runContext(ctx, os.Args[1:], os.Stdout, os.Stderr, defaultController, defaultTerminal))
 }
 
@@ -70,6 +73,9 @@ func runContext(
 		return 0
 	}
 
+	if args[0] == "upgrade" {
+		return runUpgradeCommand(ctx, args, stdout, stderr)
+	}
 	if args[0] == "install" {
 		return runInstallCommand(ctx, args, stdout, stderr)
 	}
@@ -228,7 +234,8 @@ func parseConfiguration(args []string) (string, int, bool) {
 func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "usage:")
 	fmt.Fprintln(writer, "  telegram-mcpctl setup")
-	fmt.Fprintln(writer, "  telegram-mcpctl install --version X.Y.Z")
+	fmt.Fprintln(writer, "  telegram-mcpctl install --version X.Y.Z [--setup]")
+	fmt.Fprintln(writer, "  telegram-mcpctl upgrade --version X.Y.Z")
 	fmt.Fprintln(writer, "  telegram-mcpctl migrate-keychain --accept-plaintext-storage")
 	fmt.Fprintln(writer, "Metadata maintenance requires a stopped daemon; backup files require an absolute path in a private 0700 directory.")
 	fmt.Fprintln(writer, "  telegram-mcpctl backup --file ABSOLUTE_FILE")

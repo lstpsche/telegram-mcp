@@ -117,7 +117,29 @@ func readBounded(f *os.File, max int64) ([]byte, error) {
 }
 
 // WriteFile publishes a complete, synced file. replace=false never overwrites.
-func WriteFile(path string, data []byte, replace bool) (result error) {
+func WriteFile(path string, data []byte, replace bool) error {
+	return writeFile(path, data, replace, false)
+}
+
+// WriteExecutable publishes an owner-only executable without replacing a file.
+func WriteExecutable(path string, data []byte) error { return writeFile(path, data, false, true) }
+
+// CheckExecutable verifies a private executable without reading its contents.
+func CheckExecutable(path string) error {
+	if err := validPath(path); err != nil {
+		return err
+	}
+	if err := CheckDirectory(filepath.Dir(path)); err != nil {
+		return err
+	}
+	file, err := openExecutable(path)
+	if err != nil {
+		return err
+	}
+	return file.Close()
+}
+
+func writeFile(path string, data []byte, replace, executable bool) (result error) {
 	if err := validPath(path); err != nil {
 		return err
 	}
@@ -140,7 +162,13 @@ func WriteFile(path string, data []byte, replace bool) (result error) {
 			result = errors.Join(result, err)
 		}
 	}()
-	_, writeError := f.Write(data)
+	var writeError error
+	if executable {
+		writeError = f.Chmod(0700)
+	}
+	if writeError == nil {
+		_, writeError = f.Write(data)
+	}
 	if writeError == nil {
 		writeError = f.Sync()
 	}

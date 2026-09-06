@@ -147,6 +147,9 @@ func (i *Installer) Install(ctx context.Context, version string) (directory stri
 	if !ValidVersion(version) || !platformPattern.MatchString(i.Platform) || i.Client == nil {
 		return "", errors.New("invalid release selection")
 	}
+	if order, err := CompareVersions(version, "0.2.0"); err != nil || order < 0 {
+		return "", errors.New("managed installation requires version 0.2.0 or later")
+	}
 	if err := privatefs.EnsureDirectory(i.Root); err != nil {
 		return "", err
 	}
@@ -172,7 +175,14 @@ func (i *Installer) Install(ctx context.Context, version string) (directory stri
 	if hex.EncodeToString(digest[:]) != artifact.SHA256 {
 		return "", errors.New("release archive checksum mismatch")
 	}
-	return i.installArchive(ctx, version, archive)
+	directory, err = i.installArchive(ctx, version, archive)
+	if err != nil {
+		return "", err
+	}
+	if err := prepareEntries(i.Root, directory); err != nil {
+		return "", err
+	}
+	return directory, nil
 }
 
 func (i *Installer) installArchive(ctx context.Context, version string, data []byte) (directory string, result error) {
@@ -219,13 +229,13 @@ func (i *Installer) installArchive(ctx context.Context, version string, data []b
 		if err := privatefs.EnsureDirectory(filepath.Dir(destination)); err != nil {
 			return "", err
 		}
-		if err := privatefs.WriteFile(destination, body, false); err != nil {
-			return "", err
+		if isBinary(name, i.Platform) {
+			err = privatefs.WriteExecutable(destination, body)
+		} else {
+			err = privatefs.WriteFile(destination, body, false)
 		}
-		if runtime.GOOS != "windows" && isBinary(name, i.Platform) {
-			if err := os.Chmod(destination, 0700); err != nil {
-				return "", err
-			}
+		if err != nil {
+			return "", err
 		}
 	}
 	if err := ctx.Err(); err != nil {

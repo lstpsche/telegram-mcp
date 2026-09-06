@@ -10,6 +10,7 @@ import (
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/diagnostics"
+	"github.com/lstpsche/telegram-mcp/internal/distribution"
 	"github.com/lstpsche/telegram-mcp/internal/service"
 )
 
@@ -72,7 +73,12 @@ func runSupportCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 			fmt.Fprintln(stderr, "telegram-mcpctl: install the service before generating agent configuration")
 			return 1
 		}
-		configuration := map[string]any{"mcpServers": map[string]any{"telegram": map[string]string{"command": installed.Relay}}}
+		relay, err := distribution.Relay(installed.BinDir, installed.Relay)
+		if err != nil {
+			writeSupportError(stderr, err)
+			return 1
+		}
+		configuration := map[string]any{"mcpServers": map[string]any{"telegram": map[string]string{"command": relay}}}
 		return writeSupportJSON(stdout, stderr, configuration)
 	}
 	report, err := local.inspect(ctx)

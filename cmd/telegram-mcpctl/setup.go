@@ -14,6 +14,8 @@ import (
 	operatorcli "github.com/lstpsche/telegram-mcp/internal/cli"
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/diagnostics"
+	"github.com/lstpsche/telegram-mcp/internal/distribution"
+	"github.com/lstpsche/telegram-mcp/internal/service"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
 )
 
@@ -87,6 +89,22 @@ func (s *setupSession) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if installed != nil {
+		root, err := distribution.DefaultRoot()
+		if err != nil {
+			return err
+		}
+		previous, next := distribution.ManagedVersion(root, installed.BinDir), distribution.ManagedVersion(root, s.binDir)
+		if previous != "" && next != "" {
+			order, err := distribution.CompareVersions(next, previous)
+			if err != nil {
+				return err
+			}
+			if order < 0 {
+				return errors.New("managed downgrades are not supported")
+			}
+		}
+	}
 	report, err := s.local.inspect(ctx)
 	if err != nil {
 		return err
@@ -154,6 +172,18 @@ func (s *setupSession) run(ctx context.Context) error {
 	if err := s.chooseAccess(ctx); err != nil {
 		return err
 	}
+	if installed != nil && installed.BinDir != s.binDir {
+		if err := s.confirm(ctx, "Switch the service to the binaries running this setup? Existing binaries and account data will be retained."); err != nil {
+			return err
+		}
+		if err := s.local.service.Stop(ctx); err != nil && !errors.Is(err, service.ErrServiceAbsent) {
+			return err
+		}
+		if err := s.local.service.Uninstall(ctx); err != nil {
+			return err
+		}
+		installed = nil
+	}
 	if installed == nil {
 		value, err := s.local.service.Install(ctx, s.binDir)
 		if err != nil {
@@ -167,7 +197,11 @@ func (s *setupSession) run(ctx context.Context) error {
 	if _, err := waitForReady(ctx, s.local.inspect); err != nil {
 		return err
 	}
-	if err := s.connectClient(ctx, installed.Relay); err != nil {
+	relay, err := distribution.Relay(installed.BinDir, installed.Relay)
+	if err != nil {
+		return err
+	}
+	if err := s.connectClient(ctx, relay); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintln(s.output, "Setup complete: the service responds and account reads are ready. Access remains governed by your selected policy. Reconnect your client and ask it to check Telegram status.")
@@ -210,6 +244,10 @@ func (s *setupSession) chooseAccess(ctx context.Context) error {
 }
 
 func waitForReady(ctx context.Context, inspect func(context.Context) (diagnostics.Report, error)) (diagnostics.Report, error) {
+	return waitForRuntime(ctx, inspect, true)
+}
+
+func waitForRuntime(ctx context.Context, inspect func(context.Context) (diagnostics.Report, error), reads bool) (diagnostics.Report, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	for {
@@ -217,7 +255,7 @@ func waitForReady(ctx context.Context, inspect func(context.Context) (diagnostic
 		if err != nil {
 			return diagnostics.Report{}, err
 		}
-		if report.MCP && report.MessageReads != nil && *report.MessageReads {
+		if report.MCP && (!reads || (report.MessageReads != nil && *report.MessageReads)) {
 			return report, nil
 		}
 		if report.AccountState != nil && *report.AccountState == daemon.StateReauthRequired {
