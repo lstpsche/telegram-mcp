@@ -1,7 +1,7 @@
 #!/bin/sh
 # Download the verified control program; it installs and checks the full release.
 set -eu
-version=${1:-UNRELEASED}
+version=${1:-0.3.0}
 if [ "$#" -gt 1 ] || ! printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
   echo 'Usage: sh install.sh [X.Y.Z]' >&2
   exit 2

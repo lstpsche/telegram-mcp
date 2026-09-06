@@ -31,22 +31,47 @@ Search, catch-up, and unread inspection do not mark chats read. **Opening histor
 
 ## Installation
 
-The unified `telegram-mcp` command documented below is available in current
-source builds and will ship in the next release. Build it using the
-[development instructions](#development) or the
-[private installation guide](docs/installation.md).
-
-The published [v0.2.0 release](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.2.0)
-and Homebrew formula use the earlier command interface. For those binaries,
-follow the [v0.2.0 installation instructions](https://github.com/lstpsche/telegram-mcp/blob/v0.2.0/README.md).
+On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsche/homebrew-tap):
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
+telegram-mcp install --version 0.3.0 --setup
 ```
 
-Homebrew's service uses private copies outside the Cellar; follow the formula's
-printed instructions to create that installation. Other taps provide unrelated
-projects with the same executable name, so use the fully qualified formula.
+The second command creates a private per-user installation and starts setup.
+The service uses copies outside Homebrew's Cellar, so `brew cleanup` cannot
+remove its binaries. Use the printed relay path in your MCP client.
+
+You can also use the checksum-verified installer without Homebrew or Go.
+Download and inspect the script before running it if desired.
+
+**macOS / Linux**
+
+```sh
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.3.0/install.sh
+sh install.sh
+```
+
+**Windows PowerShell, without elevation**
+
+```powershell
+Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.3.0/install.ps1 -OutFile install.ps1
+.\install.ps1
+```
+
+The scripts verify the standalone command, then the full archive and payload
+checksums. Downloads and checksums come from GitHub Releases; they establish
+integrity, not independent publisher identity. Credentials stay in your local
+interactive console.
+
+For manual installation, download an archive from [v0.3.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.3.0).
+Archives support macOS, Linux and Windows on amd64 and arm64, and contain
+`telegram-mcp`, `telegram-mcpd`, documentation and checksums. Extract into a new
+private directory and follow the [platform instructions](docs/installation.md).
+
+Other taps provide unrelated projects with the same executable name; use the
+fully qualified formula and inspect an existing installation before replacing it.
 
 Packages are unsigned and not notarized. Native CI covers macOS, Linux and Windows
 amd64; Windows desktop lifecycle and native Windows arm64 remain separate
@@ -56,7 +81,7 @@ qualification checks. See [distribution](docs/distribution.md).
 
 You need a Telegram account, your application's API ID and API hash, and an MCP client. Obtain application credentials through [Telegram's development tools](https://my.telegram.org). Before using real conversations with an AI system, establish eligibility under Telegram's terms and the rights and consent of the people affected; the setup flag records your attestation, not an exemption.
 
-Run `telegram-mcp setup` after building the two executables. From their directory,
+The installer starts `telegram-mcp setup`. For manual or source installations,
 run `./telegram-mcp setup` (`.\telegram-mcp.exe setup` on Windows).
 
 The guide handles:

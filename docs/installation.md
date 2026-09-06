@@ -9,12 +9,12 @@ Homebrew users on macOS or Linux can install with:
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
+telegram-mcp install --version 0.3.0 --setup
 ```
 
-The current formula ships v0.2.0 with the earlier command interface; follow
-its printed caveats or the [versioned guide](https://github.com/lstpsche/telegram-mcp/blob/v0.2.0/docs/installation.md).
-The commands below describe current source builds. The managed installer creates
-private copies outside the Cellar before starting the human setup guide. Use the stable relay path printed by setup or
+Homebrew supplies checksum-pinned platform binaries. The second command creates
+private copies outside the Cellar, then starts the human setup guide. Use the
+stable relay path printed by setup or
 `agent-config`, not the Homebrew symlink, in your MCP client. Do not run `setup`
 directly from the Cellar or use `brew services`: the private installation and
 Telegram MCP's service manager own the runtime.
@@ -32,10 +32,9 @@ For a managed release installation, download `install.sh` (macOS/Linux) or
 user. The script verifies a standalone control executable, which downloads and
 verifies the full archive before starting guided setup. The scripts accept an
 explicit stable version; release assets default to their packaged version.
-Source templates require an explicit version and target the unified-command
-asset layout, which is not available in v0.2.0. They do not require Go.
+The source scripts default to 0.3.0. They do not require Go.
 
-The equivalent control command is `telegram-mcp install --version X.Y.Z --setup`.
+The equivalent control command is `telegram-mcp install --version 0.3.0 --setup`.
 Omit `--setup` to prepare files without touching account or service state.
 Managed versions live under the OS user configuration directory at
 `Telegram MCP/install/versions/X.Y.Z`. Existing versions are checked in full and
