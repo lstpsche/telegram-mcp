@@ -315,6 +315,9 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 			}
 		}
 	}
+	if message.GroupedID != 0 || message.Flags.Has(17) {
+		candidate.Unsupported = candidate.Unsupported || message.GroupedID == 0 || (image == nil && document == nil && voice == nil)
+	}
 	if message.ReplyTo != nil {
 		reply, ok := message.ReplyTo.(*tg.MessageReplyHeader)
 		if !ok {
@@ -401,6 +404,12 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 		return model.Candidate{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
 	if !candidate.Protected && !candidate.Ephemeral && !candidate.Quoted && !candidate.Unsupported {
+		if message.GroupedID != 0 {
+			candidate.Message.AlbumID, err = model.NewAlbumID(peer, message.GroupedID)
+			if err != nil {
+				return model.Candidate{}, err
+			}
+		}
 		candidate.Message.Forward = forward
 		candidate.Message.Text = message.Message
 		candidate.Message.Date = time.Unix(int64(message.Date), 0).UTC().Format(time.RFC3339)

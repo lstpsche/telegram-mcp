@@ -144,6 +144,7 @@ func (s *Service) decodeMediaHandle(token string, kind mediaKind) (mediaHandle, 
 }
 
 type imageItem struct {
+	AlbumID     string                 `json:"album_id,omitempty"`
 	ReplyTo     *model.MessageID       `json:"reply_to,omitempty"`
 	ChannelPost *model.ChannelPost     `json:"channel_post,omitempty"`
 	Forward     *model.Forward         `json:"forward,omitempty"`
@@ -339,19 +340,19 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 	if err != nil {
 		return Result{}, err
 	}
-	if current.Message.Author != candidate.Message.Author || current.Message.Date != candidate.Message.Date || !model.SameForward(current.Message.Forward, candidate.Message.Forward) || !sameChannelPost(current.Message.ChannelPost, candidate.Message.ChannelPost) || !sameReply(current.Message.ReplyTo, candidate.Message.ReplyTo) {
+	if !sameMediaAttribution(current.Message, candidate.Message) {
 		return Result{}, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	effect := model.ReadEffect{Kind: model.ReadEffectHistoryMarkedRead, ThroughMessageID: &handle.Message}
 	if kind == mediaVoice {
 		descriptor := &model.VoiceDescriptor{Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size, Duration: immutableSource.Duration}
-		result, err = prepare(requestID, []voiceItem{{ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Voice: descriptor}}, s.now(), false, effect, nil, nil)
+		result, err = prepare(requestID, []voiceItem{{AlbumID: candidate.Message.AlbumID, ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Voice: descriptor}}, s.now(), false, effect, nil, nil)
 	} else if kind == mediaDocument {
 		descriptor := &model.DocumentDescriptor{Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size}
-		result, err = prepare(requestID, []documentItem{{ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Document: descriptor}}, s.now(), false, effect, nil, nil)
+		result, err = prepare(requestID, []documentItem{{AlbumID: candidate.Message.AlbumID, ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Document: descriptor}}, s.now(), false, effect, nil, nil)
 	} else {
 		descriptor := &model.ImageDescriptor{Handle: token, Kind: immutableSource.Kind, MIMEType: immutableSource.MIMEType, Width: immutableSource.Width, Height: immutableSource.Height, Size: immutableSource.Size}
-		result, err = prepare(requestID, []imageItem{{ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Image: descriptor}}, s.now(), false, effect, nil, nil)
+		result, err = prepare(requestID, []imageItem{{AlbumID: candidate.Message.AlbumID, ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Image: descriptor}}, s.now(), false, effect, nil, nil)
 	}
 	if err != nil {
 		return Result{}, err
@@ -384,7 +385,7 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 	if err != nil {
 		return Result{}, err
 	}
-	if current.Message.Author != candidate.Message.Author || current.Message.Date != candidate.Message.Date || !model.SameForward(current.Message.Forward, candidate.Message.Forward) || !sameChannelPost(current.Message.ChannelPost, candidate.Message.ChannelPost) || !sameReply(current.Message.ReplyTo, candidate.Message.ReplyTo) {
+	if !sameMediaAttribution(current.Message, candidate.Message) {
 		return Result{}, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	if kind == mediaVoice {
@@ -410,4 +411,9 @@ func sameReply(a, b *model.MessageID) bool {
 		return a == nil && b == nil
 	}
 	return *a == *b
+}
+
+func sameMediaAttribution(a, b model.Message) bool {
+	return a.AlbumID == b.AlbumID && a.Author == b.Author && a.Date == b.Date &&
+		model.SameForward(a.Forward, b.Forward) && sameChannelPost(a.ChannelPost, b.ChannelPost) && sameReply(a.ReplyTo, b.ReplyTo)
 }

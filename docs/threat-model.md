@@ -446,3 +446,12 @@ denied and excluded parents have one public unavailable state; network and
 freshness failures discard the result. Embedded quote content and cross-peer
 reply metadata remain excluded. Reply chains reuse existing receipt and output
 budgets, and media source checks also compare reply IDs. See [reply context](reply-context.md).
+
+## Album membership
+
+Album IDs bind grouping metadata to the exact containing peer/topic and preserve
+Telegram's 64-bit value without JSON numeric rounding. Grouping is never a grant
+or a reason to fetch siblings. Every member and caption follows existing policy;
+filtered members contribute no metadata, count or copied caption. Media opens
+compare membership around downloads and receipts. Page completion never proves
+album completeness. No album state is persisted. See [media albums](media-albums.md).

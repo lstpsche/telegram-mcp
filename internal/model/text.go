@@ -25,6 +25,7 @@ type ReplyChain struct {
 }
 
 type Message struct {
+	AlbumID     string              `json:"album_id,omitempty"`
 	ReplyTo     *MessageID          `json:"reply_to,omitempty"`
 	ReplyChain  *ReplyChain         `json:"reply_chain,omitempty"`
 	ChannelPost *ChannelPost        `json:"channel_post,omitempty"`
@@ -106,6 +107,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	AlbumID          string              `json:"album_id,omitempty"`
 	ReplyTo          *MessageID          `json:"reply_to,omitempty"`
 	ChannelPost      *ChannelPost        `json:"channel_post,omitempty"`
 	Forward          *Forward            `json:"forward,omitempty"`

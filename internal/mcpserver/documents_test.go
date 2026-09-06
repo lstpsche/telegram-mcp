@@ -135,6 +135,13 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool) {
 			delete(backend.data, oldID)
 		}
 	}
+	album, err := model.NewAlbumID(base.peer, -9007199254740993)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range backend.candidates {
+		backend.candidates[i].Message.AlbumID = album
+	}
 	backend.candidates[0].Message.ReplyTo = &backend.candidates[1].Message.ID
 	grant.Documents = true
 	if forwarded {
@@ -228,6 +235,13 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool) {
 		}
 		if name != "open_document" && len(result.Content) != 1 {
 			t.Fatal("discovery returned native media")
+		}
+		if name != "list_scopes" {
+			for _, raw := range content["items"].([]any) {
+				if raw.(map[string]any)["album_id"] != album {
+					t.Fatal("album identity lost over stdio")
+				}
+			}
 		}
 		if broadcast && name != "list_scopes" {
 			for _, raw := range content["items"].([]any) {

@@ -281,3 +281,10 @@ Messages, search hits and media results may include `reply_to`. The existing
 context tool accepts `reply_depth` (0–5, default 0) and reports bounded ancestor
 coverage on the target. Exact authorization, unavailable-parent behavior and
 combined bounds are defined in [reply context](reply-context.md).
+
+## Media albums
+
+Supported media members may include a conversation-scoped `album_id`. Captions
+remain on their original messages; grouping does not alter pagination, grants
+or attachment downloads. See [media albums](media-albums.md) for partial album
+semantics and source validation.

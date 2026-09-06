@@ -19,6 +19,8 @@ import (
 
 const peerPattern = `^tgpeer:v1:((self|user|chat):[1-9][0-9]*|channel:[1-9][0-9]*(:topic:[1-9][0-9]*)?)$`
 const scopePattern = `^tgscope:v1:[0-9a-f]{32}$`
+const albumPattern = `^tgalbum:v1:((self|user|chat):[1-9][0-9]*|channel:[1-9][0-9]*(:topic:[1-9][0-9]*)?):[0-9a-f]{16}$`
+
 const messagePattern = `^tgmsg:v1:((self|user|chat):[1-9][0-9]*|channel:[1-9][0-9]*(:topic:[1-9][0-9]*)?):[1-9][0-9]*$`
 
 func registerTextTools(server *mcp.Server, service *reader.Service) {
@@ -360,23 +362,23 @@ func textOutputSchema(kind string) json.RawMessage {
 		item = `{"type":"object","additionalProperties":false,"required":["id","title","closed","hidden","unread_count"],"properties":{"id":{"type":"string","pattern":"` + peerPattern + `"},"title":{"type":"string","maxLength":4096},"closed":{"type":"boolean"},"hidden":{"type":"boolean"},"unread_count":{"type":"integer","minimum":0,"maximum":2147483647}}}`
 	}
 	if kind == "messages" {
-		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","text"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"forward":` + forwardSchema + `,"channel_post":` + postSchema + `,"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"date":{"type":"string"},"reply_chain":{"type":"object","additionalProperties":false,"required":["depth","state"],"properties":{"depth":{"type":"integer","minimum":0,"maximum":5},"state":{"enum":["complete","depth_limit","unavailable"]}}},"text":{"type":"string"},"image":` + imageSchema + `,"document":` + documentSchema + `,"voice_note":` + voiceSchema + `}}`
+		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","text"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"forward":` + forwardSchema + `,"channel_post":` + postSchema + `,"album_id":{"type":"string","pattern":"` + albumPattern + `"},"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"date":{"type":"string"},"reply_chain":{"type":"object","additionalProperties":false,"required":["depth","state"],"properties":{"depth":{"type":"integer","minimum":0,"maximum":5},"state":{"enum":["complete","depth_limit","unavailable"]}}},"text":{"type":"string"},"image":` + imageSchema + `,"document":` + documentSchema + `,"voice_note":` + voiceSchema + `}}`
 	}
 	if kind == "image" {
-		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","image"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"forward":` + forwardSchema + `,"channel_post":` + postSchema + `,"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"date":{"type":"string"},"image":` + imageSchema + `}}`
+		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","image"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"forward":` + forwardSchema + `,"channel_post":` + postSchema + `,"album_id":{"type":"string","pattern":"` + albumPattern + `"},"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"date":{"type":"string"},"image":` + imageSchema + `}}`
 	}
 	if kind == "voice" {
-		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","voice_note"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"forward":` + forwardSchema + `,"channel_post":` + postSchema + `,"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"date":{"type":"string"},"voice_note":` + voiceSchema + `}}`
+		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","voice_note"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"forward":` + forwardSchema + `,"channel_post":` + postSchema + `,"album_id":{"type":"string","pattern":"` + albumPattern + `"},"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"date":{"type":"string"},"voice_note":` + voiceSchema + `}}`
 	}
 	if kind == "document" {
-		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","document"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"forward":` + forwardSchema + `,"channel_post":` + postSchema + `,"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"date":{"type":"string"},"document":` + documentSchema + `}}`
+		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","document"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"forward":` + forwardSchema + `,"channel_post":` + postSchema + `,"album_id":{"type":"string","pattern":"` + albumPattern + `"},"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"date":{"type":"string"},"document":` + documentSchema + `}}`
 	}
 	next := `{"type":"null"}`
 	if kind == "chats" || kind == "unread" || kind == "topics" {
 		next = `{"type":["string","null"],"maxLength":4096}`
 	}
 	if kind == "search" || kind == "catch_up" {
-		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","snippet","snippet_truncated"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"forward":` + forwardSchema + `,"channel_post":` + postSchema + `,"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"date":{"type":"string"},"snippet":{"type":"string","maxLength":240},"snippet_truncated":{"type":"boolean"},"image":` + imageSchema + `,"document":` + documentSchema + `,"voice_note":` + voiceSchema + `}}`
+		item = `{"type":"object","additionalProperties":false,"required":["id","author","date","snippet","snippet_truncated"],"properties":{"id":{"type":"string","pattern":"` + messagePattern + `"},"author":{"type":"string","pattern":"` + peerPattern + `"},"forward":` + forwardSchema + `,"channel_post":` + postSchema + `,"album_id":{"type":"string","pattern":"` + albumPattern + `"},"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"date":{"type":"string"},"snippet":{"type":"string","maxLength":240},"snippet_truncated":{"type":"boolean"},"image":` + imageSchema + `,"document":` + documentSchema + `,"voice_note":` + voiceSchema + `}}`
 		next = `{"type":["string","null"],"maxLength":4096}`
 	}
 	if kind == "unread" {

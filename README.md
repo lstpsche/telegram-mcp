@@ -216,6 +216,8 @@ Source after 0.5.0 also supports joined broadcast channels; see [channel access]
 
 Source after 0.5.0 also adds [reply references and bounded parent context](docs/reply-context.md). Use `reply_depth` on `get_message_context` to follow authorized parents.
 
+Supported [media album members](docs/media-albums.md) share an `album_id` in source after 0.5.0, preserving grouping across pages while keeping captions on their original messages.
+
 The MCP surface is read-first: sending, editing, deleting, account administration, authentication, and access changes are not agent tools. See [message access](docs/text-access.md) and [image access](docs/image-access.md) for exact boundaries.
 
 ## How It Works
