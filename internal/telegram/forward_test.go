@@ -30,7 +30,7 @@ func TestForwardCopiesPreserveOriginWithoutChangingContainer(t *testing.T) {
 				m.SavedPeerID = &tg.PeerChannel{ChannelID: 99}
 			}
 			m.SetFwdFrom(tg.MessageFwdHeader{Date: 99, FromID: origin, FromName: "untrusted label"})
-			c, err := normalizeMessage(peer, 1, m, map[int64]bool{1: true, 2: true})
+			c, err := normalizeMessage(peer, 1, m, map[int64]bool{1: true, 2: true}, false)
 			if err != nil || c.Unsupported || c.Message.Text == "" || c.Message.Forward == nil || !c.Forwarded || c.Message.ID.Peer() != peer {
 				t.Fatal("forward rejected or misrouted", err)
 			}
@@ -51,7 +51,7 @@ func TestForwardHeadersRejectInvalidOrImportedProvenance(t *testing.T) {
 	for _, h := range []tg.MessageFwdHeader{emptyPSA, {}, {Date: 99, Imported: true}, {Date: 99, PsaType: "notice"}, {Date: 99, FromName: strings.Repeat("x", 4097)}, {Date: 99, FromName: string([]byte{255})}, {Date: 99, FromID: &tg.PeerUser{UserID: 0}}} {
 		m := testMessage(10)
 		m.SetFwdFrom(h)
-		c, err := normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true})
+		c, err := normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true}, false)
 		if err != nil || !c.Unsupported || c.Message.Text != "" || c.Message.Forward != nil {
 			t.Fatal("invalid forward escaped", err)
 		}
@@ -61,7 +61,7 @@ func TestForwardHeadersRejectInvalidOrImportedProvenance(t *testing.T) {
 func TestForwardedMediaRetainsOrdinaryProtectionChecks(t *testing.T) {
 	for _, m := range []*tg.Message{testPhotoMessage(), testDocumentMessage(), attachmentMessage("application/pdf"), voiceMessage()} {
 		m.SetFwdFrom(tg.MessageFwdHeader{Date: 99, FromName: "hidden origin"})
-		c, err := normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true})
+		c, err := normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,7 +69,7 @@ func TestForwardedMediaRetainsOrdinaryProtectionChecks(t *testing.T) {
 			t.Fatal("forwarded media excluded")
 		}
 		m.Noforwards = true
-		c, err = normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true})
+		c, err = normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true}, false)
 		if err != nil {
 			t.Fatal(err)
 		}

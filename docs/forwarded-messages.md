@@ -5,7 +5,8 @@ PDF/plain-text attachments and voice notes. Existing media permissions and limit
 apply. No new tool or origin lookup is needed.
 
 Use the containing message ID for context or media handles. `author` identifies
-the sender in the containing conversation; in Saved Messages it is the account
+the sender in ordinary conversations, or the publisher in a broadcast channel;
+in Saved Messages it is the account
 owner. Consented grants match this sender and the containing peer/range. Full
 read includes supported copies. Self-authored grants exclude every forward;
 forwarding a message does not establish authorship of its content.

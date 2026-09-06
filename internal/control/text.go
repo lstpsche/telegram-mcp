@@ -150,7 +150,7 @@ func parseGrant(args []string) (policy.Grant, bool) {
 		return grant, false
 	}
 	grant.Author, err = model.ParsePeerID(values["--author"])
-	if err != nil || grant.Author.Kind() != model.PeerKindUser {
+	if err != nil {
 		return grant, false
 	}
 	grant.MinID, err = parseMessageNumber(values["--min-id"])
@@ -176,7 +176,7 @@ func parseGrant(args []string) (policy.Grant, bool) {
 		return grant, false
 	}
 	grant.Eligible = true
-	return grant, true
+	return grant, grant.ValidAuthor()
 }
 
 func parseMessageNumber(value string) (int32, error) {

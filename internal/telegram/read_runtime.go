@@ -374,7 +374,7 @@ func (a *Account) Acknowledge(ctx context.Context, peer model.PeerID, through in
 		return a.acknowledgeTopic(bounded, peer, input, through)
 	}
 	if channel, ok := input.(*tg.InputPeerChannel); ok {
-		return a.acknowledgeSupergroup(bounded, peer, channel, through)
+		return a.acknowledgeChannel(bounded, peer, channel, through)
 	}
 	result, err := a.reads.api.MessagesReadHistory(bounded, &tg.MessagesReadHistoryRequest{Peer: input, MaxID: int(through)})
 	if err != nil {

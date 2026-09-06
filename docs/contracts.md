@@ -231,7 +231,7 @@ requests, cursors and handles retain their deadlines. Absence means restricted
 mode. Disablement restores preserved exact grants. Every mode change increments
 the existing policy revision; logout and epoch rotation clear the setting.
 
-Ordinary non-forum supergroups use channel-kind IDs. Broadcasts and inaccessible/protected groups remain excluded. Forum content
+Ordinary non-forum supergroups and joined broadcasts use channel-kind IDs. Inaccessible/protected conversations remain excluded. Broadcast publisher authority and attribution follow [channel access](channel-access.md). Forum content
 requires an exact topic identity, as described in [topic access](topic-access.md). Live history/search responses
 must include the exact permitted entity and a positive channel pts, but channel
 pts is not stored or used as proof of continuous channel updates. Supergroup

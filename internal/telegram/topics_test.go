@@ -92,7 +92,7 @@ func TestTopicNormalizationRejectsCrossTopicBodies(t *testing.T) {
 	peer, _ := model.NewTopicPeer(parent, 7)
 	for _, root := range []int{1, 8} {
 		message := &tg.Message{ID: 20, PeerID: &tg.PeerChannel{ChannelID: 42}, FromID: &tg.PeerUser{UserID: 2}, Date: 100, Message: "must not escape", ReplyTo: &tg.MessageReplyHeader{ForumTopic: true, ReplyToTopID: root, ReplyToMsgID: 19}}
-		result, err := normalizeMessage(peer, 1, message, map[int64]bool{2: true})
+		result, err := normalizeMessage(peer, 1, message, map[int64]bool{2: true}, false)
 		if err == nil || result.Message.Text != "" {
 			t.Fatal("cross-topic content accepted")
 		}

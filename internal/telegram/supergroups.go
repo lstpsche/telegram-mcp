@@ -12,6 +12,11 @@ func ordinarySupergroup(group *tg.Channel) bool {
 	return group != nil && group.ID > 0 && group.Megagroup && !group.Broadcast && !group.Gigagroup && !group.Forum && !group.Monoforum && !group.Min && !group.Left && !group.Restricted && !group.Noforwards
 }
 
+// Joined broadcasts share channel transport, but never inherit forum semantics.
+func ordinaryBroadcast(channel *tg.Channel) bool {
+	return channel != nil && channel.ID > 0 && channel.Broadcast && !channel.Megagroup && !channel.Gigagroup && !channel.Forum && !channel.Monoforum && !channel.Min && !channel.Left && !channel.Restricted && !channel.Noforwards
+}
+
 // Channel hashes are adapter-owned navigation metadata, not content authority.
 // Discovery may need an excluded channel as its next pagination offset.
 func (r *readRuntime) saveChannels(ctx context.Context, groups []tg.ChatClass) error {
@@ -34,11 +39,11 @@ func (r *readRuntime) saveChannels(ctx context.Context, groups []tg.ChatClass) e
 	return nil
 }
 
-// Supergroups are fetched live, without subscribing to independent channel pts.
+// Supergroups and broadcasts are fetched live, without subscribing to independent channel pts.
 // Their receipt RPC returns Bool, not affected pts. Verify both success and the
 // server's exact dialog read position before the reader can release any body.
 // A false Bool is a valid RPC result (also accepted by TDLib), not an RPC error.
-func (a *Account) acknowledgeSupergroup(ctx context.Context, peer model.PeerID, input *tg.InputPeerChannel, through int32) error {
+func (a *Account) acknowledgeChannel(ctx context.Context, peer model.PeerID, input *tg.InputPeerChannel, through int32) error {
 	_, err := a.reads.api.ChannelsReadHistory(ctx, &tg.ChannelsReadHistoryRequest{Channel: &tg.InputChannel{ChannelID: input.ChannelID, AccessHash: input.AccessHash}, MaxID: int(through)})
 	if err != nil {
 		return readError(err)

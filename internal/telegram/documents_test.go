@@ -73,7 +73,7 @@ func TestUnsafeDocumentsExposeNeitherCaptionNorDescriptor(t *testing.T) {
 			m.Message = "private caption"
 			media := m.Media.(*tg.MessageMediaDocument)
 			mutate(m, media, media.Document.(*tg.Document))
-			c, err := normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true})
+			c, err := normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true}, false)
 			if err != nil || c.Document != nil || c.Image != nil || c.Message.Text != "" {
 				t.Fatal("unsafe document escaped", err)
 			}

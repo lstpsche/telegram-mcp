@@ -16,11 +16,12 @@ type DocumentContent struct {
 }
 
 type documentItem struct {
-	Forward  *model.Forward            `json:"forward,omitempty"`
-	ID       model.MessageID           `json:"id"`
-	Author   model.PeerID              `json:"author"`
-	Date     string                    `json:"date"`
-	Document *model.DocumentDescriptor `json:"document"`
+	ChannelPost *model.ChannelPost        `json:"channel_post,omitempty"`
+	Forward     *model.Forward            `json:"forward,omitempty"`
+	ID          model.MessageID           `json:"id"`
+	Author      model.PeerID              `json:"author"`
+	Date        string                    `json:"date"`
+	Document    *model.DocumentDescriptor `json:"document"`
 }
 
 func (s *Service) documentDescriptor(candidate model.Candidate, grant policy.Grant, authority mediaAuthority) (*model.DocumentDescriptor, error) {

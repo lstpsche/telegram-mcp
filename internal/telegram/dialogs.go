@@ -137,13 +137,12 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 	if err := a.reads.saveChannels(bounded, groups); err != nil {
 		return model.DialogPage{}, err
 	}
-	forums := map[model.PeerID]bool{}
-	supported := make(map[model.PeerID]string)
+	supported := make(map[model.PeerID]model.Chat)
 	self, err := model.NewPeerID(model.PeerKindSelf, a.reads.self.Load())
 	if err != nil {
 		return model.DialogPage{}, err
 	}
-	supported[self] = "Saved Messages"
+	supported[self] = model.Chat{ID: self, Title: "Saved Messages"}
 	for _, value := range users {
 		user, ok := value.(*tg.User)
 		if !ok || !readableUser(user) || user.ID == self.TelegramID() {
@@ -156,35 +155,36 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 		if err != nil {
 			return model.DialogPage{}, err
 		}
-		supported[id] = strings.TrimSpace(user.FirstName + " " + user.LastName)
+		supported[id] = model.Chat{ID: id, Title: strings.TrimSpace(user.FirstName + " " + user.LastName)}
 	}
 	for _, value := range groups {
 		var id model.PeerID
-		var title string
+		var chat model.Chat
 		switch group := value.(type) {
 		case *tg.Chat:
 			if !ordinaryChat(group) {
 				continue
 			}
 			id, err = model.NewPeerID(model.PeerKindChat, group.ID)
-			title = group.Title
+			chat.Title = group.Title
 		case *tg.Channel:
-			if !(ordinarySupergroup(group) || forumGroup(group)) {
+			if !(ordinarySupergroup(group) || ordinaryBroadcast(group) || forumGroup(group)) {
 				continue
 			}
 			if hash, ok := group.GetAccessHash(); !ok || hash == 0 {
 				continue
 			}
 			id, err = model.NewPeerID(model.PeerKindChannel, group.ID)
-			title = group.Title
-			forums[id] = group.Forum
+			chat.Title = group.Title
+			chat.Forum, chat.Broadcast = group.Forum, group.Broadcast
 		default:
 			continue
 		}
 		if err != nil {
 			return model.DialogPage{}, err
 		}
-		supported[id] = title
+		chat.ID = id
+		supported[id] = chat
 	}
 	result := model.DialogPage{Items: make([]model.DialogEntry, 0, len(dialogs)), Scanned: len(dialogs)}
 	var last *tg.Dialog
@@ -195,14 +195,14 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 			return model.DialogPage{}, err
 		}
 		last = dialog
-		title, ok := supported[id]
+		chat, ok := supported[id]
 		if !ok {
 			continue
 		}
-		if !utf8.ValidString(title) || len(title) > 4096 {
+		if !utf8.ValidString(chat.Title) || len(chat.Title) > 4096 {
 			return model.DialogPage{}, model.TextError(model.ErrorResultTooLarge, nil)
 		}
-		result.Items = append(result.Items, model.DialogEntry{Chat: model.Chat{ID: id, Title: title, Forum: forums[id]}, Unread: model.Unread{Peer: id, Count: dialog.UnreadCount, Marked: dialog.UnreadMark}})
+		result.Items = append(result.Items, model.DialogEntry{Chat: chat, Unread: model.Unread{Peer: id, Count: dialog.UnreadCount, Marked: dialog.UnreadMark}})
 	}
 	if !complete {
 		if last == nil {

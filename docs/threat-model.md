@@ -167,7 +167,7 @@ already allowed by the old items; it does not widen their ACLs.
 
 ## Excluded or deferred risk
 
-Broadcast channels, Secret Chats, protected content, expiring media,
+Secret Chats, protected content, expiring media,
 writes, HTTP, multi-account state, local content indexing, and broad experimental
 eligibility are absent from v1. Adding any of them requires a separate threat
 and contract plan.
@@ -202,8 +202,7 @@ reconfiguration. Logout removes only the selected session. Legacy credential
 bundles are accepted only as test credentials. No MCP tool can change these
 controls.
 
-Ordinary non-forum supergroups are read through live RPCs; broadcast channel
-content remains excluded. Telegram defines channel pts independently
+Ordinary non-forum supergroups and joined broadcasts are read through live RPCs. Telegram defines channel pts independently
 from common pts/qts and outer seq. The adapter removes channel pts events and
 channel entities before the pinned updates manager sees live batches or validated
 common differences, retaining the accepted common checkpoint and enclosing
@@ -414,3 +413,26 @@ PSA and malformed headers are excluded. Protected, ephemeral, quoted and unsafe
 media checks remain. Media delivery compares attribution around the download
 and receipt, withholding changed metadata and bytes. The forward object is never
 persisted, and names participate in the existing response budget.
+
+## Broadcast publisher authority
+
+Only joined, complete, unrestricted, unprotected broadcast entities are accepted.
+The containing channel is the publisher and the public author of its posts;
+optional sender IDs and signatures are untrusted display attribution. A post
+flag alone never upgrades a group into a broadcast. Each response must contain
+the matching eligible channel entity. Restricted grants require the same channel
+as peer and author with a consented profile. Self-authored grants and grants for
+a displayed person never authorize channel posts. Full read includes supported
+posts. Group send-as messages remain excluded; forum-topic authority is unchanged.
+
+Existing media permissions, source validation, budgets, policy leases and
+verified whole-prefix channel receipts apply. Sender/signature changes during
+media delivery withhold bytes. No joining, global lookup, independent channel
+checkpoint, source lookup or body cache is introduced. History receipts do not
+claim viewport visibility, view-counter increments or ad impressions.
+
+Telegram requires official sponsored-message support in channel-capable apps.
+The current headless interface cannot establish screen presentation or genuine
+impressions. Sponsored presentation remains an unresolved publication contract;
+synthetic source qualification is not proof of compliance or a release decision.
+See [channel access](channel-access.md) for the exact boundary.

@@ -36,7 +36,7 @@ func TestVoiceNormalizationRejectsUnsafeAudio(t *testing.T) {
 			m := voiceMessage()
 			d := m.Media.(*tg.MessageMediaDocument).Document.(*tg.Document)
 			mutate(m, d, d.Attributes[1].(*tg.DocumentAttributeAudio))
-			c, err := normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true})
+			c, err := normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true}, false)
 			if err != nil || c.Voice != nil || c.Message.Text != "" {
 				t.Fatal("unsafe audio escaped", err)
 			}

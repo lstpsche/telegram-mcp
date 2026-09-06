@@ -77,7 +77,7 @@ func TestDialogPagesTraverseExcludedBoundaryAndArchivedFolder(t *testing.T) {
 			}
 			switch calls {
 			case 1:
-				group := &tg.Channel{ID: 8, Broadcast: true, Title: "excluded title", Photo: &tg.ChatPhotoEmpty{}, Date: 100}
+				group := &tg.Channel{ID: 8, Broadcast: true, Left: true, Title: "excluded title", Photo: &tg.ChatPhotoEmpty{}, Date: 100}
 				group.SetAccessHash(789)
 				return encodeReadResponse(out, &tg.MessagesDialogsSlice{Count: 2, Dialogs: []tg.DialogClass{&tg.Dialog{Peer: &tg.PeerChannel{ChannelID: 8}, TopMessage: 4}}, Chats: []tg.ChatClass{group}, Messages: []tg.MessageClass{&tg.Message{ID: 4, PeerID: &tg.PeerChannel{ChannelID: 8}, Date: 90, Message: "incidental secret body"}}})
 			case 2:
@@ -86,6 +86,7 @@ func TestDialogPagesTraverseExcludedBoundaryAndArchivedFolder(t *testing.T) {
 					t.Fatal("offset triple/hash not preserved")
 				}
 				group := syntheticSupergroup()
+				group.Megagroup, group.Broadcast = false, true
 				return encodeReadResponse(out, &tg.MessagesDialogs{Dialogs: []tg.DialogClass{&tg.Dialog{Peer: &tg.PeerChannel{ChannelID: 42}, TopMessage: 7, UnreadCount: 3}}, Chats: []tg.ChatClass{group}})
 			case 3:
 				folder, ok := q.GetFolderID()
@@ -102,8 +103,8 @@ func TestDialogPagesTraverseExcludedBoundaryAndArchivedFolder(t *testing.T) {
 		t.Fatal("excluded page", first, err)
 	}
 	second, err := account.Dialogs(context.Background(), *first.Next, 1)
-	if err != nil || len(second.Items) != 1 || second.Items[0].Unread.Count != 3 || second.Next == nil || second.Next.Folder != 1 {
-		t.Fatal("supergroup page", second, err)
+	if err != nil || len(second.Items) != 1 || !second.Items[0].Chat.Broadcast || second.Items[0].Unread.Count != 3 || second.Next == nil || second.Next.Folder != 1 {
+		t.Fatal("broadcast page", second, err)
 	}
 	last, err := account.Dialogs(context.Background(), *second.Next, 1)
 	if err != nil || last.Next != nil || len(last.Items) != 0 || calls != 3 {

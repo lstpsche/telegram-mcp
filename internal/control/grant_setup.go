@@ -145,12 +145,12 @@ func (s *setupSession) guideGrant(ctx context.Context, now time.Time) error {
 		if err != nil {
 			return err
 		}
-		value, err = s.prompt.Ask(ctx, "Author: exact tgpeer:v1:user:... ID (one author per grant): ")
+		value, err = s.prompt.Ask(ctx, "Author: exact user ID, or the containing channel ID for consented broadcast posts: ")
 		if err != nil {
 			return err
 		}
 		grant.Author, err = model.ParsePeerID(value)
-		if err != nil || grant.Author.Kind() != model.PeerKindUser {
+		if err != nil {
 			return model.ErrInvalidReference
 		}
 		grant.Profile, err = s.prompt.Ask(ctx, "Basis: self-authored or consented. Choose only a basis you have independently established: ")

@@ -78,7 +78,7 @@ func validateDialogEntities(peer model.PeerID, users []tg.UserClass, chats []tg.
 	for _, value := range chats {
 		if peer.Kind() == model.PeerKindChannel && value.GetID() == peer.TelegramID() {
 			group, ok := value.(*tg.Channel)
-			if !ok || !(ordinarySupergroup(group) && peer.TopicID() == 0 || forumGroup(group) && peer.TopicID() != 0) {
+			if !ok || !((ordinarySupergroup(group) || ordinaryBroadcast(group)) && peer.TopicID() == 0 || forumGroup(group) && peer.TopicID() != 0) {
 				return model.TextError(model.ErrorUnsupportedPeer, nil)
 			}
 			matched = true
@@ -108,7 +108,7 @@ func (a *Account) Chat(ctx context.Context, peer model.PeerID) (model.Chat, erro
 		return model.Chat{}, err
 	}
 	var title string
-	forum := false
+	forum, broadcast := false, false
 	switch input := input.(type) {
 	case *tg.InputPeerSelf:
 		title = "Saved Messages"
@@ -138,10 +138,10 @@ func (a *Account) Chat(ctx context.Context, peer model.PeerID) (model.Chat, erro
 			return model.Chat{}, model.TextError(model.ErrorUnsupportedPeer, nil)
 		}
 		group, ok := groups[0].(*tg.Channel)
-		if !ok || group.ID != peer.TelegramID() || !(ordinarySupergroup(group) || forumGroup(group)) {
+		if !ok || group.ID != peer.TelegramID() || !(ordinarySupergroup(group) || ordinaryBroadcast(group) || forumGroup(group)) {
 			return model.Chat{}, model.TextError(model.ErrorUnsupportedPeer, nil)
 		}
-		forum = group.Forum
+		forum, broadcast = group.Forum, group.Broadcast
 		if peer.TopicID() != 0 {
 			if !forum {
 				return model.Chat{}, model.TextError(model.ErrorUnsupportedPeer, nil)
@@ -178,7 +178,7 @@ func (a *Account) Chat(ctx context.Context, peer model.PeerID) (model.Chat, erro
 	if err := a.reads.synchronize(bounded); err != nil {
 		return model.Chat{}, model.TextError(model.ErrorFreshnessDegraded, err)
 	}
-	return model.Chat{ID: peer, Title: title, Forum: forum && peer.TopicID() == 0}, nil
+	return model.Chat{ID: peer, Title: title, Broadcast: broadcast, Forum: forum && peer.TopicID() == 0}, nil
 }
 
 func (r *readRuntime) saveUsers(ctx context.Context, users []tg.UserClass) error {
@@ -245,6 +245,12 @@ func (r *readRuntime) normalizePage(ctx context.Context, peer model.PeerID, resu
 	if err := validateDialogEntities(peer, page.GetUsers(), page.GetChats()); err != nil {
 		return nil, err
 	}
+	broadcast := false
+	for _, value := range page.GetChats() {
+		if channel, ok := value.(*tg.Channel); ok && channel.ID == peer.TelegramID() && peer.Kind() == model.PeerKindChannel {
+			broadcast = ordinaryBroadcast(channel)
+		}
+	}
 	candidates := make([]model.Candidate, 0, len(page.GetMessages()))
 	seen := map[int]bool{}
 	for _, value := range page.GetMessages() {
@@ -252,7 +258,7 @@ func (r *readRuntime) normalizePage(ctx context.Context, peer model.PeerID, resu
 			return nil, model.TextError(model.ErrorTelegramUnavailable, errors.New("Telegram history contains duplicate IDs"))
 		}
 		seen[value.GetID()] = true
-		candidate, err := normalizeMessage(peer, r.self.Load(), value, authors)
+		candidate, err := normalizeMessage(peer, r.self.Load(), value, authors, broadcast)
 		if err != nil {
 			return nil, err
 		}
@@ -261,7 +267,7 @@ func (r *readRuntime) normalizePage(ctx context.Context, peer model.PeerID, resu
 	return candidates, nil
 }
 
-func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, authors map[int64]bool) (model.Candidate, error) {
+func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, authors map[int64]bool, broadcast bool) (model.Candidate, error) {
 	if value.GetID() <= 0 || value.GetID() > math.MaxInt32 {
 		return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
 	}
@@ -270,6 +276,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 		return model.Candidate{}, err
 	}
 	candidate := model.Candidate{Message: model.Message{ID: id}}
+	isBroadcast := broadcast && peer.Kind() == model.PeerKindChannel && peer.TopicID() == 0
 	message, ok := value.(*tg.Message)
 	if !ok {
 		candidate.Unsupported = true
@@ -292,7 +299,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	}
 	// SavedPeerID groups notes and forwarded copies; it never selects authority.
 	unsupportedSavedDialog := message.SavedPeerID != nil && (peer.Kind() != model.PeerKindSelf || peer.TelegramID() != self || (!candidate.Forwarded && !matchesPeer(peer, message.SavedPeerID)))
-	candidate.Unsupported = (candidate.Forwarded && forward == nil) || message.Post || message.Legacy || message.Offline || message.FromScheduled || unsupportedSavedDialog || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
+	candidate.Unsupported = (candidate.Forwarded && forward == nil) || (message.Post && !isBroadcast) || message.Legacy || message.Offline || message.FromScheduled || unsupportedSavedDialog || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
 	var image, document, voice *model.MediaSource
 	if message.Media != nil {
 		if _, empty := message.Media.(*tg.MessageMediaEmpty); !empty {
@@ -354,7 +361,31 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	if author > 0 {
 		candidate.Message.Author, _ = model.NewPeerID(model.PeerKindUser, author)
 	}
-	candidate.Unsupported = candidate.Unsupported || author <= 0 || !authors[author] || message.Date <= 0 || (message.Message == "" && image == nil && document == nil && voice == nil)
+	if isBroadcast {
+		candidate.Message.Author = peer
+		post := &model.ChannelPost{Signature: message.PostAuthor}
+		if message.FromID != nil {
+			var sender model.PeerID
+			var err error
+			switch from := message.FromID.(type) {
+			case *tg.PeerUser:
+				sender, err = model.NewPeerID(model.PeerKindUser, from.UserID)
+			case *tg.PeerChannel:
+				sender, err = model.NewPeerID(model.PeerKindChannel, from.ChannelID)
+			default:
+				err = model.ErrInvalidReference
+			}
+			if err != nil {
+				candidate.Unsupported = true
+			} else {
+				post.Sender = sender.String()
+			}
+		}
+		candidate.Message.ChannelPost = post
+	} else {
+		candidate.Unsupported = candidate.Unsupported || author <= 0 || !authors[author]
+	}
+	candidate.Unsupported = candidate.Unsupported || !candidate.Message.ValidAuthor() || message.Date <= 0 || (message.Message == "" && image == nil && document == nil && voice == nil)
 	if !utf8.ValidString(message.Message) || len(message.Message) > 64*1024 {
 		return model.Candidate{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
@@ -365,6 +396,8 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 		candidate.Image = image
 		candidate.Document = document
 		candidate.Voice = voice
+	} else {
+		candidate.Message.ChannelPost = nil
 	}
 	return candidate, nil
 }

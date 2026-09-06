@@ -98,11 +98,12 @@ func (f *documentWireBackend) Acknowledge(_ context.Context, peer model.PeerID, 
 }
 
 func TestDocumentsOverStdioRelay(t *testing.T) {
-	t.Run("ordinary", func(t *testing.T) { testDocumentsOverStdioRelay(t, false) })
-	t.Run("forwarded", func(t *testing.T) { testDocumentsOverStdioRelay(t, true) })
+	t.Run("ordinary", func(t *testing.T) { testDocumentsOverStdioRelay(t, false, false) })
+	t.Run("forwarded", func(t *testing.T) { testDocumentsOverStdioRelay(t, true, false) })
+	t.Run("broadcast", func(t *testing.T) { testDocumentsOverStdioRelay(t, false, true) })
 }
 
-func testDocumentsOverStdioRelay(t *testing.T, forwarded bool) {
+func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool) {
 	t.Helper()
 	_, base := wireService(t)
 	backend := newDocumentWireBackend(t, base)
@@ -120,6 +121,19 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded bool) {
 	grant, err := lease.Grant(context.Background(), base.peer)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if broadcast {
+		base.peer, _ = model.NewPeerID(model.PeerKindChannel, 42)
+		grant.Peer, grant.Author, grant.Profile = base.peer, base.peer, policy.ProfileConsented
+		for i := range backend.candidates {
+			c := &backend.candidates[i]
+			oldID := c.Message.ID
+			c.Message.ID, _ = model.NewMessageID(base.peer, oldID.TelegramID())
+			c.Message.Author = base.peer
+			c.Message.ChannelPost = &model.ChannelPost{Sender: base.author.String(), Signature: "untrusted signature"}
+			backend.data[c.Message.ID] = backend.data[oldID]
+			delete(backend.data, oldID)
+		}
 	}
 	grant.Documents = true
 	if forwarded {
@@ -213,6 +227,15 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded bool) {
 		}
 		if name != "open_document" && len(result.Content) != 1 {
 			t.Fatal("discovery returned native media")
+		}
+		if broadcast && name != "list_scopes" {
+			for _, raw := range content["items"].([]any) {
+				item := raw.(map[string]any)
+				post, ok := item["channel_post"].(map[string]any)
+				if !ok || post["sender"] != base.author.String() || item["author"] != base.peer.String() {
+					t.Fatal("channel publisher or sender lost over stdio")
+				}
+			}
 		}
 		if forwarded && name != "list_scopes" {
 			for _, raw := range content["items"].([]any) {

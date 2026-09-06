@@ -106,7 +106,7 @@ returned by discovery. Establish eligibility for discovery before invoking it.
 Titles are untrusted display data; use the immutable typed ID for authority.
 The adapter supports ordinary Saved Messages, users and bots, basic groups, and
 ordinary supergroups and individual forum topics. Supergroups use `tgpeer:v1:channel:<id>`;
-that ID kind does not authorize broadcast channels. Broadcast channels, Secret Chats, protected or inaccessible groups are excluded.
+joined broadcast channels use the same ID kind with separate publisher authority. Secret Chats, protected or inaccessible conversations are excluded. See [channel access](channel-access.md).
 Forum content requires an exact [topic ID](topic-access.md).
 Use discovery to establish typed IDs and current adapter-owned access hashes;
 missing hashes fail explicitly instead of guessing from Bot API encodings.
@@ -157,7 +157,7 @@ telegram-mcp grant \
 
 Replace the example identifiers, range and expiry with independently verified
 values. The peer and author require strict versioned IDs; usernames, titles,
-links and Bot API ID encodings are not accepted. The author must be user-kind. Bots may author messages in supported conversations;
+links and Bot API ID encodings are not accepted. The author must be user-kind for ordinary chats. For broadcast posts, use the exact containing channel as author with a consented profile; displayed senders and signatures do not authorize posts. Bots may author messages in supported conversations;
 their messages follow the same grants and exclusions as human-authored messages.
 Private bot dialogs follow these same rules.
 Message bounds are positive decimal IDs without leading zeros. The read

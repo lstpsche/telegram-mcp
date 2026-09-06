@@ -28,7 +28,7 @@ func testDocumentMessage() *tg.Message {
 
 func imageCandidate(t *testing.T, message *tg.Message) model.Candidate {
 	t.Helper()
-	candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true})
+	candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true}, false)
 	if err != nil || !safeMedia(candidate) {
 		t.Fatalf("image normalization failed: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestUnsafeMediasNeverExposeCaptionsOrDescriptors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			message := testPhotoMessage()
 			mutate(message)
-			candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true})
+			candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true}, false)
 			if err != nil || candidate.Image != nil || candidate.Message.Text != "" || candidate.Message.Date != "" {
 				t.Fatalf("unsafe image escaped: %v", err)
 			}
@@ -126,7 +126,7 @@ func TestUnsafeMediasNeverExposeCaptionsOrDescriptors(t *testing.T) {
 			message := testDocumentMessage()
 			media := message.Media.(*tg.MessageMediaDocument)
 			mutate(media.Document.(*tg.Document), media)
-			candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true})
+			candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true}, false)
 			if err != nil || candidate.Image != nil || candidate.Message.Text != "" {
 				t.Fatalf("unsafe attachment escaped: %v", err)
 			}

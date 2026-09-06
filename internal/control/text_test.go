@@ -237,3 +237,21 @@ func TestGrantImagesRequireStandaloneExplicitFlag(t *testing.T) {
 		}
 	}
 }
+
+func TestChannelGrantRequiresMatchingPublisherAndConsent(t *testing.T) {
+	args := grantArguments()
+	args[1], args[3] = "tgpeer:v1:channel:42", "tgpeer:v1:channel:42"
+	if _, ok := parseGrant(args); !ok {
+		t.Fatal("channel publisher rejected")
+	}
+	for _, change := range []struct {
+		index int
+		value string
+	}{{3, "tgpeer:v1:channel:99"}, {13, "self-authored"}, {1, "tgpeer:v1:channel:42:topic:7"}} {
+		invalid := append([]string(nil), args...)
+		invalid[change.index] = change.value
+		if _, ok := parseGrant(invalid); ok {
+			t.Fatal("invalid publisher authority accepted")
+		}
+	}
+}

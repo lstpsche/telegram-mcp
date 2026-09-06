@@ -13,20 +13,22 @@ const MaximumRPCIDBytes = 1024
 
 // Chat and Message contain untrusted display data. They are never audit records.
 type Chat struct {
-	Forum bool   `json:"forum,omitempty"`
-	ID    PeerID `json:"id"`
-	Title string `json:"title"`
+	Broadcast bool   `json:"broadcast,omitempty"`
+	Forum     bool   `json:"forum,omitempty"`
+	ID        PeerID `json:"id"`
+	Title     string `json:"title"`
 }
 
 type Message struct {
-	Forward  *Forward            `json:"forward,omitempty"`
-	Voice    *VoiceDescriptor    `json:"voice_note,omitempty"`
-	Document *DocumentDescriptor `json:"document,omitempty"`
-	Image    *ImageDescriptor    `json:"image,omitempty"`
-	ID       MessageID           `json:"id"`
-	Author   PeerID              `json:"author"`
-	Date     string              `json:"date"`
-	Text     string              `json:"text"`
+	ChannelPost *ChannelPost        `json:"channel_post,omitempty"`
+	Forward     *Forward            `json:"forward,omitempty"`
+	Voice       *VoiceDescriptor    `json:"voice_note,omitempty"`
+	Document    *DocumentDescriptor `json:"document,omitempty"`
+	Image       *ImageDescriptor    `json:"image,omitempty"`
+	ID          MessageID           `json:"id"`
+	Author      PeerID              `json:"author"`
+	Date        string              `json:"date"`
+	Text        string              `json:"text"`
 }
 
 // Candidate carries normalization evidence only inside the application.
@@ -96,6 +98,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	ChannelPost      *ChannelPost        `json:"channel_post,omitempty"`
 	Forward          *Forward            `json:"forward,omitempty"`
 	Voice            *VoiceDescriptor    `json:"voice_note,omitempty"`
 	Document         *DocumentDescriptor `json:"document,omitempty"`

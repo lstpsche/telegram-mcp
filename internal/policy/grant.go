@@ -40,8 +40,13 @@ type Grant struct {
 	fullRead    bool
 }
 
+// Channel publisher grants cover posts only and require a consented basis.
+func (g Grant) ValidAuthor() bool {
+	return g.Author.Kind() == model.PeerKindUser || (g.Profile == ProfileConsented && g.Author.Kind() == model.PeerKindChannel && g.Author.TopicID() == 0 && g.Author == g.Peer)
+}
+
 func (g Grant) validateFields() error {
-	if g.Peer.String() == "" || g.Author.Kind() != model.PeerKindUser || g.Author.String() == "" ||
+	if g.Peer.String() == "" || !g.ValidAuthor() || g.Author.String() == "" ||
 		g.MinID <= 0 || g.MaxID < g.MinID || g.ReadThrough < 0 ||
 		(g.Profile != ProfileSelfAuthored && g.Profile != ProfileConsented) ||
 		!g.Eligible || g.ExpiresAt.IsZero() {
@@ -91,7 +96,7 @@ func (g Grant) CheckMessage(candidate model.Candidate, self model.PeerID, now ti
 		return err
 	}
 	message := candidate.Message
-	if message.Author.Kind() != model.PeerKindUser || message.ID.Peer() != g.Peer || message.ID.TelegramID() < g.MinID ||
+	if !message.ValidAuthor() || message.ID.Peer() != g.Peer || message.ID.TelegramID() < g.MinID ||
 		message.ID.TelegramID() > g.MaxID || (!g.fullRead && message.Author != g.Author) ||
 		(g.Profile == ProfileSelfAuthored && (self.Kind() != model.PeerKindUser || message.Author != self)) {
 		return model.TextError(model.ErrorPolicyDenied, ErrDenied)

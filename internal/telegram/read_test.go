@@ -87,7 +87,7 @@ func TestReadNormalizationNeverCopiesUnsafeBodies(t *testing.T) {
 			m := testMessage(5)
 			m.Message = "secret body must never cross normalization"
 			mutate(m)
-			candidate, err := normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true})
+			candidate, err := normalizeMessage(testSelfPeer(t), 1, m, map[int64]bool{1: true}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -99,13 +99,13 @@ func TestReadNormalizationNeverCopiesUnsafeBodies(t *testing.T) {
 			}
 		})
 	}
-	safe, err := normalizeMessage(testSelfPeer(t), 1, testMessage(5), map[int64]bool{1: true})
+	safe, err := normalizeMessage(testSelfPeer(t), 1, testMessage(5), map[int64]bool{1: true}, false)
 	if err != nil || safe.Message.Text != "ordinary synthetic text" {
 		t.Fatalf("safe normalization: %v", err)
 	}
 	wrong := testMessage(5)
 	wrong.PeerID = &tg.PeerUser{UserID: 9}
-	if _, err := normalizeMessage(testSelfPeer(t), 1, wrong, map[int64]bool{1: true}); err == nil {
+	if _, err := normalizeMessage(testSelfPeer(t), 1, wrong, map[int64]bool{1: true}, false); err == nil {
 		t.Fatal("cross-dialog message accepted")
 	}
 }
@@ -519,7 +519,7 @@ func TestOwnSavedDialogMessagesNormalizeWithoutForwardedAuthority(t *testing.T) 
 		if message.Media != nil {
 			message.Message = ""
 		}
-		candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true})
+		candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true}, false)
 		if err != nil || candidate.Unsupported || candidate.Forwarded || candidate.Message.Author.String() != "tgpeer:v1:user:1" || candidate.Message.Date == "" {
 			t.Fatal("own saved message rejected", err)
 		}
@@ -527,7 +527,7 @@ func TestOwnSavedDialogMessagesNormalizeWithoutForwardedAuthority(t *testing.T) 
 			t.Fatal("captionless saved image lost descriptor")
 		}
 		message.Flags.Set(2)
-		candidate, err = normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true})
+		candidate, err = normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true}, false)
 		if err != nil || !candidate.Forwarded || candidate.Image != nil || candidate.Message.Text != "" {
 			t.Fatal("saved dialog bypassed forwarded-content exclusion", err)
 		}
@@ -538,7 +538,7 @@ func TestSavedDialogMetadataCannotAuthorizeOtherOrigins(t *testing.T) {
 	for _, saved := range []tg.PeerClass{&tg.PeerUser{UserID: 2}, &tg.PeerChat{ChatID: 1}, &tg.PeerChannel{ChannelID: 1}} {
 		message := testPhotoMessage()
 		message.SavedPeerID = saved
-		candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true})
+		candidate, err := normalizeMessage(testSelfPeer(t), 1, message, map[int64]bool{1: true}, false)
 		if err != nil || !candidate.Unsupported || candidate.Image != nil || candidate.Message.Text != "" {
 			t.Fatal("other saved origin released content", err)
 		}
@@ -551,7 +551,7 @@ func TestSavedDialogMetadataCannotAuthorizeOtherOrigins(t *testing.T) {
 			message.PeerID = &tg.PeerChat{ChatID: 2}
 		}
 		message.SavedPeerID = message.PeerID
-		candidate, err := normalizeMessage(peer, 1, message, map[int64]bool{1: true})
+		candidate, err := normalizeMessage(peer, 1, message, map[int64]bool{1: true}, false)
 		if err != nil || !candidate.Unsupported || candidate.Image != nil || candidate.Message.Text != "" {
 			t.Fatal("non-self dialog released saved content", err)
 		}

@@ -16,8 +16,15 @@ func syntheticSupergroup() *tg.Channel {
 	return g
 }
 
-func TestSupergroupLiveHistorySearchUnreadAndReceipt(t *testing.T) {
+func TestChannelLiveHistorySearchUnreadAndReceipt(t *testing.T) {
+	t.Run("supergroup", func(t *testing.T) { testChannelLiveReads(t, false) })
+	t.Run("broadcast", func(t *testing.T) { testChannelLiveReads(t, true) })
+}
+
+func testChannelLiveReads(t *testing.T, broadcast bool) {
+	t.Helper()
 	group := syntheticSupergroup()
+	group.Broadcast, group.Megagroup = broadcast, !broadcast
 	peer, _ := model.NewPeerID(model.PeerKindChannel, 42)
 	var history, search, receipts, readbacks int
 	read := false
@@ -33,13 +40,13 @@ func TestSupergroupLiveHistorySearchUnreadAndReceipt(t *testing.T) {
 			if !ok || p.ChannelID != 42 || q.MinID != 0 || q.MaxID != 0 {
 				t.Fatal("wrong channel history routing")
 			}
-			return encodeReadResponse(out, &tg.MessagesChannelMessages{Pts: 12, Messages: []tg.MessageClass{&tg.Message{ID: 7, PeerID: &tg.PeerChannel{ChannelID: 42}, FromID: &tg.PeerUser{UserID: 2}, Date: 100, Message: "synthetic group text"}}, Users: []tg.UserClass{&tg.User{ID: 2}}, Chats: []tg.ChatClass{group}})
+			return encodeReadResponse(out, &tg.MessagesChannelMessages{Pts: 12, Messages: []tg.MessageClass{&tg.Message{ID: 7, Post: broadcast, PeerID: &tg.PeerChannel{ChannelID: 42}, FromID: &tg.PeerUser{UserID: 2}, Date: 100, Message: "synthetic group text"}}, Users: []tg.UserClass{&tg.User{ID: 2}}, Chats: []tg.ChatClass{group}})
 		case *tg.MessagesSearchRequest:
 			search++
 			if _, ok := q.Peer.(*tg.InputPeerChannel); !ok {
 				t.Fatal("search not peer scoped")
 			}
-			return encodeReadResponse(out, &tg.MessagesChannelMessages{Pts: 12, Messages: []tg.MessageClass{&tg.Message{ID: 7, PeerID: &tg.PeerChannel{ChannelID: 42}, FromID: &tg.PeerUser{UserID: 2}, Date: 100, Message: "synthetic group text"}}, Users: []tg.UserClass{&tg.User{ID: 2}}, Chats: []tg.ChatClass{group}})
+			return encodeReadResponse(out, &tg.MessagesChannelMessages{Pts: 12, Messages: []tg.MessageClass{&tg.Message{ID: 7, Post: broadcast, PeerID: &tg.PeerChannel{ChannelID: 42}, FromID: &tg.PeerUser{UserID: 2}, Date: 100, Message: "synthetic group text"}}, Users: []tg.UserClass{&tg.User{ID: 2}}, Chats: []tg.ChatClass{group}})
 		case *tg.ChannelsReadHistoryRequest:
 			receipts++
 			if q.MaxID != 7 {
@@ -65,6 +72,9 @@ func TestSupergroupLiveHistorySearchUnreadAndReceipt(t *testing.T) {
 	messages, err := account.History(context.Background(), model.HistoryQuery{Peer: peer, MinID: 1, MaxID: 2147483647, Limit: 20})
 	if err != nil || len(messages) != 1 || messages[0].Message.Text != "synthetic group text" {
 		t.Fatal("channel history", err)
+	}
+	if broadcast && (messages[0].Message.Author != peer || messages[0].Message.ChannelPost == nil) {
+		t.Fatal("channel publisher lost")
 	}
 	if _, err := account.Search(context.Background(), model.SearchQuery{Peer: peer, Query: "synthetic", MinID: 1, MaxID: 2147483647, Limit: 20}); err != nil {
 		t.Fatal(err)
@@ -189,7 +199,7 @@ func TestSupergroupRevalidatesHistoryEntityAndExactImage(t *testing.T) {
 			message := testPhotoMessage()
 			message.PeerID = &tg.PeerChannel{ChannelID: 42}
 			message.FromID = &tg.PeerUser{UserID: 2}
-			expected, err := normalizeMessage(peer, 1, message, map[int64]bool{2: true})
+			expected, err := normalizeMessage(peer, 1, message, map[int64]bool{2: true}, false)
 			if err != nil || expected.Image == nil {
 				t.Fatal("invalid image fixture", err)
 			}
