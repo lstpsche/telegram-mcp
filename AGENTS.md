@@ -7,10 +7,10 @@
   use official logos or imply Telegram affiliation. The daemon and relay
   support that product. Agent workflows define the acceptance
   criteria; infrastructure alone does not establish MCP usability.
-- Preserve the daemon -> owner-only Unix socket -> byte-only stdio relay shape.
+- Preserve the daemon -> owner-only local transport -> byte-only stdio relay shape.
   Authentication, policy, consent, and lifecycle mutations stay in the human
   control plane and must not become MCP tools.
-- Keep v1 single-account, local, read-first, and macOS-first. Do not add writes,
+- Keep v1 single-account, local, read-first, and portable across macOS, Linux and Windows. Do not add writes,
   HTTP listeners, raw MTProto tools, message indexing, embeddings, multi-account
   state, broadcast channels, bot chats, or Secret Chats without a new plan and
   threat review.
@@ -40,9 +40,11 @@
   messages; a content grant alone does not authorize that wider side effect.
 - Cursors and resource handles are never authorization. They must be signed,
   expiring, operation/query/epoch/policy-bound, and reauthorized on every use.
-- The Keychain adapter must use Security.framework directly, target the current
-  user's unlocked login keychain, avoid synchronization and file fallbacks, and
-  never invoke `/usr/bin/security`.
+- Store credentials, sessions and integrity keys in private unencrypted local
+  files, with owner-only Unix permissions or Windows ACLs. Reject unsafe paths
+  and malformed data; never silently switch storage backends. Legacy macOS
+  Keychain migration is an explicit human operation using Security.framework,
+  with no source deletion or invocation of `/usr/bin/security`.
 - `telegram-mcp` stdout is reserved for MCP frames. Send diagnostics to
   stderr through the safe structured logging boundary.
 

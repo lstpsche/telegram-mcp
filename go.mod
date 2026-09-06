@@ -3,6 +3,7 @@ module github.com/lstpsche/telegram-mcp
 go 1.27.1
 
 require (
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/awnumar/memguard v0.23.0
 	github.com/google/jsonschema-go v0.4.3
 	github.com/gotd/contrib v0.25.0

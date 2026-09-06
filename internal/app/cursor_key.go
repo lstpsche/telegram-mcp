@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"github.com/lstpsche/telegram-mcp/internal/model"
-	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
+	"github.com/lstpsche/telegram-mcp/internal/secrets"
 )
 
 const cursorSecretAccount = "default.cursor-integrity"
@@ -15,7 +15,7 @@ const cursorSecretAccount = "default.cursor-integrity"
 // A missing item initializes a distinct key; corrupt/inaccessible items fail.
 func (a *Application) cursorKey(ctx context.Context) ([]byte, error) {
 	key, err := a.secrets.Get(ctx, cursorSecretAccount)
-	if errors.Is(err, keychain.ErrNotFound) {
+	if errors.Is(err, secrets.ErrNotFound) {
 		clear(key)
 		key = make([]byte, 32)
 		if _, err := io.ReadFull(a.random, key); err != nil {

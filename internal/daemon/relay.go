@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -11,9 +12,13 @@ import (
 func Relay(ctx context.Context, path string, input io.ReadCloser, output io.WriteCloser) error {
 	connection, err := DialSocket(ctx, path)
 	if err != nil {
-		return errors.New("daemon unavailable")
+		return fmt.Errorf("daemon unavailable: %w", err)
 	}
 	defer connection.Close()
+	writer, ok := connection.(interface{ CloseWrite() error })
+	if !ok {
+		return errors.New("daemon connection does not support half-close")
+	}
 	defer input.Close()
 	defer output.Close()
 	stop := context.AfterFunc(ctx, func() {
@@ -27,7 +32,7 @@ func Relay(ctx context.Context, path string, input io.ReadCloser, output io.Writ
 	go func() {
 		_, err := io.Copy(connection, input)
 		incoming <- err
-		_ = connection.CloseWrite()
+		_ = writer.CloseWrite()
 	}()
 	go func() {
 		_, err := io.Copy(output, connection)
@@ -62,7 +67,7 @@ func Relay(ctx context.Context, path string, input io.ReadCloser, output io.Writ
 		return ctx.Err()
 	}
 	if err != nil {
-		return errors.New("relay connection failed")
+		return fmt.Errorf("relay connection failed: %w", err)
 	}
 	return nil
 }

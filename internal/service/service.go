@@ -1,3 +1,5 @@
+//go:build darwin
+
 // Package service manages the current user's fixed launchd registration.
 package service
 
@@ -13,23 +15,6 @@ import (
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 )
-
-const Label = "dev.telegram-mcp.gateway"
-
-var (
-	ErrNotInstalled     = errors.New("service is not installed")
-	ErrAlreadyInstalled = errors.New("service is already installed")
-	ErrServiceLoaded    = errors.New("service is already registered")
-	ErrServiceAbsent    = errors.New("service is not registered")
-)
-
-// Config records the exact binaries selected by the installed plist.
-type Config struct {
-	BinDir  string
-	Relay   string
-	Daemon  string
-	Control string
-}
 
 type Manager struct {
 	home   string
@@ -62,7 +47,9 @@ func Default() (*Manager, error) {
 }
 
 func (m *Manager) domain() string { return "gui/" + strconv.Itoa(m.uid) }
+
 func (m *Manager) target() string { return m.domain() + "/" + Label }
+
 func (m *Manager) plistPath() string {
 	return filepath.Join(m.home, "Library", "LaunchAgents", Label+".plist")
 }
@@ -96,7 +83,7 @@ func (m *Manager) Install(ctx context.Context, binDir string) (config Config, er
 		return Config{}, err
 	}
 	plist := m.plist(config)
-	if len(plist) > maxPlistBytes {
+	if len(plist) > maxInstallationBytes {
 		return Config{}, ErrUnsafePath
 	}
 	loaded, err := m.loaded(ctx)
@@ -212,7 +199,9 @@ func (m *Manager) stop(ctx context.Context) error {
 }
 
 func (m *Manager) Start(ctx context.Context) error { return m.mutate(ctx, m.start) }
-func (m *Manager) Stop(ctx context.Context) error  { return m.mutate(ctx, m.stop) }
+
+func (m *Manager) Stop(ctx context.Context) error { return m.mutate(ctx, m.stop) }
+
 func (m *Manager) Restart(ctx context.Context) error {
 	return m.mutate(ctx, func(ctx context.Context) error {
 		if err := m.stop(ctx); err != nil {

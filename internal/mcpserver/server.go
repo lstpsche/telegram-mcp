@@ -82,7 +82,7 @@ type status struct {
 
 // Serve runs an SDK session with bounded newline framing and input rate.
 // Session errors stay local and cannot expose request material through logs.
-func Serve(ctx context.Context, server *mcp.Server, connection *net.UnixConn) {
+func Serve(ctx context.Context, server *mcp.Server, connection net.Conn) {
 	reader := &frameReader{connection: connection, reader: bufio.NewReaderSize(connection, maximumInputFrameBytes), ctx: ctx, limiter: rate.NewLimiter(20, 4)}
 	session, err := server.Connect(ctx, &mcp.IOTransport{Reader: reader, Writer: &deadlineWriter{connection}}, nil)
 	if err != nil {

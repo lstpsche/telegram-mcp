@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin || linux
 
 package cli
 
@@ -15,7 +15,7 @@ const terminalPollMilliseconds = 100
 
 func readPasswordBounded(ctx context.Context, file *os.File, maximum int) (result []byte, resultError error) {
 	fileDescriptor := int(file.Fd())
-	state, err := unix.IoctlGetTermios(fileDescriptor, unix.TIOCGETA)
+	state, err := unix.IoctlGetTermios(fileDescriptor, terminalGetAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -23,17 +23,16 @@ func readPasswordBounded(ctx context.Context, file *os.File, maximum int) (resul
 	hidden.Lflag &^= unix.ECHO | unix.ECHONL
 	hidden.Lflag |= unix.ICANON | unix.ISIG
 	hidden.Iflag |= unix.ICRNL
-	if err := unix.IoctlSetTermios(fileDescriptor, unix.TIOCSETA, &hidden); err != nil {
+	if err := unix.IoctlSetTermios(fileDescriptor, terminalSetAttributes, &hidden); err != nil {
 		return nil, err
 	}
 	if err := unix.SetNonblock(fileDescriptor, true); err != nil {
-		_ = unix.IoctlSetTermios(fileDescriptor, unix.TIOCSETA, state)
-		return nil, err
+		return nil, errors.Join(err, unix.IoctlSetTermios(fileDescriptor, terminalSetAttributes, state))
 	}
 	defer func() {
 		cleanupError := errors.Join(
 			unix.SetNonblock(fileDescriptor, false),
-			unix.IoctlSetTermios(fileDescriptor, unix.TIOCSETA, state),
+			unix.IoctlSetTermios(fileDescriptor, terminalSetAttributes, state),
 		)
 		if cleanupError != nil {
 			clear(result)

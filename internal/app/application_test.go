@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"testing"
@@ -59,7 +60,7 @@ func TestConfigureAuthenticateRestartAndLogoutState(t *testing.T) {
 	}
 
 	runtime := &fakeRuntime{authResult: tgaccount.AuthResult{Performed: true}}
-	application.factory = func(config tgaccount.Config, _ *tgaccount.KeychainSessionStorage, mode tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(config tgaccount.Config, _ *tgaccount.SessionStorage, mode tgaccount.Mode) (accountRuntime, error) {
 		if config.APIID != 12345 || config.TestDC != 2 || string(config.APIHash) != testAPIHash {
 			t.Fatalf("runtime config = %#v, mode = %d", config, mode)
 		}
@@ -123,7 +124,7 @@ func TestConfigureAuthenticateRestartAndLogoutState(t *testing.T) {
 	}
 }
 
-func TestConfigureRejectsKeychainSessionWithoutAuthorizationEpoch(t *testing.T) {
+func TestConfigureRejectsStoredSessionWithoutAuthorizationEpoch(t *testing.T) {
 	t.Parallel()
 
 	application, secretStore := newTestApplication(t)
@@ -137,13 +138,13 @@ func TestConfigureRejectsKeychainSessionWithoutAuthorizationEpoch(t *testing.T) 
 		t.Fatalf("Configure() error = %v, want ErrAuthorizationExists", err)
 	}
 	if readerCalled {
-		t.Fatal("Configure() prompted for credentials despite an existing Keychain session")
+		t.Fatal("Configure() prompted for credentials despite an existing local session")
 	}
 	if session, ok := secretStore.value(tgaccount.SessionSecretAccount); !ok || string(session) != "session material" {
-		t.Fatalf("Configure() changed the existing Keychain session: %q, %t", session, ok)
+		t.Fatalf("Configure() changed the existing local session: %q, %t", session, ok)
 	}
 	if _, ok := secretStore.value(tgaccount.CredentialsSecretAccount); ok {
-		t.Fatal("Configure() stored a new API hash despite an existing Keychain session")
+		t.Fatal("Configure() stored a new API hash despite an existing local session")
 	}
 }
 
@@ -178,7 +179,7 @@ func TestLogoutKeepsLocalStateWhenRemoteRevocationFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime := &fakeRuntime{authResult: tgaccount.AuthResult{Performed: true}}
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		return runtime, nil
 	}
 	if _, err := application.Authenticate(ctx, tgaccount.AuthMethodPhone, fakePrompt{}); err != nil {
@@ -230,7 +231,7 @@ func TestDaemonOwnsLockSocketAndStopsOnCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	recordDaemonAuthorization(t, application, 2)
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		return &fakeRuntime{observeStatus: tgaccount.AuthorizationStatus{Authorized: true}}, nil
 	}
 
@@ -275,7 +276,7 @@ func TestDaemonRequiresRecordedEpochBeforeOpeningTextRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	baseline := secrets.readCount()
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		t.Error("constructed a text runtime without authorization metadata")
 		return nil, errors.New("unexpected account construction")
 	}
@@ -323,7 +324,7 @@ func TestUnauthorizedDaemonInvalidatesStaleEpoch(t *testing.T) {
 	if err := database.Close(); err != nil {
 		t.Fatal(err)
 	}
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		return &fakeRuntime{observeStatus: tgaccount.AuthorizationStatus{}}, nil
 	}
 
@@ -368,7 +369,7 @@ func TestDaemonInvalidatesEpochWhenAuthorizationExpiresAfterReady(t *testing.T) 
 		t.Fatal(err)
 	}
 	revoke := make(chan struct{})
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		return &fakeRuntime{
 			observeStatus:  tgaccount.AuthorizationStatus{Authorized: true},
 			observeFailure: revoke,
@@ -466,7 +467,7 @@ func TestDaemonSIGTERMHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	recordDaemonAuthorization(t, application, 2)
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		return &fakeRuntime{observeStatus: tgaccount.AuthorizationStatus{Authorized: true}}, nil
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -512,7 +513,11 @@ func staticConfiguration(apiID int) ConfigurationReader {
 
 func shortRuntimeRoot(t *testing.T) string {
 	t.Helper()
-	directory, err := os.MkdirTemp("/tmp", "tmcp-app-")
+	temporaryRoot := "/tmp"
+	if runtime.GOOS == "windows" {
+		temporaryRoot = t.TempDir()
+	}
+	directory, err := os.MkdirTemp(temporaryRoot, "tmcp-app-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -736,14 +741,14 @@ func TestInterruptedConfigurationCannotConstructMixedAccount(t *testing.T) {
 			}
 			defer clear(stored.APIHash)
 			if stored.APIID != 54321 || stored.TestDC != 3 {
-				t.Fatal("Keychain did not atomically retain new credential tuple")
+				t.Fatal("Secret store did not atomically retain new credential tuple")
 			}
 			restarted, err := New(application.paths, secrets)
 			if err != nil {
 				t.Fatal(err)
 			}
 			called := false
-			restarted.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+			restarted.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 				called = true
 				return &fakeRuntime{}, nil
 			}
@@ -796,7 +801,7 @@ func TestUnconfiguredDaemonServesStaticToolsWithoutReadingSecrets(t *testing.T) 
 	}()
 	waitForLifecycle(t, application, daemon.StateReauthRequired)
 	deadline := time.Now().Add(2 * time.Second)
-	var connection *net.UnixConn
+	var connection net.Conn
 	var err error
 	for time.Now().Before(deadline) {
 		connection, err = daemon.DialSocket(ctx, application.paths.Socket)
@@ -822,7 +827,7 @@ func TestUnconfiguredDaemonServesStaticToolsWithoutReadingSecrets(t *testing.T) 
 		t.Fatal(err)
 	}
 	if secrets.readCount() != 0 {
-		t.Fatal("unconfigured status read Keychain")
+		t.Fatal("unconfigured status read secrets")
 	}
 }
 

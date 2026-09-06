@@ -6,13 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/lstpsche/telegram-mcp/internal/secrets"
 	"regexp"
 )
 
 const MaximumSecretBytes = 1024 * 1024
 
 var (
-	ErrNotFound       = errors.New("secret not found")
+	ErrNotFound       = secrets.ErrNotFound
 	ErrKeychainLocked = errors.New("login keychain is locked or interaction would be required")
 	ErrWrongKeychain  = errors.New("default keychain is not the login keychain")
 	ErrUnsupported    = errors.New("native macOS keychain is unavailable")

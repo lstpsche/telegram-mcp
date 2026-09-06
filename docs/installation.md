@@ -1,153 +1,159 @@
 # Local installation and diagnostics
 
-Telegram MCP can run as a per-user macOS LaunchAgent in a logged-in GUI session.
-Installation registers existing executables; it does not download, copy, sign,
-or replace them. Run these commands as your normal user, without `sudo`.
+Telegram MCP runs as a per-user background service on macOS, Linux and Windows.
+The default uses private local credential files: no paid certificate, Keychain
+unlock, vault password or repeated Telegram login is required after setup.
+Read the [storage threat model](threat-model.md) before enabling account access.
 
-Build with Go 1.27.1 into a new private directory at a stable, absolute path.
-Do not use a temporary directory or overwrite binaries referenced by an existing
-installation. For a development build, this example applies ad-hoc signatures:
+Install into a new private directory at a stable, absolute path. Installation
+registers existing executables; it does not download, copy, sign or replace them.
+Do not overwrite binaries referenced by an existing installation. Run as your
+normal user, without `sudo` or an elevated Windows terminal.
+
+For macOS or Linux, build from source using Go 1.27.1:
 
 ```sh
-artifact_dir="$HOME/Applications/telegram-mcp-dev-$(date +%Y%m%d%H%M%S)"
-(
-set -eu
+artifact_dir="$HOME/Applications/telegram-mcp-local"
 mkdir -p "$HOME/Applications"
 mkdir -m 700 "$artifact_dir"
-env GO111MODULE=on go build -o "$artifact_dir/telegram-mcp" ./cmd/telegram-mcp
-env GO111MODULE=on go build -o "$artifact_dir/telegram-mcpd" ./cmd/telegram-mcpd
-env GO111MODULE=on go build -o "$artifact_dir/telegram-mcpctl" ./cmd/telegram-mcpctl
-/usr/bin/codesign --force --sign - "$artifact_dir/telegram-mcp"
-/usr/bin/codesign --force --sign - "$artifact_dir/telegram-mcpd"
-/usr/bin/codesign --force --sign - "$artifact_dir/telegram-mcpctl"
+env GO111MODULE=on CGO_ENABLED=0 go build -o "$artifact_dir/telegram-mcp" ./cmd/telegram-mcp
+env GO111MODULE=on CGO_ENABLED=0 go build -o "$artifact_dir/telegram-mcpd" ./cmd/telegram-mcpd
+env GO111MODULE=on CGO_ENABLED=0 go build -o "$artifact_dir/telegram-mcpctl" ./cmd/telegram-mcpctl
 "$artifact_dir/telegram-mcpctl" service install --bin-dir "$artifact_dir"
 "$artifact_dir/telegram-mcpctl" service start
 "$artifact_dir/telegram-mcpctl" doctor
 "$artifact_dir/telegram-mcpctl" agent-config
-)
 ```
 
-Start is asynchronous. If the first `doctor` reports an absent socket, allow
-startup to finish and run it again before generating agent configuration.
-Persistent absence requires the foreground diagnostic procedure below.
+No additional signing command is needed for these source builds. The directory
+must be owned by the current user with mode `0700`; executables must be regular,
+owned executable files without group or other write permission. Paths must be
+absolute and canonical, without symlinks or writable ancestry.
 
-The binary directory must be owned by the current user with mode `0700`. Each
-executable must be a regular, current-user-owned executable with no group or
-other write permission. Paths must be absolute, canonical, and free of symlinks.
-Installation verifies each executable with `codesign --verify --strict`.
-A valid signature establishes artifact integrity, not shared Keychain access:
-separately ad-hoc-signed control and daemon artifacts fail the native sharing
-and rebuild checks. This development setup supports credential-free connectivity
-checks; it is not qualified for shared account custody. Cross-command identity,
-Developer ID signing, upgrades, and actual LaunchAgent Keychain access require
-separate qualification described in [Keychain behavior](keychain.md).
-For local account development, use the verified
-[Apple Development signing recipe](development-signing.md). It supplies shared
-control/daemon access across rebuilds using one pinned certificate, while the
-relay retains a separate identity. Qualify the exact artifacts before installation.
+For Windows PowerShell, create an owner-only directory before building. This
+example deliberately creates a fresh directory and removes inherited access:
 
-The generated file is
-`~/Library/LaunchAgents/dev.telegram-mcp.gateway.plist`. It is the installation
-record, contains only local executable/environment configuration, and must
-retain its generated contents, ownership, and `0600` permissions. Existing or
-altered files are never overwritten. Parent directories must have safe ownership
-and permissions. Install does not start a daemon in the current session;
-`service start` explicitly submits it to `gui/<uid>`.
-
-`agent-config` prints a standard MCP JSON configuration containing the exact
-installed relay path. Copy that JSON into the client's configuration, or register
-the same absolute relay path with your client's stdio setup command. It does not
-edit client settings. The relay stays byte-only and never starts the daemon.
-When the daemon stops or restarts, existing relay processes exit with an error.
-Reconnect the client after `doctor` confirms the new daemon is responding.
-The relay also exits on cancellation when stdin is idle or stdout is blocked;
-it never reconnects itself or replays a request.
-
-An unconfigured daemon can answer MCP `status` with `reauth_required` and
-`message_reads: false`; credentials are not needed for this connectivity check.
-
-Use the lifecycle commands explicitly:
-
-```sh
-"$artifact_dir/telegram-mcpctl" service stop
-# Configure/authenticate through the existing interactive commands while stopped.
-"$artifact_dir/telegram-mcpctl" service start
-"$artifact_dir/telegram-mcpctl" service restart
-"$artifact_dir/telegram-mcpctl" service stop
-"$artifact_dir/telegram-mcpctl" service uninstall
+```powershell
+$artifactDir = Join-Path $env:LOCALAPPDATA 'telegram-mcp-local'
+New-Item -ItemType Directory -Path $artifactDir -ErrorAction Stop | Out-Null
+$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = [System.Security.AccessControl.DirectorySecurity]::new()
+$acl.SetOwner($sid)
+$acl.SetAccessRuleProtection($true, $false)
+$rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+  $sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+$acl.AddAccessRule($rule)
+Set-Acl -LiteralPath $artifactDir -AclObject $acl -ErrorAction Stop
+$env:GO111MODULE = 'on'
+$env:CGO_ENABLED = '0'
+go build -o "$artifactDir\telegram-mcp.exe" ./cmd/telegram-mcp
+go build -o "$artifactDir\telegram-mcpd.exe" ./cmd/telegram-mcpd
+go build -o "$artifactDir\telegram-mcpctl.exe" ./cmd/telegram-mcpctl
+& "$artifactDir\telegram-mcpctl.exe" service install --bin-dir $artifactDir
+& "$artifactDir\telegram-mcpctl.exe" service start
+& "$artifactDir\telegram-mcpctl.exe" doctor
+& "$artifactDir\telegram-mcpctl.exe" agent-config
 ```
 
-Stop unloads the exact service in the current GUI session and waits for its
-registration to disappear. The plist's `RunAtLoad` setting loads it again at the
-next GUI login; uninstall removes that registration file permanently. Restart
-unloads and bootstraps the job. There is no forced `kickstart -k`, automatic
-restart loop, or automatic authentication retry. Launchd allows 20 seconds for
-termination before its own timeout enforcement. Lifecycle operations have a
-30-second deadline. A successful start means the launch request was accepted;
-use `doctor` to establish whether MCP actually responds.
+Prebuilt archives and their platform verification requirements are described in
+[distribution](distribution.md). Windows binaries and their parent directory
+must retain an owner-only DACL; Unix `chmod` does not establish that protection.
+Windows installation paths cannot contain `%`, which Task Scheduler expands as
+an environment-variable marker.
 
-Uninstall requires the service to be unloaded and removes only the validated
-plist. Stopping and uninstalling remain possible if an old binary was removed
-or its signature became invalid; both still require the canonical owned plist.
-It retains binaries, metadata, runtime files, and Keychain items.
-Missing or already-running states are explicit errors rather than silent success.
-A failed command can leave a partial OS operation; inspect the actual state
-before retrying. Do not assume an error rolled back a submitted launch.
+The service starts at user login, using the following OS facility:
 
-For an upgrade, prepare a new binary directory, qualify its signing and Keychain
-identity, stop and uninstall the old registration, then install and start the
-new directory. Update client configuration to its new relay path. The installer
-does not restore old binaries automatically after an error. Retained metadata
-uses forward-only migrations, so installing an older executable is not a general
-recovery procedure.
+| Platform | Registration | Requirement |
+| --- | --- | --- |
+| macOS | `~/Library/LaunchAgents/dev.telegram-mcp.gateway.plist` | Logged-in GUI session; launchd |
+| Linux | `~/.config/systemd/user/dev.telegram-mcp.gateway.service` | Running systemd user manager and `/usr/bin/systemctl` |
+| Windows | Task Scheduler task `dev.telegram-mcp.gateway-<current-user-SID>` | Interactive user logon; Task Scheduler and Windows PowerShell |
 
-`doctor` is read-only. It checks existing state/runtime directory permissions,
-metadata and lock-file ownership, the socket's ownership and connected peer,
-and a bounded MCP initialize/status exchange. It neither opens SQLite nor
-acquires account locks, accesses Keychain, constructs a Telegram client, or
-fetches Telegram data. File presence does not establish that a lock is held.
-The result includes only fixed file names/states, socket state, local account
-state, readiness booleans, and a fixed next-action hint. It does not print paths,
-account identifiers, server instructions, grants, content, or remote error text.
+Linux units are enabled for `default.target`. The unit location follows
+`XDG_CONFIG_HOME` when set; otherwise it uses the path shown above. The generated
+unit pins the installer's configuration and cache locations for the daemon. Windows uses a logon trigger bound
+to the current user's SID and an interactive token at normal privilege; it stores
+no Windows password. Its generated XML is retained in Telegram MCP's user
+configuration directory. Windows service registration requires the local user's
+permission to create scheduled tasks; organizational policy may prohibit it.
+A Linux system without a systemd user manager can run the daemon in the foreground
+or configure its own supervisor; the service command reports that failure.
 
-The diagnostic JSON uses `keychain: "not_checked"` and
-`metadata: "filesystem_only"` inside `runtime` to make its limits explicit.
-An absent or refused socket yields an observed `absent` or `stale` state with
-null account/readiness fields. Unsafe paths, inconclusive connections, malformed
-or oversized replies, and timeouts fail without a partial JSON report. The MCP
-probe lasts at most three seconds and reads at most 128 KiB total, with 32 KiB
-per frame. It calls only `status`.
+The generated service configuration is the installation record and must retain
+its canonical contents and private permissions. Existing or altered records are
+never overwritten. If Linux or Windows registration fails after writing the
+record, rerun the identical `service install --bin-dir ...`: it can register that
+verified record only when the OS confirms no enabled registration exists.
+A different binary directory requires explicit uninstall first. External failures
+can leave partial registration; a failed command does not claim rollback.
 
-Exit status `0` means the installation is valid and MCP returned a valid status.
-It does not mean content is authorized or the account is ready. Exit `1` means
-a missing installation/socket or a failed check; exit `2` means invalid command
-syntax. `next_action` is one of `install_service`, `check_service_startup`,
-`inspect_account_readiness`, or `connect_agent`. Follow account recovery and
-grant instructions before asking for content, even when connectivity succeeds.
+`service start` submits a launch request. A successful return does not establish
+MCP readiness; run `doctor` after startup. An unconfigured daemon can answer MCP
+`status` with `reauth_required` and `message_reads: false` without credentials.
+Configure and authenticate through the human commands while the daemon is stopped.
+Legacy Keychain installations require the explicit [migration](keychain.md).
 
-The LaunchAgent directs stdout/stderr to `/dev/null` and retains no daemon log
-file. To inspect startup failures, stop the service and run the installed
-`telegram-mcpd` in a terminal; it emits the existing fixed, safe diagnostics to
-stderr. If the service has already been unloaded, `service stop` reports that
-fact. Start the service again after resolving the cause and stopping the
-foreground process. Authentication remains interactive through `/dev/tty` and
-must run while the daemon is stopped.
+`agent-config` prints standard MCP JSON containing the exact installed relay
+path. Copy it into the client's configuration or use that path with the client's
+stdio setup command. It does not edit client settings. The relay stays byte-only
+and never launches the daemon, reconnects or replays a request. When the daemon
+restarts, reconnect the client after `doctor` reports a responding daemon.
 
-Automated service verification uses temporary files, a fake process runner,
-and a local synthetic MCP server. Native synthetic Keychain checks additionally
-qualify local Apple Development signing across commands and rebuilt upgrades.
-To verify a real GUI-session installation without credentials, use a fresh
-unconfigured account state. Start the service, check `doctor`, connect the
-installed relay from an MCP client, list tools, and call `status`. Expect all
-eight tools, `reauth_required`, and `message_reads: false`; data operations
-report `not_ready`. Keep a relay connected during restart and verify that it
-exits, then connect a new relay. Check stop, uninstall, and installation from a
-new artifact directory; `agent-config` must name the new relay. After final
-stop/uninstall, the job and socket must be absent and the account lock available.
-Retained metadata and binaries are expected. Do not run this unconfigured check
-against an account that already has configuration or authorization.
+Lifecycle commands are `service start`, `service stop`, `service restart` and
+`service uninstall`. Stop affects the current login session; the retained
+registration starts the daemon at the next login. Restart stops before starting.
+No backend repeatedly retries failed account authentication. Launchd and systemd
+allow 20 seconds for termination before their timeout enforcement. All lifecycle
+operations have a 30-second deadline.
 
-GUI-session connectivity does not establish account Keychain access under
-launchd, disposable Test-DC workflows, production eligibility, or publication.
-Those remain separate checks. Production login requires explicit eligibility
-attestation and [interactive local authentication](../README.md#configure-an-account).
+Windows Task Scheduler stop can terminate the process without a graceful Go
+shutdown. The command waits for the task to stop and the account lock to become
+available. Atomic credential publication and SQLite transactions protect committed
+storage; this does not promise completion of an in-flight MCP request. An existing
+relay may fail and must be reconnected. Uninstall also refuses a held account lock
+on Linux and Windows. Do not start maintenance while another daemon is running.
+
+Uninstall requires the service to be stopped. It removes only the validated
+registration and its generated local file. It retains executables, metadata,
+credentials, sessions and runtime files. Stop and uninstall remain possible when
+an old executable has been removed or has unsafe permissions. Missing or already
+running states are explicit errors.
+
+For an upgrade, prepare a fresh binary directory, stop and uninstall the old
+registration, then install and start the new directory. Update the MCP client's
+relay path. The installer does not restore old binaries after an error. Metadata
+migrations are forward-only; downgrading is not a general recovery procedure.
+
+`doctor` is read-only. It checks filesystem metadata and private transport, then
+performs a bounded MCP initialize/status exchange. It never opens SQLite, acquires
+account locks, reads credential files, constructs a Telegram client or fetches
+Telegram data. File presence does not prove that a lock is held. Output contains
+fixed file names/states, transport state, account readiness booleans and a fixed
+next-action hint, without paths, account identifiers, grants, content or remote
+error text. `secrets: "not_checked"` and `metadata: "filesystem_only"` make those
+limits explicit.
+
+An absent or refused Unix socket produces `absent` or `stale` with null account
+and readiness fields. Windows named pipes have no stale filesystem node. Unsafe
+paths, inconclusive connections, malformed replies and timeouts fail without a
+partial JSON report. The probe lasts at most three seconds, reads at most 128 KiB
+in total and limits each frame to 32 KiB. It calls only `status`.
+
+Exit `0` means the installation is valid and MCP returned valid status; it does
+not establish content authorization. Exit `1` indicates missing installation,
+unavailable transport or failed checks; exit `2` indicates invalid syntax.
+`next_action` is `install_service`, `check_service_startup`,
+`inspect_account_readiness` or `connect_agent`.
+
+The launchd and systemd configurations discard daemon output. To diagnose startup,
+stop the service and run the installed `telegram-mcpd` in a terminal to see its
+safe stderr diagnostics. Windows Task Scheduler does not capture a log file.
+Authentication uses the OS console and remains interactive only during setup or
+explicit account reauthentication.
+
+Automated service checks use temporary files, fake OS process runners and a local
+synthetic MCP server. Native service-manager acceptance is separate: using fresh
+unconfigured state, install/start, run `doctor`, connect the relay and call
+`status`, restart with a connected relay, reconnect, then stop/uninstall. Verify
+that only the expected registration is removed and retained metadata and binaries
+remain. Do not run that fresh-state exercise against an existing account.

@@ -26,7 +26,11 @@ third-party text, attachments, embeddings, access credentials, session bytes,
 or durable media. Access hashes remain private to the Telegram adapter even
 though they are correctness metadata.
 
-Keychain stores the Telegram session, `api_hash`, and integrity keys. Media may
+A separate private unencrypted local file stores the Telegram session, API
+credential bundle and integrity keys. Unix permissions or Windows ACLs protect
+it from other ordinary OS users. This permits unattended restart without a
+vault password or signing identity; same-user and administrator access is outside
+that boundary. Settings backups exclude this file. Media may
 only exist as a bounded transient stream or file governed by a short-lived,
 reauthorized handle; a durable cache is excluded.
 

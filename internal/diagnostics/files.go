@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
-	"golang.org/x/sys/unix"
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 )
 
 type FileCheck struct {
@@ -29,18 +29,24 @@ func inspectFiles(paths daemon.Paths) ([]FileCheck, error) {
 	}
 	checks := []struct {
 		name, path string
-		mode       uint32
+		directory  bool
 	}{
-		{"state_directory", paths.StateDir, unix.S_IFDIR | 0o700},
-		{"runtime_directory", paths.RuntimeDir, unix.S_IFDIR | 0o700},
-		{"database", paths.Database, unix.S_IFREG | 0o600},
-		{"account_lock", paths.Lock, unix.S_IFREG | 0o600},
-		{"policy_lock", filepath.Join(paths.StateDir, "policy.lock"), unix.S_IFREG | 0o600},
+		{"state_directory", paths.StateDir, true},
+		{"runtime_directory", paths.RuntimeDir, true},
+		{"database", paths.Database, false},
+		{"account_lock", paths.Lock, false},
+		{"policy_lock", filepath.Join(paths.StateDir, "policy.lock"), false},
+		{"secrets", filepath.Join(paths.StateDir, "secrets.json"), false},
+		{"secrets_lock", filepath.Join(paths.StateDir, "secrets.lock"), false},
 	}
 	result := make([]FileCheck, 0, len(checks))
 	for _, check := range checks {
-		var info unix.Stat_t
-		err := unix.Lstat(check.path, &info)
+		var err error
+		if check.directory {
+			err = privatefs.CheckDirectory(check.path)
+		} else {
+			err = privatefs.CheckFile(check.path)
+		}
 		if errors.Is(err, os.ErrNotExist) {
 			result = append(result, FileCheck{check.name, "absent"})
 			continue
@@ -48,32 +54,7 @@ func inspectFiles(paths daemon.Paths) ([]FileCheck, error) {
 		if err != nil {
 			return nil, err
 		}
-		if info.Uid != uint32(os.Geteuid()) || uint32(info.Mode) != check.mode {
-			return nil, errors.New("diagnostic file has unsafe ownership, type or permissions")
-		}
 		result = append(result, FileCheck{check.name, "present"})
 	}
 	return result, nil
-}
-
-// Missing child paths are conclusive only after checking the existing ancestry.
-// Root-owned sticky temporary directories are safe parents for private fixtures.
-func inspectAncestors(path string) error {
-	for parent := filepath.Dir(path); ; parent = filepath.Dir(parent) {
-		var info unix.Stat_t
-		err := unix.Lstat(parent, &info)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err == nil {
-			trustedOwner := info.Uid == 0 || info.Uid == uint32(os.Geteuid())
-			stickyRoot := info.Uid == 0 && info.Mode&unix.S_ISVTX != 0
-			if info.Mode&unix.S_IFMT != unix.S_IFDIR || !trustedOwner || info.Mode&0o022 != 0 && !stickyRoot {
-				return errors.New("diagnostic directory ancestry is unsafe")
-			}
-		}
-		if parent == string(filepath.Separator) {
-			return nil
-		}
-	}
 }

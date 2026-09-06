@@ -29,22 +29,22 @@ telegram-mcpctl configure --production --attest-eligible
 
 For a disposable Test-DC account, use `telegram-mcpctl configure --test-dc 2`.
 The selectors cannot be combined. Production requires the attestation flag
-before the command can open a credential prompt. Qualify signed control and
-daemon artifacts using the [Keychain procedure](keychain.md) before real login.
+before the command can open a credential prompt. No certificate or vault password
+is required; see [storage and legacy migration](keychain.md).
 
 After acquiring the account lock and confirming no authorization evidence
-exists, the command opens `/dev/tty` itself and prompts, without echo, for the
+exists, the command opens the OS console itself and prompts, without echo, for the
 API ID and API hash. It does not accept credentials through argv, stdin, or
 environment variables. SQLite receives the API ID, environment, Test-DC number
 (zero for production), and timestamp only. The API ID, API hash, environment,
 and Test DC are stored together as one
-versioned non-synchronizing native login-Keychain item. Before constructing a
+versioned bundle in the private unencrypted local secret file. Before constructing a
 Telegram client, the application checks that the bundle agrees with SQLite.
 An interrupted update cannot mix fields from different configurations; if the
 stores disagree, stop the daemon and rerun configuration.
 
 Changing configuration is refused while either an authorization epoch or a
-Keychain session in either environment exists. Test and production use distinct
+local session in either environment exists. Test and production use distinct
 session items; the runtime never loads the other environment's session. Log out first so a session cannot be silently deleted
 or rebound to different application credentials or a different DC.
 
@@ -55,7 +55,7 @@ telegram-mcpctl auth phone
 ```
 
 The phone number, login code, and optional 2FA password are read without echo
-from `/dev/tty`. The 2FA password is moved into locked memory and wiped after
+from the OS console. The 2FA password is moved into locked memory and wiped after
 gotd computes its SRP answer. New-account sign-up and Terms-of-Service
 acceptance are intentionally unsupported.
 
@@ -71,7 +71,7 @@ unclassified failures disclose no raw Telegram error or credential details.
 telegram-mcpctl auth qr
 ```
 
-The QR token is rendered as terminal blocks directly on `/dev/tty`; its raw URI
+The QR token is rendered as terminal blocks directly on the OS console; its raw URI
 is not printed. Expired tokens are refreshed by gotd. If Telegram requests 2FA,
 the same protected password path is used, with at most three attempts.
 
@@ -94,9 +94,9 @@ authorization epoch is recorded, and which environment-bound manual method check
 passed. `production_login=supported` reports capability, not account readiness. It does
 not claim the daemon is Telegram-ready merely because a socket exists.
 
-The daemon acquires the account lock before opening SQLite, reading Keychain,
+The daemon acquires the account lock before opening SQLite, reading the local secret file,
 or constructing a gotd client. It requires a recorded authorization epoch before
-opening the text runtime. A surviving Keychain session with missing metadata
+opening the text runtime. A surviving local session with missing metadata
 does not manufacture new authority: stop the daemon and run `auth phone` to
 reconcile the session, then restart. An already-authorized session can be reused
 without recording a new method check. An unauthorized session, including authorization
@@ -112,7 +112,7 @@ telegram-mcpctl logout
 
 When Telegram considers the session authorized, remote `auth.logOut` must
 succeed before local deletion. The returned future-auth token is wiped and
-discarded. Only the selected environment's local gotd session is then deleted from Keychain and the current
+discarded. Only the selected environment's local gotd session is then deleted from the local secret file and the current
 authorization epoch is removed atomically from metadata. The credential bundle remains
 for an explicit future reauthentication.
 

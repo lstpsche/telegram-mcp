@@ -1,3 +1,5 @@
+//go:build darwin || linux
+
 package daemon
 
 import (
@@ -24,7 +26,7 @@ func TestSocketLifecycleAndProbe(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	serveDone := make(chan error, 1)
 	go func() {
-		serveDone <- socket.Serve(ctx, func(_ context.Context, connection *net.UnixConn) { _ = connection.Close() })
+		serveDone <- socket.Serve(ctx, func(_ context.Context, connection net.Conn) { _ = connection.Close() })
 	}()
 
 	state, err := ProbeSocket(socketPath)
@@ -230,7 +232,7 @@ func TestSocketLimitsConnectionsAndReleasesCapacity(t *testing.T) {
 	finished := make(chan struct{}, 16)
 	done := make(chan error, 1)
 	go func() {
-		done <- socket.Serve(ctx, func(_ context.Context, connection *net.UnixConn) {
+		done <- socket.Serve(ctx, func(_ context.Context, connection net.Conn) {
 			started <- struct{}{}
 			var buffer [1]byte
 			_, _ = connection.Read(buffer[:])
@@ -245,7 +247,7 @@ func TestSocketLimitsConnectionsAndReleasesCapacity(t *testing.T) {
 			t.Error("bounded server did not stop")
 		}
 	}()
-	connections := make([]*net.UnixConn, 0, 8)
+	connections := make([]net.Conn, 0, 8)
 	for range 8 {
 		connection, err := DialSocket(ctx, socketPath)
 		if err != nil {

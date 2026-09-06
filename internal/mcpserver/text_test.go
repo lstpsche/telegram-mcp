@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -16,6 +15,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/policy"
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 	"github.com/lstpsche/telegram-mcp/internal/reader"
 	"github.com/lstpsche/telegram-mcp/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -57,8 +57,8 @@ func (f *wireBackend) Acknowledge(_ context.Context, peer model.PeerID, through 
 func wireService(t *testing.T) (*reader.Service, *wireBackend) {
 	t.Helper()
 	ctx := context.Background()
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o700); err != nil {
+	dir := filepath.Join(t.TempDir(), "state")
+	if err := privatefs.EnsureDirectory(dir); err != nil {
 		t.Fatal(err)
 	}
 	db, err := store.Open(ctx, filepath.Join(dir, "metadata.sqlite"))

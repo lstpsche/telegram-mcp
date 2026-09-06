@@ -131,13 +131,13 @@ func runServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		message = "Service launch submitted. Run doctor to check MCP readiness."
 	case "stop":
 		err = manager.Stop(ctx)
-		message = "Service unloaded for this login session. It will load at the next GUI login."
+		message = "Service stopped for this login session. It will start at the next user login."
 	case "restart":
 		err = manager.Restart(ctx)
 		message = "Service restart submitted. Run doctor to check MCP readiness."
 	case "uninstall":
 		err = manager.Uninstall(ctx)
-		message = "Service installation removed. Binaries, metadata, and Keychain items retained."
+		message = "Service installation removed. Binaries, metadata, and local credentials retained."
 	}
 	if err != nil {
 		writeSupportError(stderr, err)
@@ -173,12 +173,10 @@ func writeSupportError(writer io.Writer, err error) {
 	case errors.Is(err, service.ErrServiceLoaded):
 		fmt.Fprintln(writer, "telegram-mcpctl: service is registered; use service stop before starting or uninstalling")
 	case errors.Is(err, service.ErrServiceAbsent):
-		fmt.Fprintln(writer, "telegram-mcpctl: service is not registered in this GUI session")
-	case errors.Is(err, service.ErrSignature):
-		fmt.Fprintln(writer, "telegram-mcpctl: executable signature verification failed; check the selected binary artifacts")
+		fmt.Fprintln(writer, "telegram-mcpctl: service is not registered in this user session")
 	case errors.Is(err, service.ErrUnsafePath), errors.Is(err, service.ErrInvalidInstallation):
-		fmt.Fprintln(writer, "telegram-mcpctl: installation validation failed; check canonical paths, ownership, permissions, and the generated plist")
+		fmt.Fprintln(writer, "telegram-mcpctl: installation validation failed; check canonical paths, ownership, permissions, and the generated service configuration")
 	default:
-		fmt.Fprintln(writer, "telegram-mcpctl: local support check failed; check filesystem permissions, the GUI login session, and foreground daemon diagnostics")
+		fmt.Fprintln(writer, "telegram-mcpctl: local support check failed; check filesystem permissions, the user login session, and foreground daemon diagnostics")
 	}
 }

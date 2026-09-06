@@ -17,6 +17,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/keychaincheck"
 	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/policy"
+	"github.com/lstpsche/telegram-mcp/internal/secrets"
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 	metastore "github.com/lstpsche/telegram-mcp/internal/store"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
@@ -73,12 +74,33 @@ func runContext(
 		return runSupportCommand(ctx, args, stdout, stderr, defaultSupport)
 	}
 
+	if args[0] == "backup-inspect" {
+		return runMaintenanceCommand(ctx, args, stdout, stderr, nil)
+	}
 	control, err := newController()
 	if err != nil {
 		writeControlError(stderr, err)
 		return 1
 	}
 	switch args[0] {
+	case "migrate-keychain":
+		if len(args) != 2 || args[1] != "--accept-plaintext-storage" {
+			fmt.Fprintln(stderr, "telegram-mcpctl: migrate-keychain requires --accept-plaintext-storage")
+			return 2
+		}
+		migration, ok := control.(interface{ MigrateKeychain(context.Context) error })
+		if !ok {
+			fmt.Fprintln(stderr, "telegram-mcpctl: legacy migration is unavailable")
+			return 1
+		}
+		if err := migration.MigrateKeychain(ctx); err != nil {
+			writeControlError(stderr, err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "Credentials and sessions copied into private unencrypted local storage; legacy Keychain items were retained.")
+		return 0
+	case "backup", "restore", "audit":
+		return runMaintenanceCommand(ctx, args, stdout, stderr, control)
 	case "access":
 		return runAccessCommand(ctx, args, stdout, stderr, control)
 	case "scopes", "scope", "unscope":
@@ -198,6 +220,15 @@ func parseConfiguration(args []string) (string, int, bool) {
 
 func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "usage:")
+	fmt.Fprintln(writer, "  telegram-mcpctl migrate-keychain --accept-plaintext-storage")
+	fmt.Fprintln(writer, "Metadata maintenance requires a stopped daemon; backup files require an absolute path in a private 0700 directory.")
+	fmt.Fprintln(writer, "  telegram-mcpctl backup --file ABSOLUTE_FILE")
+	fmt.Fprintln(writer, "  telegram-mcpctl backup-inspect --file ABSOLUTE_FILE")
+	fmt.Fprintln(writer, "  telegram-mcpctl restore --file ABSOLUTE_FILE --replace-scopes --reset-access")
+	fmt.Fprintln(writer, "  telegram-mcpctl audit")
+	fmt.Fprintln(writer, "  telegram-mcpctl audit retention --days N --max-records N --apply")
+	fmt.Fprintln(writer, "  telegram-mcpctl audit prune --confirm")
+	fmt.Fprintln(writer, "  telegram-mcpctl audit purge --all --confirm")
 	fmt.Fprintln(writer, "  telegram-mcpctl configure --test-dc {1|2|3}")
 	fmt.Fprintln(writer, "  telegram-mcpctl configure --production --attest-eligible")
 	fmt.Fprintln(writer, "  telegram-mcpctl auth {phone|qr}")
@@ -220,7 +251,7 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcpctl scopes")
 	fmt.Fprintln(writer, "  telegram-mcpctl scope --name NAME [--id ID] [--peer PEER ...]")
 	fmt.Fprintln(writer, "  telegram-mcpctl unscope --id ID")
-	fmt.Fprintln(writer, "Authentication is interactive through /dev/tty; content access requires human grants or explicit Full read access.")
+	fmt.Fprintln(writer, "Authentication is interactive through the OS console; content access requires human grants or explicit Full read access.")
 }
 
 func writeStatus(writer io.Writer, status app.Status) {
@@ -240,6 +271,22 @@ func writeStatus(writer io.Writer, status app.Status) {
 
 func writeControlError(writer io.Writer, err error) {
 	switch {
+	case errors.Is(err, app.ErrMigrationUnavailable):
+		fmt.Fprintln(writer, "telegram-mcpctl: migration requires a cgo-enabled macOS control binary signed with the existing Keychain identity; see docs/keychain.md")
+	case errors.Is(err, app.ErrLocalSecretsUnavailable):
+		fmt.Fprintln(writer, "telegram-mcpctl: configured local credentials are unavailable; migrate an existing Keychain installation or recover the account explicitly before reconfiguration")
+	case errors.Is(err, secrets.ErrStoreExists):
+		fmt.Fprintln(writer, "telegram-mcpctl: local secret storage already exists; migration never replaces or merges it")
+	case errors.Is(err, secrets.ErrInvalidStore):
+		fmt.Fprintln(writer, "telegram-mcpctl: local secret storage is invalid; no secret details were emitted")
+	case errors.Is(err, app.ErrInvalidBackup):
+		fmt.Fprintln(writer, "telegram-mcpctl: invalid metadata backup; expected supported version, exact fields and bounded scopes/settings")
+	case errors.Is(err, app.ErrBackupFile):
+		fmt.Fprintln(writer, "telegram-mcpctl: backup file failed validation or I/O; require an owner-only directory and regular file (Unix 0700/0600 or restricted Windows ACLs), no links or overwrite")
+	case errors.Is(err, app.ErrBackupEnvironment):
+		fmt.Fprintln(writer, "telegram-mcpctl: backup environment differs from the configured account; configure and authenticate the intended environment separately")
+	case errors.Is(err, metastore.ErrInvalidRetention):
+		fmt.Fprintln(writer, "telegram-mcpctl: audit retention requires 1–3650 days and 1–1000000 records")
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		fmt.Fprintln(writer, "telegram-mcpctl: operation cancelled")
 	case errors.Is(err, policy.ErrBusy):
@@ -255,7 +302,7 @@ func writeControlError(writer io.Writer, err error) {
 	case errors.Is(err, app.ErrTextControlUnsupported):
 		fmt.Fprintln(writer, "telegram-mcpctl: account runtime does not support text access control")
 	case errors.Is(err, daemon.ErrAccountLocked):
-		fmt.Fprintln(writer, "telegram-mcpctl: account runtime is busy; stop the daemon before authentication changes or peer discovery")
+		fmt.Fprintln(writer, "telegram-mcpctl: account runtime is busy; stop the daemon before authentication changes, peer discovery or metadata maintenance")
 	case errors.Is(err, metastore.ErrAuthorizationExists):
 		fmt.Fprintln(writer, "telegram-mcpctl: log out before changing Telegram application credentials")
 	case errors.Is(err, app.ErrConfigurationRequired):

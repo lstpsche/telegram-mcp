@@ -8,10 +8,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 	"github.com/lstpsche/telegram-mcp/migrations"
-	"golang.org/x/sys/unix"
 	_ "modernc.org/sqlite"
 )
 
@@ -25,7 +26,11 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	databaseURL := &url.URL{Scheme: "file", Path: absolutePath}
+	uriPath := filepath.ToSlash(absolutePath)
+	if filepath.VolumeName(absolutePath) != "" && !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	databaseURL := &url.URL{Scheme: "file", Path: uriPath}
 	query := databaseURL.Query()
 	query.Set("_defensive", "1")
 	query.Set("_busy_timeout", fmt.Sprint(busyTimeoutMilliseconds))
@@ -71,52 +76,18 @@ func prepareDatabasePath(path string) (string, error) {
 		return "", fmt.Errorf("resolve metadata database path: %w", err)
 	}
 	parent := filepath.Dir(absolutePath)
-	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return "", fmt.Errorf("create metadata directory: %w", err)
+	if err := privatefs.EnsureDirectory(parent); err != nil {
+		return "", fmt.Errorf("prepare metadata directory: %w", err)
 	}
-	parentInfo, err := os.Lstat(parent)
-	if err != nil {
-		return "", fmt.Errorf("inspect metadata directory: %w", err)
+	if err := privatefs.CheckFile(absolutePath); errors.Is(err, os.ErrNotExist) {
+		if err := privatefs.WriteFile(absolutePath, []byte{}, false); err != nil && !errors.Is(err, os.ErrExist) {
+			return "", fmt.Errorf("create metadata database: %w", err)
+		}
+	} else if err != nil {
+		return "", fmt.Errorf("inspect metadata database: %w", err)
 	}
-	if !parentInfo.IsDir() || parentInfo.Mode()&os.ModeSymlink != 0 {
-		return "", errors.New("metadata directory must be a real directory")
-	}
-	var parentStatus unix.Stat_t
-	if err := unix.Lstat(parent, &parentStatus); err != nil {
-		return "", fmt.Errorf("inspect metadata directory owner: %w", err)
-	}
-	if parentStatus.Uid != uint32(os.Geteuid()) {
-		return "", errors.New("metadata directory must be owned by the current user")
-	}
-	if parentInfo.Mode().Perm() != 0o700 {
-		return "", errors.New("metadata directory permissions must be 0700")
-	}
-
-	fileDescriptor, err := unix.Open(
-		absolutePath,
-		unix.O_CLOEXEC|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_RDWR,
-		0o600,
-	)
-	if err != nil {
-		return "", fmt.Errorf("open private metadata database: %w", err)
-	}
-	var fileStatus unix.Stat_t
-	statusError := unix.Fstat(fileDescriptor, &fileStatus)
-	closeError := unix.Close(fileDescriptor)
-	if statusError != nil {
-		return "", fmt.Errorf("inspect metadata database descriptor: %w", statusError)
-	}
-	if closeError != nil {
-		return "", fmt.Errorf("close metadata database descriptor: %w", closeError)
-	}
-	if fileStatus.Mode&unix.S_IFMT != unix.S_IFREG {
-		return "", errors.New("metadata database must be a regular file")
-	}
-	if fileStatus.Uid != uint32(os.Geteuid()) {
-		return "", errors.New("metadata database must be owned by the current user")
-	}
-	if os.FileMode(fileStatus.Mode).Perm() != 0o600 {
-		return "", errors.New("metadata database permissions must be 0600")
+	if err := privatefs.CheckFile(absolutePath); err != nil {
+		return "", fmt.Errorf("inspect metadata database: %w", err)
 	}
 	return absolutePath, nil
 }

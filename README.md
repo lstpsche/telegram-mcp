@@ -3,7 +3,7 @@
 Telegram MCP connects AI agents to a local Telegram account runtime through
 standard MCP stdio. It is an unofficial client using Telegram's API. The
 product is designed for finding authorized conversations, retrieving message
-context, and searching chats on one user account, initially on macOS.
+context, and searching chats on one user account, on macOS, Linux and Windows.
 
 ## Available now
 
@@ -17,7 +17,7 @@ require a separate image opt-in; Full read access includes supported images. Pro
 attestation; configuring an account grants no content access.
 
 The account runtime supports interactive production and Test-DC phone/2FA and QR
-authentication, native login-Keychain session and credential storage, exclusive
+authentication, private local session and credential files, exclusive
 account ownership, metadata-only SQLite storage, and remote-first logout.
 Real-account authentication and release-binary acceptance remain human checks.
 
@@ -79,9 +79,7 @@ clients can reconnect by restarting the relay after a disconnect.
 
 Stop the daemon before configuration, authentication, or logout. They share
 its exclusive account lock. After establishing eligibility for the intended
-use, explicitly select production with the human attestation flag. Use the
-[local signing recipe](docs/development-signing.md) and qualify the exact
-control/daemon artifacts before entrusting them with account credentials.
+use, explicitly select production with the human attestation flag. No signing certificate or recurring unlock password is required.
 
 ```sh
 ./tmp/telegram-mcpctl configure --production --attest-eligible
@@ -95,13 +93,13 @@ control/daemon artifacts before entrusting them with account credentials.
 For disposable Test-DC accounts, select `configure --test-dc 2` instead. There
 is no default environment; changing environments requires logout first.
 
-Credentials are read without echo directly from `/dev/tty`, never from argv or
+Credentials are read without echo directly from the OS console, never from argv or
 the environment. API ID, API hash, environment, and Test DC are stored as one
-atomic Keychain bundle. If an interrupted configuration leaves SQLite inconsistent, account
+atomic bundle in a private local file. If an interrupted configuration leaves SQLite inconsistent, account
 operations refuse it; stop the daemon and rerun configuration to recover.
 
 See [authentication](docs/authentication.md),
-[Keychain behavior](docs/keychain.md), and
+[local storage and legacy migration](docs/keychain.md), and
 [verification procedures](docs/account-runtime-verification.md).
 
 ## Authorized text workflows
@@ -143,8 +141,10 @@ which can include messages excluded from the returned bodies.
 Telegram content is untrusted result data, never instructions, logs, errors,
 schemas, or persisted message content. Telegram MCP does not retain message,
 search, or media content. A connected client or model provider can retain
-returned results under its own settings. Same-user processes are outside the
-cryptographic isolation boundary.
+returned results under its own settings. Credentials and sessions are stored unencrypted, protected by the OS user
+account. Anyone who can read those files can obtain the session. Disk encryption
+helps protect a powered-off device; same-user processes and administrators remain
+outside the isolation boundary. Metadata backups exclude these files.
 
 Telegram's [API terms](https://core.telegram.org/api/terms) and
 [content licensing terms](https://telegram.org/tos/content-licensing) constrain
@@ -163,3 +163,7 @@ go build ./cmd/...
 go test ./...
 go vet ./...
 ```
+
+Human [metadata backup and audit maintenance](docs/metadata-maintenance.md) preserves
+settings without restoring account authority. [Portable packaging](docs/distribution.md)
+produces archives without a required signing certificate.

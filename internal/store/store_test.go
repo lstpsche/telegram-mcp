@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -25,24 +27,16 @@ func TestOpenAppliesEmbeddedMigrationsAndSecurityPragmas(t *testing.T) {
 	}
 	t.Cleanup(func() { database.Close() })
 
-	info, err := os.Stat(databasePath)
-	if err != nil {
+	if err := privatefs.CheckFile(databasePath); err != nil {
 		t.Fatal(err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("database mode = %o, want 600", got)
 	}
 	auxiliaryFiles, err := filepath.Glob(databasePath + "-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, auxiliaryPath := range auxiliaryFiles {
-		auxiliaryInfo, err := os.Stat(auxiliaryPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := auxiliaryInfo.Mode().Perm(); got != 0o600 {
-			t.Fatalf("SQLite auxiliary file %s mode = %o, want 600", filepath.Base(auxiliaryPath), got)
+		if err := privatefs.CheckFile(auxiliaryPath); err != nil {
+			t.Fatal("unsafe SQLite auxiliary file", err)
 		}
 	}
 
@@ -55,8 +49,8 @@ func TestOpenAppliesEmbeddedMigrationsAndSecurityPragmas(t *testing.T) {
 	if err := database.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 10 {
-		t.Fatalf("migration count = %d, want 10", migrationCount)
+	if migrationCount != 11 {
+		t.Fatalf("migration count = %d, want 11", migrationCount)
 	}
 	var tableCount int
 	if err := database.QueryRow(`
@@ -267,6 +261,9 @@ func TestMigratorRejectsDatabaseFromUnknownSchemaVersion(t *testing.T) {
 }
 
 func TestOpenRejectsSymlinkDatabase(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("native reparse-point cases are covered in privatefs")
+	}
 	t.Parallel()
 
 	directory := t.TempDir()
@@ -285,6 +282,9 @@ func TestOpenRejectsSymlinkDatabase(t *testing.T) {
 }
 
 func TestOpenRejectsUnsafePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix mode checks; Windows ACL checks are covered in privatefs")
+	}
 	t.Parallel()
 
 	t.Run("directory", func(t *testing.T) {

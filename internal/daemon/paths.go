@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/sys/unix"
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 )
 
 const (
@@ -25,8 +25,7 @@ type Paths struct {
 	Socket     string
 }
 
-// DefaultPaths resolves macOS Application Support and Caches locations without
-// consulting process environment variables for overrides.
+// DefaultPaths resolves the current OS user configuration and cache locations.
 func DefaultPaths() (Paths, error) {
 	configurationRoot, err := os.UserConfigDir()
 	if err != nil {
@@ -49,7 +48,7 @@ func NewPaths(stateDir, runtimeDir string) (Paths, error) {
 	}
 	stateDir = filepath.Clean(stateDir)
 	runtimeDir = filepath.Clean(runtimeDir)
-	if stateDir == string(filepath.Separator) || runtimeDir == string(filepath.Separator) {
+	if filepath.Dir(stateDir) == stateDir || filepath.Dir(runtimeDir) == runtimeDir {
 		return Paths{}, errors.New("state and runtime directories must not be filesystem roots")
 	}
 	return Paths{
@@ -61,32 +60,5 @@ func NewPaths(stateDir, runtimeDir string) (Paths, error) {
 	}, nil
 }
 
-func ensurePrivateDirectory(path string) error {
-	if !filepath.IsAbs(path) || filepath.Clean(path) == string(filepath.Separator) {
-		return errors.New("private directory path must be a non-root absolute path")
-	}
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		return fmt.Errorf("create private directory: %w", err)
-	}
-	return inspectPrivateDirectory(path)
-}
-
-func inspectPrivateDirectory(path string) error {
-	if !filepath.IsAbs(path) || filepath.Clean(path) == string(filepath.Separator) {
-		return errors.New("private directory path must be a non-root absolute path")
-	}
-	var status unix.Stat_t
-	if err := unix.Lstat(path, &status); err != nil {
-		return fmt.Errorf("inspect private directory: %w", err)
-	}
-	if status.Mode&unix.S_IFMT != unix.S_IFDIR {
-		return errors.New("private directory must be a real directory")
-	}
-	if status.Uid != uint32(os.Geteuid()) {
-		return errors.New("private directory must be owned by the current user")
-	}
-	if permissions := os.FileMode(status.Mode).Perm(); permissions != 0o700 {
-		return fmt.Errorf("private directory permissions are %04o, require 0700", permissions)
-	}
-	return nil
-}
+func ensurePrivateDirectory(path string) error  { return privatefs.EnsureDirectory(path) }
+func inspectPrivateDirectory(path string) error { return privatefs.CheckDirectory(path) }

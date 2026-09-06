@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/diagnostics"
 	"github.com/lstpsche/telegram-mcp/internal/mcpserver"
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 	"github.com/lstpsche/telegram-mcp/internal/service"
 )
 
@@ -88,7 +90,7 @@ func TestDoctorSeparatesConnectivityFromContentReadiness(t *testing.T) {
 				manager.installed = &service.Config{Relay: "/safe/telegram-mcp"}
 			}
 			var out, errout bytes.Buffer
-			report := diagnostics.Report{Socket: daemon.SocketAbsent, Keychain: "not_checked", Metadata: "filesystem_only"}
+			report := diagnostics.Report{Socket: daemon.SocketAbsent, Secrets: "not_checked", Metadata: "filesystem_only"}
 			if tc.mcp {
 				report.Socket = daemon.SocketLive
 				report.MCP = true
@@ -178,7 +180,14 @@ func (f *fakeService) Uninstall(context.Context) error {
 }
 
 func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
-	root, err := os.MkdirTemp("/tmp", "tmcp-support-")
+	if runtime.GOOS != "windows" && os.Geteuid() == 0 {
+		t.Skip("user service excludes root")
+	}
+	tempDir := "/tmp"
+	if runtime.GOOS == "windows" {
+		tempDir = os.TempDir()
+	}
+	root, err := os.MkdirTemp(tempDir, "tmcp-support-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,13 +196,28 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if runtime.GOOS == "windows" {
+		home = filepath.Join(home, "private")
+		if err := privatefs.EnsureDirectory(home); err != nil {
+			t.Fatal(err)
+		}
+	}
+	suffix := ""
+	if runtime.GOOS == "windows" {
+		suffix = ".exe"
+	}
 	bin := filepath.Join(home, "artifacts with spaces")
-	if err := os.Mkdir(bin, 0700); err != nil {
+	if err := privatefs.EnsureDirectory(bin); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"telegram-mcp", "telegram-mcpd", "telegram-mcpctl"} {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte("synthetic artifact"), 0700); err != nil {
+		if err := privatefs.WriteFile(filepath.Join(bin, name+suffix), []byte("synthetic artifact"), false); err != nil {
 			t.Fatal(err)
+		}
+		if runtime.GOOS != "windows" {
+			if err := os.Chmod(filepath.Join(bin, name), 0700); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	runner := &workflowRunner{}
@@ -217,6 +241,9 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 		return out.Bytes()
 	}
 	invoke(0, "service", "install", "--bin-dir", bin)
+	if err := privatefs.EnsureDirectory(paths.StateDir); err != nil {
+		t.Fatal(err)
+	}
 	metadata := []byte("deliberately invalid SQLite to detect accidental open")
 	if err := os.WriteFile(paths.Database, metadata, 0600); err != nil {
 		t.Fatal(err)
@@ -233,7 +260,7 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 	defer socket.Close()
 	done := make(chan error, 1)
 	go func() {
-		done <- socket.Serve(ctx, func(ctx context.Context, connection *net.UnixConn) { mcpserver.Serve(ctx, server, connection) })
+		done <- socket.Serve(ctx, func(ctx context.Context, connection net.Conn) { mcpserver.Serve(ctx, server, connection) })
 	}()
 	output := invoke(0, "doctor")
 	var report doctorResult
@@ -247,7 +274,7 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 	if err := json.Unmarshal(invoke(0, "agent-config"), &config); err != nil {
 		t.Fatal(err)
 	}
-	if config["mcpServers"]["telegram"]["command"] != filepath.Join(bin, "telegram-mcp") {
+	if config["mcpServers"]["telegram"]["command"] != filepath.Join(bin, "telegram-mcp"+suffix) {
 		t.Fatal("configuration changed installed path")
 	}
 	invoke(0, "service", "stop")
@@ -272,12 +299,12 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 			t.Fatal("support commands opened SQLite")
 		}
 	}
-	if _, err := os.Stat(filepath.Join(bin, "telegram-mcpd")); err != nil {
+	if _, err := os.Stat(filepath.Join(bin, "telegram-mcpd"+suffix)); err != nil {
 		t.Fatal("uninstall removed artifacts")
 	}
 }
 
-type workflowRunner struct{ loaded bool }
+type workflowRunner struct{ loaded, registered bool }
 type workflowExit int
 
 func (e workflowExit) Error() string { return "synthetic process status" }
@@ -286,7 +313,40 @@ func (r *workflowRunner) Run(ctx context.Context, program string, args ...string
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if program == "/usr/bin/codesign" {
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "Get-ScheduledTask") {
+		if !r.registered {
+			return workflowExit(4)
+		}
+		if r.loaded {
+			return nil
+		}
+		return workflowExit(3)
+	}
+	if program == "/usr/bin/systemctl" || strings.EqualFold(filepath.Base(program), "schtasks.exe") {
+		switch {
+		case strings.Contains(joined, "is-enabled"):
+			if r.registered {
+				return nil
+			}
+			return workflowExit(1)
+		case strings.Contains(joined, "is-active"):
+			if r.loaded {
+				return nil
+			}
+			return workflowExit(3)
+		case strings.Contains(joined, "/Create") || strings.Contains(joined, " enable "):
+			r.registered = true
+		case strings.Contains(joined, "/Run") || strings.Contains(joined, " start "):
+			r.loaded = true
+		case strings.Contains(joined, "/End") || strings.Contains(joined, " stop "):
+			r.loaded = false
+		case strings.Contains(joined, "/Delete") || strings.Contains(joined, " disable "):
+			r.registered = false
+		case strings.Contains(joined, "daemon-reload"):
+		default:
+			return errors.New("unexpected synthetic action")
+		}
 		return nil
 	}
 	if program != "/bin/launchctl" || len(args) < 2 {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/model"
+	"github.com/lstpsche/telegram-mcp/internal/store"
 )
 
 var epochPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{22,128}$`)
@@ -255,6 +256,9 @@ func (l *Lease) Audit(ctx context.Context, requestID, operation string, category
 		_, err := tx.ExecContext(ctx, `INSERT INTO text_audit(request_id,operation,outcome,category,item_count,uncertain,recorded_at)
    VALUES(?,?,?,?,?,?,?)`, requestID, operation, outcome, string(category), count, uncertain, l.repository.now().UTC().Format(time.RFC3339Nano))
 		if err != nil {
+			return internalError(err)
+		}
+		if _, err := store.PruneAudit(ctx, tx, l.repository.now()); err != nil {
 			return internalError(err)
 		}
 		return nil

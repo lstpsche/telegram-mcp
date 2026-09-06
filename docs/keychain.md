@@ -1,72 +1,59 @@
-# Native macOS Keychain boundary
+# Local credential storage and legacy Keychain migration
 
-## Decision
+The default runtime stores credentials, Telegram sessions and cursor integrity
+keys in `secrets.json` under its private state directory. The file is unencrypted.
+Unix directories/files require owner-only permissions; Windows uses restricted
+ACLs. Unsafe links, permissive access and malformed stores are refused. Updates
+publish a complete file atomically under an exclusive lock. No vault password,
+code-signing certificate or paid developer account is required for normal use.
 
-Telegram MCP uses a small cgo adapter over Security.framework. It stores generic
-password items in the current user's unlocked login keychain, sets
-`kSecAttrSynchronizable` to false, and restricts searches to that keychain. It
-fails if the default keychain is not `login.keychain`/`login.keychain-db`, if it
-is locked, or if an operation would require UI. There is no file backend and no
-invocation of `/usr/bin/security`.
+The API ID, API hash, environment and Test DC form one versioned credential
+bundle. Before constructing a Telegram client, the application verifies that
+this bundle agrees with SQLite configuration. Test and production sessions occupy
+separate fixed slots. Either session blocks reconfiguration. Login codes, phone
+numbers, 2FA passwords and QR tokens are never persisted. Logout revokes remotely
+before deleting the selected session; credentials and the integrity key remain.
 
-The evaluated `github.com/keybase/go-keychain` v0.0.1 candidate was rejected.
-Its public item API exposes neither `kSecUseKeychain` nor
-`kSecUseDataProtectionKeychain`. Although it exposes `kSecAttrAccessible`,
-macOS does not support that attribute for a non-synchronizing legacy Keychain
-item. The candidate therefore cannot both select the named login keychain and
-request Data Protection Keychain accessibility. The adapter deliberately uses
-the named legacy login keychain's lock state instead. Removing the wrapper also
-avoids retaining an unnecessary dependency.
+A daemon restart reuses the local session. Missing or malformed credentials fail
+explicitly, without reading Keychain or substituting another backend. A missing
+integrity-key slot can be initialized only in an existing local store; this
+invalidates old cursors. The file is excluded from metadata backups and release
+archives. Anyone able to read it can obtain account access; OS user permissions
+are the boundary, and full-disk encryption helps protect offline storage.
 
-The explicit login-keychain APIs (`SecKeychainCopyDefault`,
-`SecKeychainGetPath`, `SecKeychainGetStatus`, and
-`SecKeychainSetUserInteractionAllowed`) and the noninteractive
-`kSecUseAuthenticationUIFail` value are deprecated by Apple. They are used here
-because the storage contract requires a named, unlocked login keychain and a
-fail-closed CLI path. Release qualification must reevaluate this against the
-minimum supported macOS version and a signed application identity; do not
-silently replace it with an implicit or synchronizing store.
+gotd requires the API hash as a Go string for the client's lifetime. The adapter
+makes this immutable copy only inside `internal/telegram` and clears temporary
+byte slices. This cannot guarantee erasure of all runtime or filesystem copies.
 
-Before opening the keychain, the adapter disables legacy Keychain interaction
-process-wide with `SecKeychainSetUserInteractionAllowed(false)`. Failure to set
-that control aborts the operation. It stays disabled because every caller
-requires noninteractive access. The per-query UI-fail value alone does not
-prevent the legacy backend from waiting for ACL interaction. Neither control
-grants access or changes an item's trusted applications.
+## Import an existing macOS installation
 
-The account runtime uses one service, `dev.telegram-mcp.gateway`, with four
-fixed accounts: `default.session` for Test-DC gotd sessions, `production.session`
-for production gotd sessions, and `default.credentials` for a versioned bundle
-containing the API ID, API hash, environment, and Test DC;
-`default.cursor-integrity` holds an independent 32-byte search-cursor key. Keychain
-replaces the credential bundle atomically. SQLite stores only non-secret
-API ID/environment/DC metadata. Before creating a Telegram client, the application verifies
-that the two stores agree and uses the complete Keychain bundle as input.
-Version 2 requires an explicit environment; legacy version 1 bundles decode only
-as Test-DC credentials. Existing test session bytes remain readable under the
-original item name. A production session never reuses that item. Either item
-blocks reconfiguration, preserving one active account configuration.
+Stop the daemon and retain the old binaries and Keychain items until the new
+runtime has been verified. Build the control command with cgo on macOS and sign
+it using the identity and designated requirement already trusted by the old
+items; see [legacy development signing](development-signing.md). Ordinary
+portable archives deliberately do not contain this native adapter.
 
-If a configuration write is interrupted, inconsistent metadata causes account
-operations to fail before any Telegram client is constructed. Stop the daemon
-and rerun configuration with the intended explicit environment to recover. Existing
-sessions and authorization epochs continue to prevent reconfiguration.
-The implementation does not claim that SQLite and Keychain share a transaction.
+```sh
+telegram-mcpctl migrate-keychain --accept-plaintext-storage
+```
 
-Login codes, phone numbers, 2FA passwords, and QR tokens are never stored.
-Logout deletes only the selected environment's session item; the credential
-bundle remains available for explicit reauthentication. The cursor key also survives logout and restart;
-authorization-epoch binding invalidates old cursors after account changes.
-The daemon loads or initializes this key under the account lock only after a
-recorded epoch exists. A missing item initializes a new key and invalidates old
-cursors; malformed or inaccessible items fail without replacement. No key is
-stored in SQLite or files.
+This explicit human operation reads the four fixed items under
+`dev.telegram-mcp.gateway`: `default.credentials`, `default.session`,
+`production.session`, and `default.cursor-integrity`. It verifies the credential
+bundle against the existing metadata and requires the active session when an
+authorization epoch exists. It writes all imported values atomically, refuses
+any existing destination store, and retains every source item. It does not
+connect to Telegram, reset grants/scopes, or change the authorization epoch.
 
-gotd's client constructor requires the API hash as a Go string and retains it
-for that client's lifetime. Telegram MCP performs this unavoidable immutable copy
-only inside `internal/telegram`; it is never logged, returned, or persisted
-outside Keychain. The temporary byte slice read from Keychain is still cleared
-immediately after construction.
+A lost signing identity or denied Keychain access cannot be bypassed by the
+migration command. Keep the working old installation until access is recovered.
+Do not broaden Keychain ACLs or copy secrets through terminal output. A cgo-free
+or non-macOS build reports that native migration is unavailable.
+
+The legacy adapter uses Security.framework directly, restricts operations to the
+current user's unlocked login keychain and disables synchronization and UI. It
+never invokes `/usr/bin/security`. The deprecated login-keychain APIs remain
+isolated to migration and its synthetic qualification tools.
 
 ## Probe
 
@@ -89,7 +76,12 @@ env -i HOME="$HOME" LANG=C PATH=/usr/bin:/bin TMPDIR=/tmp \
 Expected output contains only the static success statement. It never prints an
 item name or secret.
 
-## Binary identity qualification
+## Legacy binary identity qualification
+
+This optional legacy adapter matrix remains useful when changing the native
+Keychain adapter. It is not required by the file-backed runtime or portable
+release archives. It builds two cgo-enabled commands for synthetic probe actions;
+the migration signing recipe separately needs only the control executable.
 
 The same-artifact probe cannot establish sharing between the control command
 and daemon or access after rebuilding either executable. To exercise those
@@ -162,15 +154,3 @@ the [development signing recipe](development-signing.md) keeps the control and
 daemon identifiers distinct and excludes the relay. This qualification applies
 to rebuilt artifacts using the same certificate and requirement. Certificate
 rotation and migration of items created under other requirements remain separate.
-
-The [local installer](installation.md) verifies executable signatures and
-registers a LaunchAgent, but never reads or changes Keychain items. Actual
-LaunchAgent execution and locked-keychain recovery remain separate checks.
-Developer ID distribution needs qualification against its own signed artifacts;
-local Apple Development results do not establish distribution readiness.
-
-Apple's [macOS Keychain overview](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains)
-distinguishes the legacy file keychain from Data Protection Keychain access
-groups. [Code-signing requirements](https://developer.apple.com/library/archive/technotes/tn2206/)
-describe identity-based access decisions. Sharing a signing team alone must
-not be assumed to grant access under the legacy item's ACL.

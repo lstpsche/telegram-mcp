@@ -18,7 +18,7 @@ func TestProductionAccountSessionIsolationRestartAndLogout(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime := &fakeRuntime{authResult: tgaccount.AuthResult{Performed: true}}
-	application.factory = func(config tgaccount.Config, storage *tgaccount.KeychainSessionStorage, mode tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(config tgaccount.Config, storage *tgaccount.SessionStorage, mode tgaccount.Mode) (accountRuntime, error) {
 		if config.Environment != tgaccount.ProductionEnvironment || config.TestDC != 0 {
 			t.Fatal("wrong account environment")
 		}
@@ -39,7 +39,7 @@ func TestProductionAccountSessionIsolationRestartAndLogout(t *testing.T) {
 		t.Fatal(err)
 	}
 	secrets.set(tgaccount.SessionSecretAccount, []byte("synthetic test session"))
-	restarted.factory = func(config tgaccount.Config, storage *tgaccount.KeychainSessionStorage, _ tgaccount.Mode) (accountRuntime, error) {
+	restarted.factory = func(config tgaccount.Config, storage *tgaccount.SessionStorage, _ tgaccount.Mode) (accountRuntime, error) {
 		value, err := storage.LoadSession(ctx)
 		defer clear(value)
 		if err != nil || string(value) != "synthetic production session" || config.Environment != tgaccount.ProductionEnvironment {
@@ -97,7 +97,7 @@ func TestMixedEnvironmentCredentialsFailBeforeRuntimeConstruction(t *testing.T) 
 	if err := tgaccount.StoreCredentials(ctx, secrets, tgaccount.Config{Environment: tgaccount.TestEnvironment, TestDC: 2, APIID: 12345, APIHash: []byte(testAPIHash)}); err != nil {
 		t.Fatal(err)
 	}
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		t.Fatal("mixed environment reached runtime")
 		return nil, nil
 	}

@@ -20,29 +20,36 @@ const (
 	qrQuietZoneModules        = 4
 )
 
-// Terminal is a direct /dev/tty channel. Authentication material never uses
+// Terminal is a direct OS console channel. Authentication material never uses
 // process stdin, stdout, environment variables, or command-line arguments.
 type Terminal struct {
-	file *os.File
+	input  *os.File
+	output *os.File
 }
 
 func OpenTerminal() (*Terminal, error) {
-	file, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	input, output, err := openConsole()
 	if err != nil {
-		return nil, errors.New("an interactive terminal is required")
+		return nil, fmt.Errorf("an interactive terminal is required: %w", err)
 	}
-	if !term.IsTerminal(int(file.Fd())) {
-		_ = file.Close()
-		return nil, errors.New("an interactive terminal is required")
+	if !term.IsTerminal(int(input.Fd())) {
+		return nil, errors.Join(errors.New("an interactive terminal is required"), input.Close(), output.Close())
 	}
-	return &Terminal{file: file}, nil
+	return &Terminal{input: input, output: output}, nil
 }
 
 func (t *Terminal) Close() error {
-	if t == nil || t.file == nil {
+	if t == nil {
 		return nil
 	}
-	return t.file.Close()
+	var err error
+	if t.input != nil {
+		err = t.input.Close()
+	}
+	if t.output != nil {
+		err = errors.Join(err, t.output.Close())
+	}
+	return err
 }
 
 func (t *Terminal) ReadAPIID(ctx context.Context) (int, error) {
@@ -78,7 +85,7 @@ func (t *Terminal) ShowQRCode(ctx context.Context, tokenURL string, expiresAt ti
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if t == nil || t.file == nil {
+	if t == nil || t.input == nil || t.output == nil {
 		return errors.New("interactive terminal is not initialized")
 	}
 	rendered, err := renderQRCode(tokenURL)
@@ -90,7 +97,7 @@ func (t *Terminal) ShowQRCode(ctx context.Context, tokenURL string, expiresAt ti
 		remaining = 0
 	}
 	if _, err := fmt.Fprintf(
-		t.file,
+		t.output,
 		"Scan with Telegram: Settings > Devices > Link Desktop Device\n%sExpires in %s. Waiting for approval...\n",
 		rendered,
 		remaining,
@@ -104,14 +111,14 @@ func (t *Terminal) readHidden(ctx context.Context, label string, trimSpace bool)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if t == nil || t.file == nil {
+	if t == nil || t.input == nil || t.output == nil {
 		return nil, errors.New("interactive terminal is not initialized")
 	}
-	if _, err := io.WriteString(t.file, label); err != nil {
+	if _, err := io.WriteString(t.output, label); err != nil {
 		return nil, errors.New("write interactive prompt")
 	}
-	value, err := readPasswordBounded(ctx, t.file, maximumOperatorInputBytes)
-	_, newlineError := io.WriteString(t.file, "\n")
+	value, err := readPasswordBounded(ctx, t.input, maximumOperatorInputBytes)
+	_, newlineError := io.WriteString(t.output, "\n")
 	if err != nil {
 		clear(value)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

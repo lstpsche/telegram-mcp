@@ -15,7 +15,7 @@ import (
 
 func TestPeerDiscoveryRequiresEpochBeforeOpeningAccount(t *testing.T) {
 	application, _ := newTestApplication(t)
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		t.Fatal("account constructed without authorization epoch")
 		return nil, errors.New("unexpected")
 	}
@@ -40,7 +40,7 @@ func authorizedTextApplication(t *testing.T, runtime accountRuntime) *Applicatio
 	if err := database.Close(); err != nil {
 		t.Fatal(err)
 	}
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		return runtime, nil
 	}
 	return application
@@ -49,7 +49,7 @@ func authorizedTextApplication(t *testing.T, runtime accountRuntime) *Applicatio
 func TestPeerDiscoveryInitializesAuthorizedReadModeAndDeadline(t *testing.T) {
 	runtime := &fakeDiscoveryRuntime{}
 	application := authorizedTextApplication(t, runtime)
-	application.factory = func(_ tgaccount.Config, _ *tgaccount.KeychainSessionStorage, mode tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(_ tgaccount.Config, _ *tgaccount.SessionStorage, mode tgaccount.Mode) (accountRuntime, error) {
 		if mode != tgaccount.ModeRead {
 			t.Fatalf("mode=%v", mode)
 		}

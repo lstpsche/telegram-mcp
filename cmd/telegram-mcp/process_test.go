@@ -1,3 +1,5 @@
+//go:build darwin || linux
+
 package main
 
 import (
@@ -47,11 +49,11 @@ func TestInheritedPipesUnblockOnDisconnectAndCancellation(t *testing.T) {
 			defer socket.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			connections := make(chan *net.UnixConn, 1)
+			connections := make(chan net.Conn, 1)
 			release := make(chan struct{})
 			defer close(release)
 			go func() {
-				_ = socket.Serve(ctx, func(_ context.Context, connection *net.UnixConn) {
+				_ = socket.Serve(ctx, func(_ context.Context, connection net.Conn) {
 					connections <- connection
 					<-release
 				})
@@ -85,7 +87,7 @@ func TestInheritedPipesUnblockOnDisconnectAndCancellation(t *testing.T) {
 			if err := command.Start(); err != nil {
 				t.Fatal(err)
 			}
-			var connection *net.UnixConn
+			var connection net.Conn
 			select {
 			case connection = <-connections:
 			case <-ctx.Done():

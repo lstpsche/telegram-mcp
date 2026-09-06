@@ -1,3 +1,5 @@
+//go:build darwin || linux
+
 package daemon
 
 import (
@@ -105,58 +107,9 @@ func bindSocket(path string, dial socketDialer) (*Socket, error) {
 	return &Socket{listener: listener, path: path, identity: identity}, nil
 }
 
-// Serve accepts a bounded number of same-user connections. Each handler owns
-// one connection until it returns; cancellation closes all active connections.
-func (s *Socket) Serve(ctx context.Context, handle func(context.Context, *net.UnixConn)) error {
-	if s == nil || s.listener == nil || handle == nil {
-		return errors.New("runtime socket is not initialized")
-	}
-	slots := make(chan struct{}, 8)
-	var handlers sync.WaitGroup
-	serveContext, cancel := context.WithCancel(ctx)
-	defer handlers.Wait()
-	defer cancel()
-	for {
-		if err := serveContext.Err(); err != nil {
-			return err
-		}
-		if err := s.listener.SetDeadline(time.Now().Add(socketProbeTimeout)); err != nil {
-			return errors.New("set runtime socket deadline")
-		}
-		connection, err := s.listener.AcceptUnix()
-		if err != nil {
-			if serveContext.Err() != nil {
-				return serveContext.Err()
-			}
-			if networkError, ok := err.(net.Error); ok && networkError.Timeout() {
-				continue
-			}
-			return errors.New("accept runtime socket connection")
-		}
-		if err := VerifyPeer(connection); err != nil {
-			_ = connection.Close()
-			continue
-		}
-		select {
-		case slots <- struct{}{}:
-			handlers.Add(1)
-			go func() {
-				defer handlers.Done()
-				defer func() { <-slots }()
-				stop := context.AfterFunc(serveContext, func() { _ = connection.Close() })
-				defer stop()
-				defer connection.Close()
-				handle(serveContext, connection)
-			}()
-		default:
-			_ = connection.Close()
-		}
-	}
-}
-
 // DialSocket validates the directory, socket node, and server UID. It never
 // creates state or starts a daemon on behalf of a client.
-func DialSocket(ctx context.Context, path string) (*net.UnixConn, error) {
+func DialSocket(ctx context.Context, path string) (net.Conn, error) {
 	if err := inspectPrivateDirectory(filepath.Dir(path)); err != nil {
 		return nil, err
 	}

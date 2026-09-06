@@ -8,11 +8,13 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 	"github.com/lstpsche/telegram-mcp/internal/reader"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -23,10 +25,7 @@ func serveTestServer(t *testing.T) (string, context.Context) {
 
 func serveTextTestServer(t *testing.T, service *reader.Service) (string, context.Context) {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "tmcp-wire-")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := runtimeTestDirectory(t)
 	socketPath := filepath.Join(dir, "server.sock")
 	socket, err := daemon.BindSocket(socketPath)
 	if err != nil {
@@ -36,7 +35,7 @@ func serveTextTestServer(t *testing.T, service *reader.Service) (string, context
 	server := New(func() daemon.Snapshot { return daemon.Snapshot{State: daemon.StateReauthRequired} }, service)
 	done := make(chan error, 1)
 	go func() {
-		done <- socket.Serve(ctx, func(ctx context.Context, connection *net.UnixConn) { Serve(ctx, server, connection) })
+		done <- socket.Serve(ctx, func(ctx context.Context, connection net.Conn) { Serve(ctx, server, connection) })
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -194,11 +193,7 @@ func TestRelayCancellationClosesIdleStreams(t *testing.T) {
 }
 
 func TestRelayReportsRemoteDisconnect(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "tmcp-close-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := runtimeTestDirectory(t)
 	path := filepath.Join(dir, "daemon.sock")
 	socket, err := daemon.BindSocket(path)
 	if err != nil {
@@ -211,7 +206,7 @@ func TestRelayReportsRemoteDisconnect(t *testing.T) {
 	disconnect := make(chan struct{})
 	serveDone := make(chan error, 1)
 	go func() {
-		serveDone <- socket.Serve(ctx, func(context.Context, *net.UnixConn) { close(started); <-disconnect })
+		serveDone <- socket.Serve(ctx, func(context.Context, net.Conn) { close(started); <-disconnect })
 	}()
 	inputReader, inputWriter := io.Pipe()
 	defer inputWriter.Close()
@@ -239,4 +234,22 @@ func TestRelayReportsRemoteDisconnect(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("server did not stop")
 	}
+}
+
+func runtimeTestDirectory(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if runtime.GOOS != "windows" {
+		var err error
+		root, err = os.MkdirTemp("/tmp", "tmcp-wire-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(root) })
+	}
+	dir := filepath.Join(root, "runtime")
+	if err := privatefs.EnsureDirectory(dir); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

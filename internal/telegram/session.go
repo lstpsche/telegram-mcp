@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/gotd/td/session"
-	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
+	"github.com/lstpsche/telegram-mcp/internal/secrets"
 )
 
 const (
@@ -22,15 +22,15 @@ type SecretStore interface {
 	Delete(ctx context.Context, account string) error
 }
 
-// KeychainSessionStorage adapts the native secret store to gotd's session
+// SessionStorage adapts the local secret store to gotd's session
 // contract. It serializes replacement writes for one account.
-type KeychainSessionStorage struct {
+type SessionStorage struct {
 	store   SecretStore
 	account string
 	mutex   sync.Mutex
 }
 
-func NewKeychainSessionStorage(store SecretStore, environment string) (*KeychainSessionStorage, error) {
+func NewSessionStorage(store SecretStore, environment string) (*SessionStorage, error) {
 	if store == nil {
 		return nil, errors.New("session secret store is required")
 	}
@@ -41,17 +41,17 @@ func NewKeychainSessionStorage(store SecretStore, environment string) (*Keychain
 	if environment == ProductionEnvironment {
 		account = ProductionSessionSecretAccount
 	}
-	return &KeychainSessionStorage{store: store, account: account}, nil
+	return &SessionStorage{store: store, account: account}, nil
 }
 
-func (s *KeychainSessionStorage) LoadSession(ctx context.Context) ([]byte, error) {
+func (s *SessionStorage) LoadSession(ctx context.Context) ([]byte, error) {
 	if s == nil || s.store == nil {
 		return nil, errors.New("session storage is not initialized")
 	}
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	value, err := s.store.Get(ctx, s.account)
-	if errors.Is(err, keychain.ErrNotFound) {
+	if errors.Is(err, secrets.ErrNotFound) {
 		clear(value)
 		return nil, session.ErrNotFound
 	}
@@ -62,9 +62,9 @@ func (s *KeychainSessionStorage) LoadSession(ctx context.Context) ([]byte, error
 	return value, nil
 }
 
-// Exists reports whether Keychain contains a gotd session without retaining
+// Exists reports whether the secret store contains a gotd session without retaining
 // the loaded session bytes.
-func (s *KeychainSessionStorage) Exists(ctx context.Context) (bool, error) {
+func (s *SessionStorage) Exists(ctx context.Context) (bool, error) {
 	value, err := s.LoadSession(ctx)
 	clear(value)
 	if errors.Is(err, session.ErrNotFound) {
@@ -76,7 +76,7 @@ func (s *KeychainSessionStorage) Exists(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (s *KeychainSessionStorage) StoreSession(ctx context.Context, data []byte) error {
+func (s *SessionStorage) StoreSession(ctx context.Context, data []byte) error {
 	if s == nil || s.store == nil {
 		return errors.New("session storage is not initialized")
 	}
@@ -85,7 +85,7 @@ func (s *KeychainSessionStorage) StoreSession(ctx context.Context, data []byte) 
 	return s.store.Put(ctx, s.account, data)
 }
 
-func (s *KeychainSessionStorage) Delete(ctx context.Context) error {
+func (s *SessionStorage) Delete(ctx context.Context) error {
 	if s == nil || s.store == nil {
 		return errors.New("session storage is not initialized")
 	}
@@ -94,4 +94,4 @@ func (s *KeychainSessionStorage) Delete(ctx context.Context) error {
 	return s.store.Delete(ctx, s.account)
 }
 
-var _ session.Storage = (*KeychainSessionStorage)(nil)
+var _ session.Storage = (*SessionStorage)(nil)

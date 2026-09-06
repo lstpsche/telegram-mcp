@@ -249,7 +249,7 @@ whichever is earlier. Each continuation retains that expiry.
 Results remain live: edits, deletions and changing search matches are not a
 snapshot, and a full last window may require one final empty request.
 
-Cursors are versioned, signed with an independent Keychain key, and bound to
+Cursors are versioned, signed with an independent locally stored key, and bound to
 operation, peer or scope, keyed query digest, item limit, authorization epoch
 and durable policy revision. Scoped cursors also bind the selected membership
 and carry the current peer position and window. They contain no query or body text and are not permission.

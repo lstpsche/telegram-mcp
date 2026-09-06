@@ -21,7 +21,7 @@ The suite covers:
 - `0700` state/runtime directories and `0600` lock/database/socket nodes;
 - symlink, non-socket, wrong-permission, overlong, active, inconclusive-probe,
   and verified-stale socket paths;
-- Keychain-to-gotd session not-found/store/load/existence/delete semantics;
+- Local-store-to-gotd session not-found/store/load/existence/delete semantics;
 - atomic credential bundles, failure/cancellation between stores, refusal of
   inconsistent configuration, and recovery by reconfiguration;
 - metadata-only environment configuration, method checks, epoch rotation, restart reuse,
@@ -53,12 +53,12 @@ Qualify the exact signed control/daemon artifacts before adding credentials.
 - Explicit configuration selects the intended environment before prompting.
 - Phone login succeeds in the selected environment.
 - Phone login with 2FA succeeds where enabled.
-- Restart reuses the Keychain session without prompting.
+- Restart reuses the local session without prompting.
 - QR login succeeds from a scanning client authorized in the same environment.
 - `telegram-mcpctl status` records each method only after that method ran.
-- Logout revokes remotely, deletes the Keychain session, and removes the
+- Logout revokes remotely, deletes the local session, and removes the
   active epoch.
-- A launchd-like invocation can reuse the signed binary's Keychain item.
+- A background service invocation can reuse the local session without prompting.
 
 Method checks are bound to the configured environment. Passing them establishes
 neither content eligibility nor authority; configuration and grants remain

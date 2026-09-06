@@ -9,11 +9,11 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 )
 
-func TestKeychainSessionStorageMapsMissingAndDeletes(t *testing.T) {
+func TestSessionStorageMapsMissingAndDeletes(t *testing.T) {
 	t.Parallel()
 
 	secretStore := &memorySecretStore{}
-	storage, err := NewKeychainSessionStorage(secretStore, TestEnvironment)
+	storage, err := NewSessionStorage(secretStore, TestEnvironment)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,11 +47,11 @@ func TestKeychainSessionStorageMapsMissingAndDeletes(t *testing.T) {
 	}
 }
 
-func TestKeychainSessionStorageClearsDataReturnedWithError(t *testing.T) {
+func TestSessionStorageClearsDataReturnedWithError(t *testing.T) {
 	t.Parallel()
 
 	value := []byte("partial session material")
-	storage, err := NewKeychainSessionStorage(&errorSecretStore{value: value}, TestEnvironment)
+	storage, err := NewSessionStorage(&errorSecretStore{value: value}, TestEnvironment)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,3 +1,5 @@
+//go:build darwin || linux
+
 package daemon
 
 import (
@@ -7,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 	"golang.org/x/sys/unix"
 )
 
@@ -25,35 +28,12 @@ func AcquireAccountLock(path string) (*AccountLock, error) {
 	if err := ensurePrivateDirectory(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
-	fileDescriptor, err := unix.Open(path, unix.O_CLOEXEC|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_RDWR, 0o600)
+	file, err := privatefs.OpenFile(path, true)
 	if err != nil {
 		return nil, fmt.Errorf("open account lock: %w", err)
 	}
-	file := os.NewFile(uintptr(fileDescriptor), path)
-	if file == nil {
-		_ = unix.Close(fileDescriptor)
-		return nil, errors.New("open account lock: invalid file descriptor")
-	}
-	closeOnError := func(openError error) (*AccountLock, error) {
-		if closeError := file.Close(); closeError != nil {
-			return nil, errors.Join(openError, fmt.Errorf("close account lock: %w", closeError))
-		}
-		return nil, openError
-	}
-
-	var status unix.Stat_t
-	if err := unix.Fstat(fileDescriptor, &status); err != nil {
-		return closeOnError(fmt.Errorf("inspect account lock: %w", err))
-	}
-	if status.Mode&unix.S_IFMT != unix.S_IFREG {
-		return closeOnError(errors.New("account lock must be a regular file"))
-	}
-	if status.Uid != uint32(os.Geteuid()) {
-		return closeOnError(errors.New("account lock must be owned by the current user"))
-	}
-	if permissions := os.FileMode(status.Mode).Perm(); permissions != 0o600 {
-		return closeOnError(fmt.Errorf("account lock permissions are %04o, require 0600", permissions))
-	}
+	fileDescriptor := int(file.Fd())
+	closeOnError := func(openError error) (*AccountLock, error) { return nil, errors.Join(openError, file.Close()) }
 	if err := unix.Flock(fileDescriptor, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return closeOnError(ErrAccountLocked)

@@ -11,7 +11,7 @@ import (
 
 func TestFullReadControlUsesPolicyWithoutOpeningCredentialsOrTelegram(t *testing.T) {
 	application := authorizedTextApplication(t, &fakeDiscoveryRuntime{})
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		t.Fatal("policy opened account runtime")
 		return nil, errors.New("unexpected")
 	}

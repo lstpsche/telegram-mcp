@@ -7,7 +7,8 @@ policy mutations are human-only.
 
 ## Available MCP behavior
 
-The stdio relay forwards bytes to an owner-only Unix socket. The daemon uses
+The stdio relay forwards bytes to an owner-only Unix socket on macOS/Linux
+or a user-restricted named pipe on Windows. The daemon uses
 the pinned MCP SDK for initialization, tool discovery, calls, and cancellation.
 Both endpoints verify the other process's OS user. The server accepts at most
 eight connections, caps each input frame at 64 KiB, and limits each connection

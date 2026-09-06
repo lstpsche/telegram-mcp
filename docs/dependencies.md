@@ -16,7 +16,7 @@ metadata:
 | `modernc.org/sqlite` | v1.58.0 | Current stable pure-Go SQLite driver for metadata only |
 | `github.com/keybase/go-keychain` | v0.0.1 | Evaluated and rejected; not retained in the module graph |
 
-The Keychain implementation uses the macOS platform framework directly; see
+The optional legacy Keychain migration adapter uses Security.framework directly; see
 [the Keychain decision and proof](keychain.md).
 
 Primary references:

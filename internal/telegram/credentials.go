@@ -7,7 +7,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/model"
 )
 
-// Application credentials form one atomic Keychain value. The adapter never
+// Application credentials form one atomic secret-store value. The adapter never
 // combines a hash from one configuration with an API ID/environment/DC from another.
 type credentials struct {
 	Version     int    `json:"version"`

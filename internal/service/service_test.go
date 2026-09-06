@@ -1,3 +1,5 @@
+//go:build darwin
+
 package service
 
 import (
@@ -19,6 +21,7 @@ import (
 type exitStatus int
 
 func (e exitStatus) Error() string { return "synthetic process status" }
+
 func (e exitStatus) ExitCode() int { return int(e) }
 
 type fakeRunner struct {
@@ -39,9 +42,6 @@ func (r *fakeRunner) Run(ctx context.Context, program string, args ...string) er
 		if err := r.fail(program, args); err != nil {
 			return err
 		}
-	}
-	if program == "/usr/bin/codesign" {
-		return nil
 	}
 	switch args[0] {
 	case "print":
@@ -209,10 +209,10 @@ func must(t *testing.T, err error) {
 	}
 }
 
-func TestInspectRejectsAlteredPlistAndSignatures(t *testing.T) {
-	for _, alter := range []string{"foreign", "mode", "oversized", "symlink", "signature", "binary removed"} {
+func TestInspectRejectsAlteredPlistAndBinaries(t *testing.T) {
+	for _, alter := range []string{"foreign", "mode", "oversized", "symlink", "binary removed"} {
 		t.Run(alter, func(t *testing.T) {
-			m, r, bin := fixture(t)
+			m, _, bin := fixture(t)
 			install(t, m, bin)
 			switch alter {
 			case "foreign":
@@ -224,13 +224,6 @@ func TestInspectRejectsAlteredPlistAndSignatures(t *testing.T) {
 			case "symlink":
 				must(t, os.Remove(m.plistPath()))
 				must(t, os.Symlink(filepath.Join(bin, "telegram-mcpd"), m.plistPath()))
-			case "signature":
-				r.fail = func(program string, args []string) error {
-					if program == "/usr/bin/codesign" {
-						return exitStatus(1)
-					}
-					return nil
-				}
 			case "binary removed":
 				must(t, os.Remove(filepath.Join(bin, "telegram-mcpd")))
 			}
@@ -266,26 +259,22 @@ func TestLaunchctlAbsenceIsSpecificAndDomainMustExist(t *testing.T) {
 }
 
 func TestCommandFailuresPreserveCauseAndDoNotContinue(t *testing.T) {
-	for _, command := range []string{"codesign", "bootstrap", "bootout"} {
+	for _, command := range []string{"bootstrap", "bootout"} {
 		t.Run(command, func(t *testing.T) {
 			m, r, bin := fixture(t)
 			cause := errors.New("synthetic failure")
-			if command != "codesign" {
-				install(t, m, bin)
-			}
+			install(t, m, bin)
 			if command == "bootout" {
 				must(t, m.Start(context.Background()))
 			}
 			r.fail = func(program string, args []string) error {
-				if (command == "codesign" && program == "/usr/bin/codesign") || args[0] == command {
+				if args[0] == command {
 					return cause
 				}
 				return nil
 			}
 			var err error
 			switch command {
-			case "codesign":
-				_, err = m.Install(context.Background(), bin)
 			case "bootstrap":
 				err = m.Start(context.Background())
 			case "bootout":
@@ -338,7 +327,7 @@ func TestStopWaitsForConfirmedRemovalAndHonorsDeadline(t *testing.T) {
 }
 
 func TestCleanupDoesNotRequireOldBinariesToRemainUsable(t *testing.T) {
-	for _, damage := range []string{"missing binary", "invalid signature"} {
+	for _, damage := range []string{"missing binary", "unsafe binary permissions"} {
 		t.Run(damage, func(t *testing.T) {
 			m, r, bin := fixture(t)
 			install(t, m, bin)
@@ -346,11 +335,8 @@ func TestCleanupDoesNotRequireOldBinariesToRemainUsable(t *testing.T) {
 			if damage == "missing binary" {
 				must(t, os.Remove(filepath.Join(bin, "telegram-mcpd")))
 			}
-			r.fail = func(program string, args []string) error {
-				if program == "/usr/bin/codesign" {
-					return exitStatus(1)
-				}
-				return nil
+			if damage == "unsafe binary permissions" {
+				must(t, os.Chmod(filepath.Join(bin, "telegram-mcpd"), 0777))
 			}
 			if _, err := m.Inspect(context.Background()); err == nil {
 				t.Fatal("damaged installation reported usable")

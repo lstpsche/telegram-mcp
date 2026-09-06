@@ -1,3 +1,5 @@
+//go:build darwin
+
 // keychain-probe is an isolated, destructive-to-its-own-temporary-item proof
 // for Telegram MCP's native macOS Keychain adapter. It never prints secret bytes.
 package main

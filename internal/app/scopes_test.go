@@ -14,7 +14,7 @@ import (
 func TestScopesPersistWithoutAccountIOOrGrantAuthority(t *testing.T) {
 	ctx := context.Background()
 	application := authorizedTextApplication(t, &fakeRuntime{})
-	application.factory = func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error) {
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
 		t.Fatal("scope management opened Telegram account")
 		return nil, errors.New("unexpected")
 	}

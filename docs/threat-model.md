@@ -2,7 +2,7 @@
 
 - Status: account runtime and authorized text/image MCP implemented; live acceptance separate
 - Date: 2026-09-05
-- Scope: local single-account macOS v1 architecture
+- Scope: local single-account macOS, Linux and Windows architecture
 
 ## Security objectives
 
@@ -10,8 +10,8 @@
    bounded results.
 2. Authentication, consent, policy mutation, and account administration remain
    outside the model-facing protocol.
-3. Telegram content and credentials do not become durable local copies, logs,
-   errors, tool instructions, or ambient process configuration.
+3. Telegram content is not persisted. Credentials remain in private local storage
+   and never appear in logs, errors, tool instructions or process configuration.
 4. Read-state side effects, freshness, partial results, and degradation are
    represented truthfully.
 5. One daemon owns one account session and update state; no relay or client can
@@ -29,13 +29,13 @@
 
 ## Actors and assumptions
 
-- The operator controls the macOS account and performs interactive control-plane
+- The operator controls the OS account and performs interactive control-plane
   actions.
 - Telegram and gotd are external/upstream trust dependencies.
 - An MCP client or model may be buggy, compromised, or adversarial.
 - Telegram content, peer metadata, and entities are hostile input and may
   contain prompt injection, malformed Unicode, or oversized structures.
-- Other local processes running as the same macOS user are **not** isolated by
+- Other local processes running as the same OS user are **not** isolated by
   this design. They can potentially inspect or replace accessible files and
   invoke installed binaries. The binary split and permissions are defense in
   depth, not a cryptographic same-user boundary.
@@ -46,11 +46,11 @@
 untrusted model/client
   -> canonical MCP stdio
 byte-only relay
-  -> owner-only Unix socket
+  -> owner-only local socket or Windows named pipe
 single-account daemon
   -> schema/budget and application boundary
   -> default-deny policy before fetch and after normalization
-  -> Telegram adapter / metadata store / native Keychain
+  -> Telegram adapter / metadata store / private local secret file
   -> Telegram MTProto
 
 human operator
@@ -105,13 +105,21 @@ audit failure releases no body.
 ### Secret disclosure or persistence
 
 Threat: credentials appear in argv, environment, stdout, logs, SQLite, crash
-output, or a fallback file; synchronized Keychain items leave the device.
+output, or files accessible to other ordinary OS users.
 
-Controls: interactive no-echo input comes directly from `/dev/tty`; 2FA uses a
-locked wipe-on-use buffer; native Security.framework only; unlocked-login-
-keychain check; explicit non-synchronizing attribute; noninteractive UI
-failure; no file backend; byte-only relay has no secrets; metadata schema
-contains no secret/content columns.
+Controls: interactive no-echo input comes directly from the OS console; 2FA uses
+a locked wipe-on-use buffer. Credentials, sessions and integrity keys use atomic
+private file writes, strict parsing, bounded reads and no-link validation. Unix
+permissions and Windows ACLs restrict access to the owner. The byte-only relay
+has no secrets; SQLite contains no secret/content columns.
+
+The local secret file is intentionally unencrypted to permit automatic restart
+without a password or certificate. Readable copies expose account access; the
+same OS user, administrators and offline disk access are outside this boundary.
+Disk encryption can mitigate offline theft. Metadata backups exclude secrets.
+Legacy Keychain migration is explicit, validates the complete bundle and required
+session, publishes without overwriting and retains the source. Missing or corrupt
+files never trigger an automatic storage fallback.
 
 ### Local socket and process attacks
 
@@ -147,21 +155,15 @@ default 20 and hard maximum 100 items.
 
 ### Supply-chain and binary-identity drift
 
-Threat: dependency compromise, prerelease selection, unsigned replacement, or
-changed code identity breaks or broadens Keychain access.
+Threat: dependency compromise or replacement of installed executables changes
+account behavior.
 
-Controls: explicit stable pins and checksums; compile selected gotd/MCP packages;
-direct platform Keychain API; vulnerability checks at release; signed/notarized
-artifacts; upgrade access proof. Local Apple Development builds use a shared
-designated requirement pinned to one certificate and the control/daemon
-identifiers. The relay and unrelated identifiers remain outside that requirement.
-Native synthetic checks prove cross-command and rebuilt-upgrade access, with
-denial for an unrelated same-certificate identifier and an ad-hoc spoof.
-Ad-hoc signatures alone fail sharing and upgrade access. Self-signed certificates
-also lack the stable Apple signing-family partition used by the legacy Keychain.
-No item ACL is widened to compensate. Certificate rotation, real launchd access
-and distribution artifacts require separate qualification. See
-[local development signing](development-signing.md).
+Controls: stable dependency pins, checksums, private installation directories and
+immutable versioned executable paths. Portable archives include hashes and build
+metadata; hashes detect corruption but do not establish publisher authenticity.
+Signing is optional and is not a prerequisite for credential access. Install from
+a trusted source. Legacy macOS Keychain migration separately requires an identity
+already allowed by the old items; it does not widen their ACLs.
 
 ## Excluded or deferred risk
 
@@ -182,7 +184,7 @@ Automated checks prove lock-and-eligibility-before-prompt ordering,
 second-owner exclusion,
 private directory/file/socket permissions, fail-closed malicious socket paths,
 safe stale-socket replacement, fail-closed inconclusive socket probes,
-Keychain-backed gotd session reconciliation, authorization-epoch
+File-backed gotd session reconciliation, authorization-epoch
 rotation/invalidation after startup and at runtime, bounded request scheduling,
 sanitized command output, and cancellation cleanup. Live phone/2FA and QR login
 still require a human account in the explicitly selected environment and are
@@ -192,10 +194,10 @@ Synthetic tests cover default-deny grants, exact author/range/prefix authority,
 revocation serialization, hostile input and content, mirrored result budgets,
 hooked acknowledgment and durable checkpoint failures, and the stdio text
 workflow. They do not establish live account acceptance, production eligibility,
-signing across upgrades or release readiness. Production DC construction requires
+native execution on every target OS or release readiness. Production DC construction requires
 explicit human configuration and eligibility attestation. Metadata and the atomic
 credential tuple must agree on environment before client creation. Production
-sessions use a distinct Keychain item; either environment's session blocks
+sessions use a distinct local secret slot; either environment's session blocks
 reconfiguration. Logout removes only the selected session. Legacy credential
 bundles are accepted only as test credentials. No MCP tool can change these
 controls.
@@ -217,7 +219,7 @@ with the existing author/range/eligibility/content checks. Only bounded snippets
 leave this path, with no history receipt. Following a result into full context
 requires the independent whole-prefix acknowledgment authorization.
 
-Search cursors use domain-separated HMAC-SHA256 and a distinct native Keychain
+Search cursors use domain-separated HMAC-SHA256 and a distinct locally stored
 key. Their query digest is also keyed, preventing offline dictionary checks
 against a visible cursor payload. Version, signature, canonical encoding,
 expiry, operation, peer or scope, query, item limit, epoch and policy revision are checked
@@ -317,3 +319,22 @@ success. Live page validation and receipt readback establish the narrower
 freshness contract; Telegram may edit/delete content after the last observation.
 Synthetic adapter and MCP tests prove routing, subtype rejection, readback,
 revocation and native-image delivery. Live account acceptance remains separate.
+
+Human metadata recovery imports only bounded, strictly validated scope selections
+and audit retention settings. It never loads a backup SQLite file or restores
+credentials, access hashes, authorization epochs, grants or checkpoints. Restore
+holds the account lock and policy lease, resets all content authority, replaces
+scope identities, and advances the current revision in one transaction. Matching
+environments prevent accidental production/Test DC mixing; the operator still
+chooses the current account explicitly. Private file permissions protect exported
+membership metadata from other users, not from processes running as the owner.
+
+Audit age/count retention executes in the required insertion transaction; a
+failure rolls back insertion and the reader withholds content. Human purge is
+explicit and affects audit history only. Logical deletion does not establish
+forensic erasure of SQLite pages, WAL or external snapshots.
+
+Portable release archives contain executables and documentation, never account
+state. Native platform execution and real-account acceptance are separate from
+cross-compilation. See [metadata maintenance](metadata-maintenance.md) and
+[distribution](distribution.md).

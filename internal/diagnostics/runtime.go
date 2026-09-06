@@ -11,11 +11,11 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"syscall"
 	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/model"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -30,7 +30,7 @@ type Report struct {
 	MCP          bool               `json:"mcp"`
 	AccountState *daemon.State      `json:"account_state"`
 	MessageReads *bool              `json:"message_reads"`
-	Keychain     string             `json:"keychain"`
+	Secrets      string             `json:"secrets"`
 	Metadata     string             `json:"metadata"`
 }
 
@@ -64,7 +64,7 @@ func inspect(ctx context.Context, paths daemon.Paths) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	report := Report{Files: files, Keychain: "not_checked", Metadata: "filesystem_only"}
+	report := Report{Files: files, Secrets: "not_checked", Metadata: "filesystem_only"}
 	connection, err := daemon.DialSocket(ctx, paths.Socket)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -73,7 +73,7 @@ func inspect(ctx context.Context, paths daemon.Paths) (Report, error) {
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			report.Socket = daemon.SocketAbsent
-		case errors.Is(err, unix.ECONNREFUSED):
+		case errors.Is(err, syscall.ECONNREFUSED):
 			report.Socket = daemon.SocketStale
 		default:
 			return Report{}, err

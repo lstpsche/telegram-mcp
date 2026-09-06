@@ -18,14 +18,15 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/mcpserver"
 	"github.com/lstpsche/telegram-mcp/internal/policy"
 	"github.com/lstpsche/telegram-mcp/internal/reader"
-	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
+	"github.com/lstpsche/telegram-mcp/internal/secrets"
 	metastore "github.com/lstpsche/telegram-mcp/internal/store"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
 	"golang.org/x/sync/errgroup"
 )
 
 var (
-	ErrConfigurationRequired = errors.New("Telegram account configuration is required")
+	ErrConfigurationRequired   = errors.New("Telegram account configuration is required")
+	ErrLocalSecretsUnavailable = errors.New("configured local credentials are unavailable")
 )
 
 type AuthOutcome struct {
@@ -52,7 +53,7 @@ type accountRuntime interface {
 	Logout(context.Context) error
 }
 
-type runtimeFactory func(tgaccount.Config, *tgaccount.KeychainSessionStorage, tgaccount.Mode) (accountRuntime, error)
+type runtimeFactory func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error)
 
 type Application struct {
 	paths     daemon.Paths
@@ -74,7 +75,7 @@ func New(paths daemon.Paths, secrets tgaccount.SecretStore) (*Application, error
 	return &Application{
 		paths:   paths,
 		secrets: secrets,
-		factory: func(config tgaccount.Config, storage *tgaccount.KeychainSessionStorage, mode tgaccount.Mode) (accountRuntime, error) {
+		factory: func(config tgaccount.Config, storage *tgaccount.SessionStorage, mode tgaccount.Mode) (accountRuntime, error) {
 			return tgaccount.NewAccount(config, storage, mode)
 		},
 		now:    time.Now,
@@ -87,15 +88,15 @@ func NewDefault() (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	secrets, err := keychain.New(tgaccount.KeychainServiceName)
+	localSecrets, err := secrets.NewFileStore(paths.StateDir)
 	if err != nil {
 		return nil, err
 	}
-	return New(paths, secrets)
+	return New(paths, localSecrets)
 }
 
 // Configure writes non-secret account metadata to SQLite and the atomic
-// credential tuple to Keychain. Existing authorization must be logged out first.
+// credential tuple to private files. Existing authorization must be logged out first.
 func (a *Application) Configure(ctx context.Context, environment string, testDC int, read ConfigurationReader) (resultError error) {
 	if a == nil {
 		return errors.New("application is not initialized")
@@ -116,6 +117,18 @@ func (a *Application) Configure(ctx context.Context, environment string, testDC 
 		return err
 	}
 	defer func() { resultError = errors.Join(resultError, database.Close()) }()
+	if _, configured, err := repository.Config(ctx); err != nil {
+		return err
+	} else if configured {
+		value, err := a.secrets.Get(ctx, tgaccount.CredentialsSecretAccount)
+		clear(value)
+		if errors.Is(err, secrets.ErrNotFound) {
+			return ErrLocalSecretsUnavailable
+		}
+		if err != nil {
+			return err
+		}
+	}
 	_, authorized, err := repository.Authorization(ctx)
 	if err != nil {
 		return err
@@ -125,7 +138,7 @@ func (a *Application) Configure(ctx context.Context, environment string, testDC 
 	}
 	// Either environment's surviving session prevents implicit replacement.
 	for _, sessionEnvironment := range []string{tgaccount.TestEnvironment, tgaccount.ProductionEnvironment} {
-		sessionStorage, err := tgaccount.NewKeychainSessionStorage(a.secrets, sessionEnvironment)
+		sessionStorage, err := tgaccount.NewSessionStorage(a.secrets, sessionEnvironment)
 		if err != nil {
 			return err
 		}
@@ -226,7 +239,7 @@ func (a *Application) Logout(ctx context.Context) (resultError error) {
 	if err := account.Logout(ctx); err != nil {
 		return err
 	}
-	sessionStorage, err := tgaccount.NewKeychainSessionStorage(a.secrets, config.Environment)
+	sessionStorage, err := tgaccount.NewSessionStorage(a.secrets, config.Environment)
 	if err != nil {
 		return err
 	}
@@ -385,7 +398,7 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 	}
 	server := mcpserver.New(lifecycle.Snapshot, textService)
 	if account == nil {
-		err := socket.Serve(ctx, func(ctx context.Context, conn *net.UnixConn) { mcpserver.Serve(ctx, server, conn) })
+		err := socket.Serve(ctx, func(ctx context.Context, conn net.Conn) { mcpserver.Serve(ctx, server, conn) })
 		if ctx.Err() != nil {
 			normalStop = true
 			return nil
@@ -400,7 +413,7 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 
 	group, groupContext := errgroup.WithContext(ctx)
 	group.Go(func() error {
-		return socket.Serve(groupContext, func(ctx context.Context, conn *net.UnixConn) { mcpserver.Serve(ctx, server, conn) })
+		return socket.Serve(groupContext, func(ctx context.Context, conn net.Conn) { mcpserver.Serve(ctx, server, conn) })
 	})
 	group.Go(func() error {
 		return account.Observe(groupContext, func(observeContext context.Context, authorization tgaccount.AuthorizationStatus) error {
@@ -489,9 +502,9 @@ func (a *Application) account(
 		return metastore.AccountConfig{}, nil, ErrConfigurationRequired
 	}
 	credentials, err := tgaccount.LoadCredentials(ctx, a.secrets)
-	if errors.Is(err, keychain.ErrNotFound) {
+	if errors.Is(err, secrets.ErrNotFound) {
 		clear(credentials.APIHash)
-		return metastore.AccountConfig{}, nil, ErrConfigurationRequired
+		return metastore.AccountConfig{}, nil, errors.Join(ErrConfigurationRequired, ErrLocalSecretsUnavailable)
 	}
 	if err != nil {
 		clear(credentials.APIHash)
@@ -501,7 +514,7 @@ func (a *Application) account(
 	if credentials.APIID != config.APIID || credentials.TestDC != config.TestDC || credentials.Environment != config.Environment {
 		return metastore.AccountConfig{}, nil, ErrConfigurationRequired
 	}
-	sessionStorage, err := tgaccount.NewKeychainSessionStorage(a.secrets, config.Environment)
+	sessionStorage, err := tgaccount.NewSessionStorage(a.secrets, config.Environment)
 	if err != nil {
 		return metastore.AccountConfig{}, nil, err
 	}

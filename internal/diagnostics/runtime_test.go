@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -18,11 +19,16 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/mcpserver"
 	"github.com/lstpsche/telegram-mcp/internal/model"
+	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 )
 
 func testPaths(t *testing.T) daemon.Paths {
 	t.Helper()
-	root, err := os.MkdirTemp("/tmp", "doctor-")
+	tempDir := "/tmp"
+	if runtime.GOOS == "windows" {
+		tempDir = os.TempDir()
+	}
+	root, err := os.MkdirTemp(tempDir, "doctor-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,6 +37,12 @@ func testPaths(t *testing.T) daemon.Paths {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	if runtime.GOOS == "windows" {
+		root = filepath.Join(root, "private")
+		if err := privatefs.EnsureDirectory(root); err != nil {
+			t.Fatal(err)
+		}
+	}
 	paths, err := daemon.NewPaths(filepath.Join(root, "state"), filepath.Join(root, "runtime"))
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +50,7 @@ func testPaths(t *testing.T) daemon.Paths {
 	return paths
 }
 
-func serve(t *testing.T, paths daemon.Paths, handler func(context.Context, *net.UnixConn)) {
+func serve(t *testing.T, paths daemon.Paths, handler func(context.Context, net.Conn)) {
 	t.Helper()
 	socket, err := daemon.BindSocket(paths.Socket)
 	if err != nil {
@@ -65,17 +77,17 @@ func serve(t *testing.T, paths daemon.Paths, handler func(context.Context, *net.
 
 func TestInspectLocalMCPWithoutOpeningMetadata(t *testing.T) {
 	paths := testPaths(t)
-	if err := os.Mkdir(paths.StateDir, 0o700); err != nil {
+	if err := privatefs.EnsureDirectory(paths.StateDir); err != nil {
 		t.Fatal(err)
 	}
 	written := []byte("deliberately not a SQLite database; private fixture")
-	for _, path := range []string{paths.Database, paths.Lock, filepath.Join(paths.StateDir, "policy.lock")} {
+	for _, path := range []string{paths.Database, paths.Lock, filepath.Join(paths.StateDir, "policy.lock"), filepath.Join(paths.StateDir, "secrets.json"), filepath.Join(paths.StateDir, "secrets.lock")} {
 		if err := os.WriteFile(path, written, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	server := mcpserver.New(func() daemon.Snapshot { return daemon.Snapshot{State: daemon.StateReauthRequired} }, nil)
-	serve(t, paths, func(ctx context.Context, conn *net.UnixConn) { mcpserver.Serve(ctx, server, conn) })
+	serve(t, paths, func(ctx context.Context, conn net.Conn) { mcpserver.Serve(ctx, server, conn) })
 	before, err := os.ReadDir(paths.StateDir)
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +96,7 @@ func TestInspectLocalMCPWithoutOpeningMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !report.MCP || report.Socket != daemon.SocketLive || report.AccountState == nil || *report.AccountState != daemon.StateReauthRequired || report.MessageReads == nil || *report.MessageReads || report.Keychain != "not_checked" || report.Metadata != "filesystem_only" {
+	if !report.MCP || report.Socket != daemon.SocketLive || report.AccountState == nil || *report.AccountState != daemon.StateReauthRequired || report.MessageReads == nil || *report.MessageReads || report.Secrets != "not_checked" || report.Metadata != "filesystem_only" {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 	for _, check := range report.Files {
@@ -129,8 +141,11 @@ func TestInspectMissingStateDoesNotCreateFiles(t *testing.T) {
 }
 
 func TestInspectStaleSocketLeavesNode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("named pipes leave no stale filesystem node")
+	}
 	paths := testPaths(t)
-	if err := os.Mkdir(paths.RuntimeDir, 0o700); err != nil {
+	if err := privatefs.EnsureDirectory(paths.RuntimeDir); err != nil {
 		t.Fatal(err)
 	}
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: paths.Socket, Net: "unix"})
@@ -161,8 +176,11 @@ func TestInspectStaleSocketLeavesNode(t *testing.T) {
 func TestInspectRejectsUnsafeFilesWithoutPartialReport(t *testing.T) {
 	for _, fixture := range []string{"directory_mode", "file_mode", "symlink", "directory_as_database", "wrong_paths"} {
 		t.Run(fixture, func(t *testing.T) {
+			if runtime.GOOS == "windows" && (fixture == "directory_mode" || fixture == "file_mode" || fixture == "symlink" || fixture == "writable") {
+				t.Skip("Unix permissions and symlink fixture; Windows ACL rejection is tested in privatefs")
+			}
 			paths := testPaths(t)
-			if err := os.Mkdir(paths.StateDir, 0o700); err != nil {
+			if err := privatefs.EnsureDirectory(paths.StateDir); err != nil {
 				t.Fatal(err)
 			}
 			var err error
@@ -284,8 +302,8 @@ func TestInspectRejectsHostileOrIncompleteStatus(t *testing.T) {
 	}
 }
 
-func scriptedStatus(response []byte) func(context.Context, *net.UnixConn) {
-	return func(ctx context.Context, conn *net.UnixConn) {
+func scriptedStatus(response []byte) func(context.Context, net.Conn) {
+	return func(ctx context.Context, conn net.Conn) {
 		reader := bufio.NewReader(conn)
 		if _, err := reader.ReadBytes('\n'); err != nil {
 			return
@@ -304,7 +322,7 @@ func scriptedStatus(response []byte) func(context.Context, *net.UnixConn) {
 
 func TestInspectTimeoutAndCancellation(t *testing.T) {
 	paths := testPaths(t)
-	serve(t, paths, func(ctx context.Context, conn *net.UnixConn) {
+	serve(t, paths, func(ctx context.Context, conn net.Conn) {
 		_, _ = io.Copy(io.Discard, conn)
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
@@ -324,6 +342,9 @@ func TestInspectTimeoutAndCancellation(t *testing.T) {
 func TestInspectRejectsUnsafeAncestryBeforeReportingMissingState(t *testing.T) {
 	for _, fixture := range []string{"symlink", "writable"} {
 		t.Run(fixture, func(t *testing.T) {
+			if runtime.GOOS == "windows" && (fixture == "directory_mode" || fixture == "file_mode" || fixture == "symlink" || fixture == "writable") {
+				t.Skip("Unix permissions and symlink fixture; Windows ACL rejection is tested in privatefs")
+			}
 			paths := testPaths(t)
 			root := filepath.Dir(paths.StateDir)
 			if fixture == "writable" {
@@ -354,7 +375,7 @@ func TestInspectOnlyInitializesAndCallsStatus(t *testing.T) {
 	value := validEnvelope(t)
 	response := statusResponse(t, value, value)
 	requests := make(chan []map[string]json.RawMessage, 1)
-	serve(t, paths, func(ctx context.Context, conn *net.UnixConn) {
+	serve(t, paths, func(ctx context.Context, conn net.Conn) {
 		reader := bufio.NewReader(conn)
 		var observed []map[string]json.RawMessage
 		for index := range 3 {
@@ -415,7 +436,7 @@ func TestInspectRejectsInvalidInitialization(t *testing.T) {
 		`{"protocolVersion":"2025-11-25","capabilities":{},"serverInfo":{}}`,
 	} {
 		paths := testPaths(t)
-		serve(t, paths, func(ctx context.Context, conn *net.UnixConn) {
+		serve(t, paths, func(ctx context.Context, conn net.Conn) {
 			if _, err := bufio.NewReader(conn).ReadBytes('\n'); err != nil {
 				return
 			}
