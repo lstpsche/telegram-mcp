@@ -28,6 +28,7 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 			backend.candidates = backend.candidates[:1]
 			c := &backend.candidates[0]
 			c.Document = nil
+			c.Message.Pinned = true
 			c.Message.Reactions = &model.Reactions{Minimal: true, Counts: []model.ReactionCount{{Kind: "emoji", Emoji: "👍", Count: 3}, {Kind: "custom_emoji", CustomEmojiID: "9223372036854775807", Count: 2}, {Kind: "paid", Count: 9}}}
 			if variant == "empty_reactions" {
 				c.Message.Reactions.Counts = []model.ReactionCount{}
@@ -101,6 +102,8 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 				search bool
 			}{
 				{"search_messages", map[string]any{"peer": base.peer.String(), "query": "synthetic"}, true},
+				{"search_messages", map[string]any{"peer": base.peer.String(), "pinned_only": true}, true},
+				{"search_messages", map[string]any{"scope": scope.ID.String(), "pinned_only": true}, true},
 				{"catch_up", map[string]any{"scope": scope.ID.String(), "since": "2026-09-05T00:00:00Z", "until": "2026-09-06T00:00:00Z"}, true},
 				{"list_messages", map[string]any{"peer": base.peer.String()}, false},
 				{"get_message_context", map[string]any{"message": c.Message.ID.String(), "before": 0, "after": 0}, false},
@@ -128,6 +131,9 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 					t.Fatal("mirrors differ")
 				}
 				item := body["items"].([]any)[0].(map[string]any)
+				if item["pinned"] != true {
+					t.Fatal("pin state lost")
+				}
 				reactionJSON, err := json.Marshal(c.Message.Reactions)
 				if err != nil {
 					t.Fatal(err)
@@ -164,6 +170,24 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 					if !reflect.DeepEqual(item[kind], expectedBody) || item["text"] != c.Message.Text {
 						t.Fatal("text media body differs")
 					}
+				}
+			}
+			for _, args := range []map[string]any{
+				{"peer": base.peer.String()},
+				{"peer": base.peer.String(), "query": ""},
+				{"peer": base.peer.String(), "pinned_only": false},
+				{"peer": base.peer.String(), "pinned_only": "true"},
+				{"peer": base.peer.String(), "pinned_only": true, "query": nil},
+				{"peer": base.peer.String(), "scope": scope.ID.String(), "pinned_only": true},
+				{"pinned_only": true},
+			} {
+				before := base.fetches.Load()
+				result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "search_messages", Arguments: args})
+				if err == nil && !result.IsError {
+					t.Fatal("invalid search accepted", args)
+				}
+				if base.fetches.Load() != before {
+					t.Fatal("invalid input reached backend")
 				}
 			}
 			if base.acks.Load() != 2 || backend.downloads.Load() != 0 {

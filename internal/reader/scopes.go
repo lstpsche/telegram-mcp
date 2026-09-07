@@ -142,12 +142,12 @@ func (s *Service) checkGrantsCurrent(ctx context.Context, grants []policy.Grant)
 
 // SearchScope traverses exact peers in canonical order, newest first per peer.
 // The candidate budget includes filtered entries, so sparse pages stay bounded.
-func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID model.ScopeID, query string, limit int, token string) (Result, error) {
-	query, err := model.NormalizeSearchQuery(query)
+func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID model.ScopeID, filter model.SearchFilter, limit int, token string) (Result, error) {
+	filter, err := filter.Normalize()
 	if err != nil {
 		return Result{}, err
 	}
-	return s.searchScope(ctx, requestID, scopeID, query, limit, token, nil)
+	return s.searchScope(ctx, requestID, scopeID, filter, limit, token, nil)
 }
 
 // CatchUp discovers bounded snippets in an explicit window without read receipts.
@@ -155,10 +155,10 @@ func (s *Service) CatchUp(ctx context.Context, requestID string, scopeID model.S
 	if err := window.Validate(); err != nil {
 		return Result{}, err
 	}
-	return s.searchScope(ctx, requestID, scopeID, "", limit, token, &window)
+	return s.searchScope(ctx, requestID, scopeID, model.SearchFilter{}, limit, token, &window)
 }
 
-func (s *Service) searchScope(ctx context.Context, requestID string, scopeID model.ScopeID, query string, limit int, token string, window *model.DateWindow) (result Result, resultErr error) {
+func (s *Service) searchScope(ctx context.Context, requestID string, scopeID model.ScopeID, filter model.SearchFilter, limit int, token string, window *model.DateWindow) (result Result, resultErr error) {
 	operation := "search_messages"
 	if window != nil {
 		operation = "catch_up"
@@ -203,7 +203,7 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 	if err != nil {
 		return Result{}, err
 	}
-	binding := scopeCursorBinding{Operation: operation, Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(query), Limit: limit, Epoch: epoch, Revision: revision}
+	binding := scopeCursorBinding{PinnedOnly: filter.PinnedOnly, Operation: operation, Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	if window != nil {
 		binding.Since, binding.Until = window.Since, window.Until
 		coverage.CatchUp = &model.CatchUpCoverage{
@@ -246,7 +246,7 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 			return Result{}, err
 		}
 		grant := grants[cursor.Index]
-		search := model.SearchQuery{Window: window, Peer: grant.Peer, Query: query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: remaining}
+		search := model.SearchQuery{PinnedOnly: filter.PinnedOnly, Window: window, Peer: grant.Peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: remaining}
 		candidates, err := s.backend.Search(ctx, search)
 		if err != nil {
 			return Result{}, err

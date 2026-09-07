@@ -56,8 +56,10 @@ tools advertise read side effects rather than `readOnlyHint: true`.
 eligible/excluded peer counts without Telegram I/O. Its freshness is
 `unavailable`. Scope membership narrows current access authority; it cannot authorize
 content or receipt effects. `list_unread` also accepts optional `scope` and `cursor`.
-`search_messages` requires `query` and exactly one of `peer` or `scope`, with
-optional `limit` and `cursor`. Neither search nor unread acknowledges history.
+`search_messages` requires exactly one of `peer` or `scope`, with optional
+`limit`, `cursor`, and `pinned_only`. Query is required and nonempty unless
+`pinned_only` is true, in which case an omitted or empty query discovers pins
+without a text constraint. Neither search nor unread acknowledges history.
 Scoped search visits canonical peer IDs in ascending bytewise order and returns
 newest messages first within each peer. It bounds fetched candidates, including
 filtered ones, to the requested limit and backend lookups to 20 per request.
@@ -312,3 +314,10 @@ and bounded ordered `counts`. Entries distinguish Unicode emoji, opaque custom
 emoji identifiers and paid Stars. Missing is not zero, tags are not endorsements,
 and counts do not establish distinct-person totals. Existing message authority
 and receipt boundaries apply. See [reaction summaries](reactions.md).
+
+History/context/search/catch-up include `pinned: true` when Telegram reports a
+message as pinned; false is omitted. Pin state is transient metadata, never
+authority or instruction priority. Pinned-only search uses Telegram's pinned
+filter and rechecks the normalized pin state after policy filtering. Both peer
+and scope cursors bind `pinned_only`; switching the filter invalidates a cursor
+before fetching. See [pinned-message discovery](pinned-messages.md).

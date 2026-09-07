@@ -430,6 +430,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 				return model.Candidate{}, err
 			}
 		}
+		candidate.Message.Pinned = message.Pinned
 		candidate.Message.LinkPreview = preview
 		candidate.Message.Poll = poll
 		candidate.Message.Forward = forward

@@ -79,7 +79,7 @@ func TestFullReadImagesAndModeChangesInvalidateHandles(t *testing.T) {
 		t.Fatal(err)
 	}
 	setFullRead(t, p, true)
-	result, err := s.Search(context.Background(), "req_full_image", g.Peer, "caption", 20, "")
+	result, err := s.Search(context.Background(), "req_full_image", g.Peer, model.SearchFilter{Query: "caption"}, 20, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestFullReadScopeUsesMembersWithoutDiscovery(t *testing.T) {
 		t.Fatal("scope authority lost")
 	}
 	f.items = []model.Candidate{candidate(g, 20, "synthetic")}
-	if _, err := s.SearchScope(ctx, "req_full_scope_search", scope.ID, "synthetic", 20, ""); err != nil {
+	if _, err := s.SearchScope(ctx, "req_full_scope_search", scope.ID, model.SearchFilter{Query: "synthetic"}, 20, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ListChats(ctx, "req_full_scope_chats", 20, scope.ID); err != nil {
@@ -265,7 +265,7 @@ func TestFullReadSearchCursorInvalidatedByModeChange(t *testing.T) {
 	s, f, p, _, g := testService(t)
 	setFullRead(t, p, true)
 	f.items = []model.Candidate{candidate(g, 20, "synthetic")}
-	result, err := s.Search(context.Background(), "req_full_search", g.Peer, "synthetic", 1, "")
+	result, err := s.Search(context.Background(), "req_full_search", g.Peer, model.SearchFilter{Query: "synthetic"}, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestFullReadSearchCursorInvalidatedByModeChange(t *testing.T) {
 	}
 	setFullRead(t, p, false)
 	setFullRead(t, p, true)
-	result, err = s.Search(context.Background(), "req_full_changed", g.Peer, "synthetic", 1, *page.NextCursor)
+	result, err = s.Search(context.Background(), "req_full_changed", g.Peer, model.SearchFilter{Query: "synthetic"}, 1, *page.NextCursor)
 	if model.TextErrorCategory(err) != model.ErrorCursorInvalid || len(result.JSON) != 0 {
 		t.Fatal("search token survived", err)
 	}

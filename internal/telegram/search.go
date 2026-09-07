@@ -16,15 +16,15 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	}
 	query := q.Query
 	if q.Window != nil {
-		if q.Window.Validate() != nil || query != "" {
+		if q.Window.Validate() != nil || query != "" || q.PinnedOnly {
 			return nil, model.TextError(model.ErrorInvalidInput, nil)
 		}
 	} else {
-		var err error
-		query, err = model.NormalizeSearchQuery(query)
+		filter, err := (model.SearchFilter{Query: query, PinnedOnly: q.PinnedOnly}).Normalize()
 		if err != nil {
 			return nil, err
 		}
+		query = filter.Query
 	}
 	if q.MinID <= 0 || q.MaxID < q.MinID || q.Before < 0 || (q.Before > 0 && q.Before <= q.MinID) || model.ValidatePageSize(q.Limit) != nil {
 		return nil, model.TextError(model.ErrorInvalidInput, nil)
@@ -52,6 +52,9 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 		response, err = a.reads.historyPage(bounded, q.Peer, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, OffsetDate: int(q.Window.Until), Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
 	} else {
 		request := &tg.MessagesSearchRequest{Peer: input, Q: query, Filter: &tg.InputMessagesFilterEmpty{}, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum}
+		if q.PinnedOnly {
+			request.Filter = &tg.InputMessagesFilterPinned{}
+		}
 		if q.Peer.TopicID() != 0 {
 			request.SetTopMsgID(int(q.Peer.TopicID()))
 		}

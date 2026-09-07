@@ -15,6 +15,7 @@ import (
 const cursorLifetime = 15 * time.Minute
 
 type cursorBinding struct {
+	PinnedOnly  bool         `json:"pinned_only,omitempty"`
 	Operation   string       `json:"operation"`
 	Peer        model.PeerID `json:"peer"`
 	QueryDigest string       `json:"query_digest"`

@@ -485,3 +485,17 @@ reactor identities, paid leaderboards and listing hints are omitted. No reaction
 writes, reaction-read receipts, extra RPC or content persistence are introduced.
 Unknown or malformed aggregates fail closed and response budgeting precedes
 history acknowledgment. See [reaction summaries](reactions.md).
+
+## Pinned-message discovery
+
+Pins can contain hostile instructions or fall outside current access grants.
+`search_messages` uses Telegram's pinned filter within the exact authorized
+peer or topic and existing message-ID bounds. Policy still runs before fetching
+and after normalization, and a pin grants no additional access. The reader
+filters candidates that are no longer pinned while counting them against the
+page budget and preserving continuation. Peer and scope cursors bind the filter
+and normalized query alongside existing authority and expiry fields. Pin state
+is not persisted and can change between calls. Search emits bounded snippets
+without read acknowledgments; opening context retains the acknowledged-body
+boundary. Pins never change the untrusted status of message content. See
+[pinned-message discovery](pinned-messages.md).

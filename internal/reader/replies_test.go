@@ -157,7 +157,7 @@ func TestReplyMutationWithholdsMedia(t *testing.T) {
 			s, f, _, g, _ := imageService(t)
 			parent, _ := model.NewMessageID(g.Peer, 15)
 			f.items[0].Message.ReplyTo = &parent
-			r, err := s.Search(context.Background(), "req_reply_search", g.Peer, "caption", 20, "")
+			r, err := s.Search(context.Background(), "req_reply_search", g.Peer, model.SearchFilter{Query: "caption"}, 20, "")
 			if err != nil {
 				t.Fatal(err)
 			}

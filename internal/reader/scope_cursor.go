@@ -13,6 +13,7 @@ import (
 )
 
 type scopeCursorBinding struct {
+	PinnedOnly    bool          `json:"pinned_only,omitempty"`
 	Since         int64         `json:"since,omitempty"`
 	Until         int64         `json:"until,omitempty"`
 	Operation     string        `json:"operation"`

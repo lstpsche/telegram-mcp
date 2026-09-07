@@ -57,9 +57,9 @@ func TestImageDiscoveryRechecksValidityAfterAudit(t *testing.T) {
 				case "context":
 					result, err = s.Messages(ctx, requestID, model.HistoryQuery{Peer: grant.Peer, Target: 20, Limit: 1})
 				case "search":
-					result, err = s.Search(ctx, requestID, grant.Peer, "caption", 20, "")
+					result, err = s.Search(ctx, requestID, grant.Peer, model.SearchFilter{Query: "caption"}, 20, "")
 				case "scope_search":
-					result, err = s.SearchScope(ctx, requestID, scope.ID, "caption", 20, "")
+					result, err = s.SearchScope(ctx, requestID, scope.ID, model.SearchFilter{Query: "caption"}, 20, "")
 				}
 				if !auditHookRan || backend.downloads != 0 {
 					t.Fatal("fixture missed audit or discovery downloaded image bytes")

@@ -16,7 +16,7 @@ func TestSearchRestartUsesLiveResultsAndReauthorizesContext(t *testing.T) {
 			saveGrant(t, p, g)
 			ctx := context.Background()
 			f.items = []model.Candidate{candidate(g, 20, "previous text"), candidate(g, 18, "older")}
-			result, err := s.Search(ctx, "req_search", g.Peer, "q", 2, "")
+			result, err := s.Search(ctx, "req_search", g.Peer, model.SearchFilter{Query: "q"}, 2, "")
 			page := searchEnvelope(t, result, err)
 			if page.NextCursor == nil {
 				t.Fatal("missing continuation")
@@ -26,7 +26,7 @@ func TestSearchRestartUsesLiveResultsAndReauthorizesContext(t *testing.T) {
 				t.Fatal(err)
 			}
 			f.items = []model.Candidate{candidate(g, 17, "changed older match")}
-			result, err = restarted.Search(ctx, "req_continue", g.Peer, "q", 2, *page.NextCursor)
+			result, err = restarted.Search(ctx, "req_continue", g.Peer, model.SearchFilter{Query: "q"}, 2, *page.NextCursor)
 			next := searchEnvelope(t, result, err)
 			if len(next.Items) != 1 || next.Items[0].Snippet != "changed older match" || f.searchQuery.Before != 18 || f.searchQuery.MaxID != 20 || f.ackCalls != 0 {
 				t.Fatal("restart lost scope or reused stale results")
@@ -60,7 +60,7 @@ func TestAuthorizationLifecycleClearsRecoveryMetadataAndCursorAuthority(t *testi
 			ctx := context.Background()
 			saveGrant(t, p, g)
 			f.items = []model.Candidate{candidate(g, 20, "match")}
-			result, err := s.Search(ctx, "req_search", g.Peer, "q", 1, "")
+			result, err := s.Search(ctx, "req_search", g.Peer, model.SearchFilter{Query: "q"}, 1, "")
 			page := searchEnvelope(t, result, err)
 			if page.NextCursor == nil {
 				t.Fatal("missing cursor")
@@ -99,7 +99,7 @@ func TestAuthorizationLifecycleClearsRecoveryMetadataAndCursorAuthority(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err = restarted.Search(ctx, "req_stale", g.Peer, "q", 1, *page.NextCursor)
+			result, err = restarted.Search(ctx, "req_stale", g.Peer, model.SearchFilter{Query: "q"}, 1, *page.NextCursor)
 			if err == nil || len(result.JSON) != 0 || f.historyCalls != 1 || f.ackCalls != 0 {
 				t.Fatal("old cursor authorized a fetch after account lifecycle change")
 			}

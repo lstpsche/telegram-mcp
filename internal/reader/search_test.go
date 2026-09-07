@@ -34,7 +34,7 @@ func TestSearchFiltersSnippetsAndContinuesFromFetchedWindow(t *testing.T) {
 	hidden := candidate(g, 20, "never expose")
 	hidden.Forwarded = true
 	f.items = []model.Candidate{candidate(g, 25, strings.Repeat("世", 241)), hidden}
-	result, err := s.Search(context.Background(), "req_search", g.Peer, "  find me  ", 2, "")
+	result, err := s.Search(context.Background(), "req_search", g.Peer, model.SearchFilter{Query: "  find me  "}, 2, "")
 	page := searchEnvelope(t, result, err)
 	if len(page.Items) != 1 || !page.Partial || page.NextCursor == nil || !page.Items[0].SnippetTruncated || utf8.RuneCountInString(page.Items[0].Snippet) != 240 || f.ackCalls != 0 {
 		t.Fatal("incorrect snippet window")
@@ -48,13 +48,13 @@ func TestSearchFiltersSnippetsAndContinuesFromFetchedWindow(t *testing.T) {
 		t.Fatal("cursor contains query text")
 	}
 	f.items = []model.Candidate{candidate(g, 19, "older"), candidate(g, 15, "older still")}
-	result, err = s.Search(context.Background(), "req_next", g.Peer, "find me", 2, token)
+	result, err = s.Search(context.Background(), "req_next", g.Peer, model.SearchFilter{Query: "find me"}, 2, token)
 	page = searchEnvelope(t, result, err)
 	if f.searchQuery.Before != 20 || f.searchQuery.MaxID != 25 || page.NextCursor == nil {
 		t.Fatal("cursor did not anchor/advance using filtered window")
 	}
 	f.items = []model.Candidate{candidate(g, 10, "last")}
-	result, err = s.Search(context.Background(), "req_last", g.Peer, "find me", 2, *page.NextCursor)
+	result, err = s.Search(context.Background(), "req_last", g.Peer, model.SearchFilter{Query: "find me"}, 2, *page.NextCursor)
 	page = searchEnvelope(t, result, err)
 	if page.NextCursor != nil || page.Partial || f.ackCalls != 0 {
 		t.Fatal("terminal page mismatch")
@@ -67,13 +67,13 @@ func TestFullyFilteredSearchPageStillAdvances(t *testing.T) {
 	c := candidate(g, 20, "hidden")
 	c.Protected = true
 	f.items = []model.Candidate{c}
-	result, err := s.Search(context.Background(), "req_filter", g.Peer, "q", 1, "")
+	result, err := s.Search(context.Background(), "req_filter", g.Peer, model.SearchFilter{Query: "q"}, 1, "")
 	page := searchEnvelope(t, result, err)
 	if len(page.Items) != 0 || page.NextCursor == nil || !page.Partial {
 		t.Fatal("filtered page lost continuation")
 	}
 	f.items = nil
-	result, err = s.Search(context.Background(), "req_empty", g.Peer, "q", 1, *page.NextCursor)
+	result, err = s.Search(context.Background(), "req_empty", g.Peer, model.SearchFilter{Query: "q"}, 1, *page.NextCursor)
 	page = searchEnvelope(t, result, err)
 	if page.NextCursor != nil || len(page.Items) != 0 || page.Partial || f.searchQuery.Before != 20 {
 		t.Fatal("empty terminal page mismatch")
@@ -86,7 +86,7 @@ func TestSearchCursorRejectsChangedAuthorityBeforeIO(t *testing.T) {
 			s, f, p, db, g := testService(t)
 			saveGrant(t, p, g)
 			f.items = []model.Candidate{candidate(g, 20, "match")}
-			result, err := s.Search(context.Background(), "req_start", g.Peer, "q", 1, "")
+			result, err := s.Search(context.Background(), "req_start", g.Peer, model.SearchFilter{Query: "q"}, 1, "")
 			page := searchEnvelope(t, result, err)
 			token := *page.NextCursor
 			query, peer, limit := "q", g.Peer, 1
@@ -123,7 +123,7 @@ func TestSearchCursorRejectsChangedAuthorityBeforeIO(t *testing.T) {
 			case "key":
 				s.cursorKey[0]++
 			}
-			result, err = s.Search(context.Background(), "req_changed", peer, query, limit, token)
+			result, err = s.Search(context.Background(), "req_changed", peer, model.SearchFilter{Query: query}, limit, token)
 			if err == nil || len(result.JSON) != 0 || f.historyCalls != 1 || f.ackCalls != 0 {
 				t.Fatal("invalid cursor reached Telegram")
 			}
@@ -163,7 +163,7 @@ func TestSearchDenialAndFailuresReleaseNothing(t *testing.T) {
 			case "duplicates":
 				f.items = append(f.items, f.items[0])
 			}
-			result, err := s.Search(ctx, "req_failure", g.Peer, "q", 20, "")
+			result, err := s.Search(ctx, "req_failure", g.Peer, model.SearchFilter{Query: "q"}, 20, "")
 			if err == nil || len(result.JSON) != 0 || f.ackCalls != 0 {
 				t.Fatal("failed search released a result")
 			}
@@ -234,7 +234,7 @@ func TestUnreadFailsAsWholeResult(t *testing.T) {
 func TestSearchQueryValidationPrecedesIO(t *testing.T) {
 	s, f, _, _, g := testService(t)
 	for _, q := range []string{"", " \n ", strings.Repeat("a", 257), strings.Repeat("界", 400), string([]byte{255})} {
-		if _, err := s.Search(context.Background(), "req_invalid", g.Peer, q, 20, ""); model.TextErrorCategory(err) != model.ErrorInvalidInput {
+		if _, err := s.Search(context.Background(), "req_invalid", g.Peer, model.SearchFilter{Query: q}, 20, ""); model.TextErrorCategory(err) != model.ErrorInvalidInput {
 			t.Fatal("invalid query accepted")
 		}
 	}
@@ -250,7 +250,7 @@ func TestSearchBudgetsEscapedWireMirrors(t *testing.T) {
 	for id := int32(10); id <= 109; id++ {
 		f.items = append(f.items, candidate(g, id, strings.Repeat("<", 240)))
 	}
-	result, err := s.Search(context.Background(), "req_large", g.Peer, "q", 100, "")
+	result, err := s.Search(context.Background(), "req_large", g.Peer, model.SearchFilter{Query: "q"}, 100, "")
 	if model.TextErrorCategory(err) != model.ErrorResultTooLarge || len(result.JSON) != 0 || f.ackCalls != 0 {
 		t.Fatal("oversized escaped result released", err)
 	}

@@ -31,7 +31,7 @@ func documentService(t *testing.T, mime string) (*Service, *imageFake, *policy.R
 	f.items = []model.Candidate{c}
 	backend := &imageFake{fakeBackend: f, db: db, data: data}
 	s.backend = backend
-	result, err := s.Search(context.Background(), "req_document_discovery", g.Peer, "caption", 20, "")
+	result, err := s.Search(context.Background(), "req_document_discovery", g.Peer, model.SearchFilter{Query: "caption"}, 20, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestFullReadIncludesDocumentsAndRevocationInvalidatesHandles(t *testing.T) 
 		}
 	}
 	setFull(true)
-	result, err := s.Search(ctx, "req_document_full", g.Peer, "caption", 20, "")
+	result, err := s.Search(ctx, "req_document_full", g.Peer, model.SearchFilter{Query: "caption"}, 20, "")
 	if err != nil {
 		t.Fatal(err)
 	}

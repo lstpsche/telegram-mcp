@@ -20,7 +20,7 @@ func TestChannelPostMutationWithholdsMedia(t *testing.T) {
 			f.items[0].Message.ID, _ = model.NewMessageID(g.Peer, 20)
 			f.items[0].Message.Author = g.Peer
 			f.items[0].Message.ChannelPost = &model.ChannelPost{Signature: "original"}
-			r, err := s.Search(context.Background(), "req_channel_search", g.Peer, "caption", 20, "")
+			r, err := s.Search(context.Background(), "req_channel_search", g.Peer, model.SearchFilter{Query: "caption"}, 20, "")
 			if err != nil {
 				t.Fatal(err)
 			}

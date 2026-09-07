@@ -67,7 +67,7 @@ func (f *documentWireBackend) History(_ context.Context, query model.HistoryQuer
 
 func (f *documentWireBackend) Search(_ context.Context, query model.SearchQuery) ([]model.Candidate, error) {
 	f.fetches.Add(1)
-	if query.Peer != f.peer || (query.Window == nil && query.Query != "synthetic") {
+	if query.Peer != f.peer || (query.Window == nil && query.Query != "synthetic" && !(query.PinnedOnly && query.Query == "")) {
 		return nil, errors.New("unexpected document search")
 	}
 	if query.Window != nil {

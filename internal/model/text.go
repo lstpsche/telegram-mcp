@@ -25,6 +25,7 @@ type ReplyChain struct {
 }
 
 type Message struct {
+	Pinned      bool                `json:"pinned,omitempty"`
 	Reactions   *Reactions          `json:"reactions,omitempty"`
 	LinkPreview *LinkPreview        `json:"link_preview,omitempty"`
 	Poll        *Poll               `json:"poll,omitempty"`
@@ -102,6 +103,7 @@ func TextErrorCategory(err error) ErrorCategory {
 
 // SearchQuery is adapter input. Query text is transient and must never be logged.
 type SearchQuery struct {
+	PinnedOnly           bool
 	Window               *DateWindow
 	Peer                 PeerID
 	Query                string
@@ -110,6 +112,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	Pinned           bool                `json:"pinned,omitempty"`
 	Reactions        *Reactions          `json:"reactions,omitempty"`
 	HasLinkPreview   bool                `json:"has_link_preview,omitempty"`
 	HasPoll          bool                `json:"has_poll,omitempty"`
@@ -134,15 +137,21 @@ type Unread struct {
 	Marked bool   `json:"unread_mark"`
 }
 
-func NormalizeSearchQuery(query string) (string, error) {
-	if !utf8.ValidString(query) || len(query) > 1024 {
-		return "", TextError(ErrorInvalidInput, nil)
+// SearchFilter narrows message discovery without granting content access.
+type SearchFilter struct {
+	Query      string
+	PinnedOnly bool
+}
+
+func (f SearchFilter) Normalize() (SearchFilter, error) {
+	if !utf8.ValidString(f.Query) || len(f.Query) > 1024 {
+		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
-	query = strings.TrimSpace(query)
-	if query == "" || utf8.RuneCountInString(query) > 256 {
-		return "", TextError(ErrorInvalidInput, nil)
+	f.Query = strings.TrimSpace(f.Query)
+	if (f.Query == "" && !f.PinnedOnly) || utf8.RuneCountInString(f.Query) > 256 {
+		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
-	return query, nil
+	return f, nil
 }
 
 // ValidReply keeps reply navigation inside the exact conversation and older IDs.

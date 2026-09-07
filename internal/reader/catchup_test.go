@@ -90,7 +90,7 @@ func TestCatchUpCursorBindingsRejectBeforeFetch(t *testing.T) {
 				s.cursorKey[0]++
 			}
 			if change == "operation" {
-				result, err = s.SearchScope(context.Background(), "req_next", scope.ID, "query", limit, *first.NextCursor)
+				result, err = s.SearchScope(context.Background(), "req_next", scope.ID, model.SearchFilter{Query: "query"}, limit, *first.NextCursor)
 			} else {
 				result, err = s.CatchUp(context.Background(), "req_next", scope.ID, w, limit, *first.NextCursor)
 			}

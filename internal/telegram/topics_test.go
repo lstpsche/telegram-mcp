@@ -47,6 +47,11 @@ func TestTopicRoutesHistorySearchAndReceiptToExactThread(t *testing.T) {
 					return encodeReadResponse(out, page)
 				case *tg.MessagesSearchRequest:
 					search++
+					if search == 2 {
+						if _, ok := q.Filter.(*tg.InputMessagesFilterPinned); !ok || q.Q != "" {
+							t.Fatal("topic pin filter lost")
+						}
+					}
 					if q.TopMsgID != int(topicID) {
 						t.Fatal("unscoped search")
 					}
@@ -74,13 +79,16 @@ func TestTopicRoutesHistorySearchAndReceiptToExactThread(t *testing.T) {
 			if _, err := account.Search(ctx, model.SearchQuery{Peer: peer, Query: "synthetic", MinID: 1, MaxID: 100, Limit: 20}); err != nil {
 				t.Fatal(err)
 			}
+			if _, err := account.Search(ctx, model.SearchQuery{Peer: peer, PinnedOnly: true, MinID: 1, MaxID: 100, Limit: 20}); err != nil {
+				t.Fatal(err)
+			}
 			if err := account.Acknowledge(ctx, peer, 20); err != nil {
 				t.Fatal(err)
 			}
 			if err := account.Acknowledge(ctx, parent, 20); model.TextErrorCategory(err) != model.ErrorUnsupportedPeer {
 				t.Fatal("forum receipt accepted", err)
 			}
-			if history != 1 || search != 1 || receipts != 1 {
+			if history != 1 || search != 2 || receipts != 1 {
 				t.Fatal(history, search, receipts)
 			}
 		})

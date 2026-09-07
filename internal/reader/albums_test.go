@@ -71,7 +71,7 @@ func TestAlbumMutationWithholdsMedia(t *testing.T) {
 			s, f, _, g, _ := imageService(t)
 			album, _ := model.NewAlbumID(g.Peer, 1)
 			f.items[0].Message.AlbumID = album
-			r, err := s.Search(context.Background(), "req_album_search", g.Peer, "caption", 20, "")
+			r, err := s.Search(context.Background(), "req_album_search", g.Peer, model.SearchFilter{Query: "caption"}, 20, "")
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -10,8 +10,8 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/policy"
 )
 
-func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerID, query string, limit int, token string) (result Result, resultErr error) {
-	query, err := model.NormalizeSearchQuery(query)
+func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerID, filter model.SearchFilter, limit int, token string) (result Result, resultErr error) {
+	filter, err := filter.Normalize()
 	if err != nil {
 		return Result{}, err
 	}
@@ -59,7 +59,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if err != nil {
 		return Result{}, err
 	}
-	binding := cursorBinding{Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(query), Limit: limit, Epoch: epoch, Revision: revision}
+	binding := cursorBinding{PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	deadline := s.now().Add(cursorLifetime)
 	deadline = grant.Deadline(deadline)
 	cursor = searchCursor{Binding: binding, Ceiling: grant.MaxID, Expires: deadline.Unix()}
@@ -74,11 +74,12 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	}
 	ctx, stopCursor := context.WithTimeout(ctx, time.Unix(cursor.Expires, 0).Sub(s.now()))
 	defer stopCursor()
-	candidates, err := s.backend.Search(ctx, model.SearchQuery{Peer: peer, Query: query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit})
+	query := model.SearchQuery{PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
+	candidates, err := s.backend.Search(ctx, query)
 	if err != nil {
 		return Result{}, err
 	}
-	window, err := s.normalizeSearchWindow(grant, model.SearchQuery{Peer: peer, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}, candidates, mediaAuthority{epoch, revision})
+	window, err := s.normalizeSearchWindow(grant, query, candidates, mediaAuthority{epoch, revision})
 	if err != nil {
 		return Result{}, err
 	}
@@ -166,6 +167,10 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 				return searchWindow{}, err
 			}
 		}
+		if query.PinnedOnly && !message.Pinned {
+			partial = true
+			continue
+		}
 		if query.Window != nil && (!query.Window.Contains(message.Date) || candidate.SentAt == 0) {
 			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
@@ -197,7 +202,7 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		if err != nil {
 			return searchWindow{}, err
 		}
-		items = append(items, model.SearchHit{Reactions: message.Reactions, HasLinkPreview: message.LinkPreview != nil, HasPoll: message.Poll != nil, AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated})
+		items = append(items, model.SearchHit{Pinned: message.Pinned, Reactions: message.Reactions, HasLinkPreview: message.LinkPreview != nil, HasPoll: message.Poll != nil, AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated})
 	}
 
 	sort.Slice(items, func(i, j int) bool { return items[i].ID.TelegramID() > items[j].ID.TelegramID() })

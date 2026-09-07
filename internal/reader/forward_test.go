@@ -18,7 +18,7 @@ func TestForwardedCopiesRequireConsentedContainerAuthority(t *testing.T) {
 	for _, profile := range []string{policy.ProfileSelfAuthored, policy.ProfileConsented} {
 		g.Profile = profile
 		saveGrant(t, p, g)
-		result, err := s.Search(context.Background(), "req_forward_search", g.Peer, "text", 20, "")
+		result, err := s.Search(context.Background(), "req_forward_search", g.Peer, model.SearchFilter{Query: "text"}, 20, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -63,7 +63,7 @@ func testForwardChangeWithholdsBytes(t *testing.T, duringAck bool) {
 	saveGrant(t, p, g)
 	f.items[0].Forwarded = true
 	f.items[0].Message.Forward = &model.Forward{Date: "2026-09-01T00:00:00Z", FromName: "original"}
-	r, err := s.Search(context.Background(), "req_forward_image", g.Peer, "caption", 20, "")
+	r, err := s.Search(context.Background(), "req_forward_image", g.Peer, model.SearchFilter{Query: "caption"}, 20, "")
 	if err != nil {
 		t.Fatal(err)
 	}

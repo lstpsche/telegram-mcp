@@ -122,7 +122,7 @@ func TestScopeSearchUsesPeerMajorOrderingAndIndependentAnchors(t *testing.T) {
 	var token string
 	var ids []string
 	for pageIndex := 0; pageIndex < 3; pageIndex++ {
-		result, err := s.SearchScope(context.Background(), "req_page", scope.ID, "q", 2, token)
+		result, err := s.SearchScope(context.Background(), "req_page", scope.ID, model.SearchFilter{Query: "q"}, 2, token)
 		page := decodeScopeEnvelope[model.SearchHit](t, result, err)
 		if len(page.Items) != 2 || page.Scope == nil || page.Scope.EligiblePeers != 2 {
 			t.Fatalf("page=%+v", page)
@@ -154,12 +154,12 @@ func TestScopeSearchCountsFilteredCandidatesAndAdvancesEmptyWindows(t *testing.T
 	hidden.Protected = true
 	f.messages[grants[0].Peer] = []model.Candidate{hidden}
 	f.messages[grants[1].Peer] = []model.Candidate{candidate(grants[1], 10, "visible")}
-	result, err := s.SearchScope(context.Background(), "req_filtered", scope.ID, "q", 1, "")
+	result, err := s.SearchScope(context.Background(), "req_filtered", scope.ID, model.SearchFilter{Query: "q"}, 1, "")
 	page := decodeScopeEnvelope[model.SearchHit](t, result, err)
 	if len(page.Items) != 0 || page.NextCursor == nil || !page.Partial || len(f.queries) != 1 || page.Scope.CompletedPeers != 0 || strings.Contains(string(result.JSON), "private excluded text") {
 		t.Fatal("filtered candidates escaped page budget")
 	}
-	result, err = s.SearchScope(context.Background(), "req_next", scope.ID, "q", 1, *page.NextCursor)
+	result, err = s.SearchScope(context.Background(), "req_next", scope.ID, model.SearchFilter{Query: "q"}, 1, *page.NextCursor)
 	page = decodeScopeEnvelope[model.SearchHit](t, result, err)
 	if len(page.Items) != 1 || page.Items[0].ID.Peer() != grants[1].Peer || page.NextCursor != nil || page.Partial || page.Scope.QueriedPeers != 2 || page.Scope.CompletedPeers != 2 || len(f.queries) != 3 || f.queries[1].Before != 20 {
 		t.Fatalf("empty window failed to advance: %+v", page)
@@ -176,7 +176,7 @@ func TestScopeSearchTraversesAtMostBoundedMembership(t *testing.T) {
 		peers = append(peers, grant.Peer)
 	}
 	saveScope(t, repository, scope.ID, scope.Name, peers...)
-	result, err := s.SearchScope(context.Background(), "req_empty_members", scope.ID, "q", 1, "")
+	result, err := s.SearchScope(context.Background(), "req_empty_members", scope.ID, model.SearchFilter{Query: "q"}, 1, "")
 	page := decodeScopeEnvelope[model.SearchHit](t, result, err)
 	if len(f.queries) != policy.MaximumScopePeers || len(page.Items) != 0 || page.NextCursor != nil || page.Partial || page.Scope.CompletedPeers != policy.MaximumScopePeers {
 		t.Fatalf("bounded traversal failed: %+v", page)
@@ -217,7 +217,7 @@ func TestScopeSelectionExcludesUnauthorizedMembersBeforeIO(t *testing.T) {
 			chats := decodeScopeEnvelope[model.Chat](t, result, err)
 			result, err = s.ListUnread(context.Background(), "req_unread", scope.ID)
 			unread := decodeScopeEnvelope[model.Unread](t, result, err)
-			result, err = s.SearchScope(context.Background(), "req_search", scope.ID, "q", 20, "")
+			result, err = s.SearchScope(context.Background(), "req_search", scope.ID, model.SearchFilter{Query: "q"}, 20, "")
 			search := decodeScopeEnvelope[model.SearchHit](t, result, err)
 			for _, coverage := range []*model.ScopeCoverage{chats.Scope, unread.Scope, search.Scope} {
 				if coverage == nil || coverage.TotalPeers != 2 || coverage.EligiblePeers != 1 || coverage.ExcludedPeers != 1 || coverage.QueriedPeers != 1 || coverage.CompletedPeers != 1 {
@@ -242,7 +242,9 @@ func TestEmptyScopeAndUnknownScopeDoNotFetch(t *testing.T) {
 		operations := []func() (Result, error){
 			func() (Result, error) { return s.ListChats(context.Background(), "req_empty", 20, id) },
 			func() (Result, error) { return s.ListUnread(context.Background(), "req_empty", id) },
-			func() (Result, error) { return s.SearchScope(context.Background(), "req_empty", id, "q", 20, "") },
+			func() (Result, error) {
+				return s.SearchScope(context.Background(), "req_empty", id, model.SearchFilter{Query: "q"}, 20, "")
+			},
 		}
 		for _, operation := range operations {
 			result, err := operation()
@@ -268,7 +270,7 @@ func TestFullyExcludedScopeHasNoLiveFreshnessClaim(t *testing.T) {
 		func() (Result, error) { return s.ListChats(context.Background(), "req_excluded", 20, scope.ID) },
 		func() (Result, error) { return s.ListUnread(context.Background(), "req_excluded", scope.ID) },
 		func() (Result, error) {
-			return s.SearchScope(context.Background(), "req_excluded", scope.ID, "q", 20, "")
+			return s.SearchScope(context.Background(), "req_excluded", scope.ID, model.SearchFilter{Query: "q"}, 20, "")
 		},
 	}
 	for _, operation := range operations {
@@ -348,7 +350,7 @@ func TestScopeListAuditFailureReleasesNoNames(t *testing.T) {
 func TestScopeCursorRejectsSignedInvalidTraversalState(t *testing.T) {
 	s, f, _, _, grants, scope := scopeService(t)
 	f.messages[grants[0].Peer] = []model.Candidate{candidate(grants[0], 20, "match")}
-	result, err := s.SearchScope(context.Background(), "req_start", scope.ID, "q", 1, "")
+	result, err := s.SearchScope(context.Background(), "req_start", scope.ID, model.SearchFilter{Query: "q"}, 1, "")
 	page := decodeScopeEnvelope[model.SearchHit](t, result, err)
 	if page.NextCursor == nil {
 		t.Fatal("missing cursor")
@@ -377,7 +379,7 @@ func TestScopeCursorRejectsSignedInvalidTraversalState(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result, err := s.SearchScope(context.Background(), "req_invalid", scope.ID, "q", 1, token)
+		result, err := s.SearchScope(context.Background(), "req_invalid", scope.ID, model.SearchFilter{Query: "q"}, 1, token)
 		if model.TextErrorCategory(err) != model.ErrorCursorInvalid || len(result.JSON) != 0 || len(f.queries) != 1 {
 			t.Fatalf("invalid traversal reached backend: %+v err=%v", cursor, err)
 		}
@@ -385,7 +387,7 @@ func TestScopeCursorRejectsSignedInvalidTraversalState(t *testing.T) {
 	// A valid signature must not permit a noncanonical encoding of its payload.
 	encoded := base64.RawURLEncoding.EncodeToString(append([]byte(" "), payload...))
 	token := "ss1." + encoded + "." + base64.RawURLEncoding.EncodeToString(s.scopeCursorSignature(encoded))
-	result, err = s.SearchScope(context.Background(), "req_noncanonical", scope.ID, "q", 1, token)
+	result, err = s.SearchScope(context.Background(), "req_noncanonical", scope.ID, model.SearchFilter{Query: "q"}, 1, token)
 	if model.TextErrorCategory(err) != model.ErrorCursorInvalid || len(result.JSON) != 0 || len(f.queries) != 1 {
 		t.Fatal("signed noncanonical cursor accepted")
 	}
@@ -398,7 +400,7 @@ func TestScopeCursorBindingsInvalidateBeforeIO(t *testing.T) {
 			grants[1].ExpiresAt = s.now().Add(2 * time.Minute)
 			saveGrant(t, repository, grants[1])
 			f.messages[grants[0].Peer] = []model.Candidate{candidate(grants[0], 20, "match")}
-			result, err := s.SearchScope(context.Background(), "req_start", scope.ID, "secret query", 1, "")
+			result, err := s.SearchScope(context.Background(), "req_start", scope.ID, model.SearchFilter{Query: "secret query"}, 1, "")
 			page := decodeScopeEnvelope[model.SearchHit](t, result, err)
 			if page.NextCursor == nil {
 				t.Fatal("missing cursor")
@@ -463,7 +465,7 @@ func TestScopeCursorBindingsInvalidateBeforeIO(t *testing.T) {
 			case "natural_expiry":
 				s.now = func() time.Time { return grants[1].ExpiresAt }
 			}
-			result, err = s.SearchScope(context.Background(), "req_changed", id, query, limit, token)
+			result, err = s.SearchScope(context.Background(), "req_changed", id, model.SearchFilter{Query: query}, limit, token)
 			if err == nil || len(result.JSON) != 0 || len(f.queries) != 1 || f.ackCalls != 0 {
 				t.Fatalf("binding %s reached I/O: %v", change, err)
 			}
@@ -505,7 +507,7 @@ func TestScopeSearchLateFailureDropsEarlierPeerResults(t *testing.T) {
 				}
 				return nil
 			}
-			result, err := s.SearchScope(ctx, "req_failure", scope.ID, "q", 20, "")
+			result, err := s.SearchScope(ctx, "req_failure", scope.ID, model.SearchFilter{Query: "q"}, 20, "")
 			if err == nil || len(result.JSON) != 0 || len(f.queries) != 2 || f.ackCalls != 0 {
 				t.Fatalf("failure=%s result=%s err=%v", failure, result.JSON, err)
 			}
@@ -522,7 +524,7 @@ func TestScopeCursorContinuesAfterReaderReconstruction(t *testing.T) {
 	for _, id := range []int32{25, 20, 15, 10} {
 		backend.messages[grants[1].Peer] = append(backend.messages[grants[1].Peer], candidate(grants[1], id, "second peer"))
 	}
-	result, err := s.SearchScope(context.Background(), "req_original", scope.ID, "q", 2, "")
+	result, err := s.SearchScope(context.Background(), "req_original", scope.ID, model.SearchFilter{Query: "q"}, 2, "")
 	first := decodeScopeEnvelope[model.SearchHit](t, result, err)
 	if first.NextCursor == nil || len(first.Items) != 2 || first.Scope.CompletedPeers != 1 {
 		t.Fatalf("initial traversal=%+v", first)
@@ -544,7 +546,7 @@ func TestScopeCursorContinuesAfterReaderReconstruction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err = restarted.SearchScope(context.Background(), "req_reconstructed", scope.ID, "q", 2, *first.NextCursor)
+	result, err = restarted.SearchScope(context.Background(), "req_reconstructed", scope.ID, model.SearchFilter{Query: "q"}, 2, *first.NextCursor)
 	second := decodeScopeEnvelope[model.SearchHit](t, result, err)
 	if second.NextCursor == nil || len(second.Items) != 2 || second.Scope.CompletedPeers != 1 || len(backend.queries) != 3 {
 		t.Fatalf("resumed traversal=%+v", second)
@@ -557,7 +559,7 @@ func TestScopeCursorContinuesAfterReaderReconstruction(t *testing.T) {
 	if err != nil || continued.Index != saved.Index || continued.Before != 15 || continued.Ceiling != saved.Ceiling || continued.Expires != saved.Expires {
 		t.Fatalf("continued cursor=%+v err=%v", continued, err)
 	}
-	result, err = restarted.SearchScope(context.Background(), "req_terminal", scope.ID, "q", 2, *second.NextCursor)
+	result, err = restarted.SearchScope(context.Background(), "req_terminal", scope.ID, model.SearchFilter{Query: "q"}, 2, *second.NextCursor)
 	last := decodeScopeEnvelope[model.SearchHit](t, result, err)
 	if last.NextCursor != nil || len(last.Items) != 1 || last.Scope.CompletedPeers != 2 || last.Partial {
 		t.Fatalf("terminal page=%+v", last)

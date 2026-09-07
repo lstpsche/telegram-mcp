@@ -101,7 +101,7 @@ func voiceService(t *testing.T) (*Service, *imageFake, *policy.Repository, polic
 	f.items = []model.Candidate{c}
 	backend := &imageFake{fakeBackend: f, db: db, data: data}
 	s.backend = backend
-	result, err := s.Search(context.Background(), "req_voice_discovery", g.Peer, "caption", 20, "")
+	result, err := s.Search(context.Background(), "req_voice_discovery", g.Peer, model.SearchFilter{Query: "caption"}, 20, "")
 	if err != nil {
 		t.Fatal(err)
 	}
