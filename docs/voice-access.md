@@ -20,7 +20,15 @@ minutes. The server checks complete Ogg framing, checksums, stream identity,
 Opus headers and container duration against metadata. It does not decode audio,
 transcribe speech, perform OCR, or convert files. Client audio interpretation
 and playback support are separate requirements. Music, video notes, other audio
-formats and malformed, chained or incomplete streams are rejected.
+formats and malformed or chained streams are rejected. Missing or early Ogg
+end-of-stream markers are tolerated when the full declared file contains one
+continuous stream and ends on a complete packet with a known granule position
+and matching duration. Pages after an early marker must preserve the stream
+serial, page sequence and packet continuity. Partial pages or packets remain
+invalid; bytes are never repaired, discarded or rewritten. This compatibility
+behavior does not imply that the original file has conforming end markers.
+[RFC 7845](https://www.rfc-editor.org/rfc/rfc7845.html#section-3) defines the
+standard stream-ending rules.
 
 Opening audio requires authority over the affected history prefix, as with
 images and documents. The source and policy are rechecked, and a verified history

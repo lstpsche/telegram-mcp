@@ -69,7 +69,6 @@ func TestVoiceDataRejectsInvalidStreamWithValidChecksum(t *testing.T) {
 		"sequence":          func(p []byte) { binary.LittleEndian.PutUint32(p[18:22], 9) },
 		"serial":            func(p []byte) { binary.LittleEndian.PutUint32(p[14:18], 456) },
 		"continuation":      func(p []byte) { p[5] |= 1 },
-		"no_end":            func(p []byte) { p[5] = 0 },
 		"too_long":          func(p []byte) { binary.LittleEndian.PutUint64(p[6:14], 301*48000) },
 		"duration_mismatch": func(p []byte) { binary.LittleEndian.PutUint64(p[6:14], 10*48000) },
 	} {
@@ -170,6 +169,101 @@ func TestVoiceFailuresWithholdAndClearAudio(t *testing.T) {
 			}
 			if !bytes.Equal(f.data, make([]byte, len(f.data))) {
 				t.Fatal("failure retained audio")
+			}
+		})
+	}
+}
+
+func TestVoiceDataAcceptsPacketBoundaryWithoutEndFlag(t *testing.T) {
+	data := voiceTestData()
+	page := data[91:]
+	page[5] = 0
+	binary.LittleEndian.PutUint32(page[22:26], oggChecksum(page))
+	if err := validateVoiceData(voiceTestSource(data), data); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func([]byte) []byte{
+		"partial_page": func(b []byte) []byte { return b[:len(b)-1] },
+		"unknown_granule": func(b []byte) []byte {
+			p := b[91:]
+			binary.LittleEndian.PutUint64(p[6:14], ^uint64(0))
+			binary.LittleEndian.PutUint32(p[22:26], oggChecksum(p))
+			return b
+		},
+		"unfinished_packet": func(b []byte) []byte {
+			page := voiceTestPage(3, 0, 960, make([]byte, 255))
+			return append(b, page...)
+		},
+		"bad_checksum": func(b []byte) []byte {
+			b[len(b)-1] ^= 1
+			return b
+		},
+		"duration_mismatch": func(b []byte) []byte {
+			p := b[91:]
+			binary.LittleEndian.PutUint64(p[6:14], 10*48000)
+			binary.LittleEndian.PutUint32(p[22:26], oggChecksum(p))
+			return b
+		},
+		"too_long": func(b []byte) []byte {
+			p := b[91:]
+			binary.LittleEndian.PutUint64(p[6:14], 301*48000)
+			binary.LittleEndian.PutUint32(p[22:26], oggChecksum(p))
+			return b
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			broken := mutate(bytes.Clone(data))
+			if err := validateVoiceData(voiceTestSource(broken), broken); err == nil {
+				t.Fatal("invalid stream accepted")
+			}
+		})
+	}
+}
+
+func TestVoiceDeliveryWithoutEndFlagPreservesBytesAndReceipt(t *testing.T) {
+	s, f, _, _, token := voiceService(t)
+	page := f.data[91:]
+	page[5] = 0
+	binary.LittleEndian.PutUint32(page[22:26], oggChecksum(page))
+	want := bytes.Clone(f.data)
+	result, err := s.OpenVoice(context.Background(), "req_voice_without_eos", token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Voice == nil || !bytes.Equal(result.Voice.Data, want) || f.ackCalls != 1 || f.downloads != 1 || f.historyCalls != 3 {
+		t.Fatal("incorrect original voice delivery")
+	}
+	var envelope model.Envelope[voiceItem]
+	if err := json.Unmarshal(result.JSON, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.ReadEffect.Kind != model.ReadEffectHistoryMarkedRead {
+		t.Fatal("missing history receipt")
+	}
+}
+
+func TestVoiceDataAcceptsContinuousPagesAfterEarlyEndFlag(t *testing.T) {
+	data := append(voiceTestData(), voiceTestPage(3, 4, 1920, []byte{0xf8, 0xff, 0xfe})...)
+	if err := validateVoiceData(voiceTestSource(data), data); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func([]byte){
+		"sequence_gap":       func(p []byte) { binary.LittleEndian.PutUint32(p[18:22], 5) },
+		"new_serial":         func(p []byte) { binary.LittleEndian.PutUint32(p[14:18], 456) },
+		"new_stream":         func(p []byte) { p[5] |= 2 },
+		"regressing_granule": func(p []byte) { binary.LittleEndian.PutUint64(p[6:14], 100) },
+		"unknown_final_granule": func(p []byte) {
+			p[5] = 0
+			binary.LittleEndian.PutUint64(p[6:14], ^uint64(0))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			broken := bytes.Clone(data)
+			page := broken[len(voiceTestData()):]
+			mutate(page)
+			binary.LittleEndian.PutUint32(page[22:26], oggChecksum(page))
+			if err := validateVoiceData(voiceTestSource(broken), broken); err == nil {
+				t.Fatal("invalid continuation accepted")
 			}
 		})
 	}

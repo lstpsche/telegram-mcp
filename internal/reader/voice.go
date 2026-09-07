@@ -50,7 +50,9 @@ func (s *Service) voiceDescriptor(candidate model.Candidate, grant policy.Grant,
 }
 
 // Validate bounded Ogg framing and Opus headers, not decoded audio or transcription.
-// Only one complete mono/stereo stream with mapping family zero is supported.
+// Only one mono/stereo stream with mapping family zero is supported.
+// Some encoders omit or set EOS early. The declared file boundary and validated
+// packet continuity determine completion; EOS does not permit a new stream.
 func validateVoiceData(source model.MediaSource, data []byte) error {
 	invalid := func() error { return model.TextError(model.ErrorInvalidReference, nil) }
 	if !source.IsVoice() {
@@ -68,9 +70,8 @@ func validateVoiceData(source model.MediaSource, data []byte) error {
 	packets := 0
 	packet := []byte{}
 	defer func() { clear(packet[:cap(packet)]) }()
-	ended := false
 	for offset := 0; offset < len(data); {
-		if ended || len(data)-offset < 27 {
+		if len(data)-offset < 27 {
 			return invalid()
 		}
 		page := data[offset:]
@@ -142,13 +143,12 @@ func validateVoiceData(source model.MediaSource, data []byte) error {
 			packets++
 			packet = packet[:0]
 		}
-		ended = flags&4 != 0
-		if ended && (len(packet) != 0 || currentGranule == math.MaxUint64) {
+		if (flags&4 != 0 || offset+size == len(data)) && (len(packet) != 0 || currentGranule == math.MaxUint64) {
 			return invalid()
 		}
 		offset += size
 	}
-	if !ended || packets < 3 || granule <= uint64(preSkip) {
+	if packets < 3 || granule <= uint64(preSkip) {
 		return invalid()
 	}
 	samples := granule - uint64(preSkip)
