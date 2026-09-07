@@ -58,7 +58,7 @@ func (f *documentWireBackend) History(_ context.Context, query model.HistoryQuer
 	}
 	var candidates []model.Candidate
 	for _, candidate := range f.candidates {
-		if query.Target == 0 || candidate.Message.ID.TelegramID() == query.Target {
+		if query.Target == 0 || (candidate.Message.ID.TelegramID() >= query.Target-int32(query.BeforeCount) && candidate.Message.ID.TelegramID() <= query.Target+int32(query.AfterCount)) {
 			candidates = append(candidates, candidate)
 		}
 	}
@@ -343,6 +343,17 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool) {
 	replyItems := replyContext["items"].([]any)
 	if len(replyItems) != 2 || replyItems[0].(map[string]any)["reply_to"] != backend.candidates[1].Message.ID.String() || replyItems[0].(map[string]any)["reply_chain"].(map[string]any)["state"] != "complete" {
 		t.Fatal("reply context lost over stdio")
+	}
+	_, albumContext := call("get_message_context", map[string]any{"message": backend.candidates[0].Message.ID.String(), "expand_album": true})
+	albumItems := albumContext["items"].([]any)
+	if len(albumItems) != 2 || albumItems[0].(map[string]any)["album_context"].(map[string]any)["state"] != "bounded" {
+		t.Fatal("album context lost over stdio")
+	}
+	for _, value := range []any{nil, "true", 1} {
+		invalid, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_message_context", Arguments: map[string]any{"message": backend.candidates[0].Message.ID.String(), "expand_album": value}})
+		if err != nil || !invalid.IsError {
+			t.Fatal("invalid album flag accepted")
+		}
 	}
 	for _, depth := range []any{-1, 6, nil, "2"} {
 		invalid, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_message_context", Arguments: map[string]any{"message": backend.candidates[0].Message.ID.String(), "reply_depth": depth}})

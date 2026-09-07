@@ -25,7 +25,13 @@ type ReplyChain struct {
 	State string `json:"state"`
 }
 
+type AlbumContext struct {
+	State    string      `json:"state"`
+	Messages []MessageID `json:"messages"`
+}
+
 type Message struct {
+	AlbumContext   *AlbumContext       `json:"album_context,omitempty"`
 	URL            string              `json:"url,omitempty"`
 	DiscussionRoot *MessageID          `json:"discussion_root,omitempty"`
 	ThreadRoot     *MessageID          `json:"thread_root,omitempty"`
@@ -68,6 +74,7 @@ type Candidate struct {
 // HistoryQuery uses inclusive grant bounds and exclusive Before selection.
 // Target selects context; BeforeCount/AfterCount count neighboring messages.
 type HistoryQuery struct {
+	ExpandAlbum       bool
 	LinkUsername      string
 	LinkTopic         int32
 	ResolveDiscussion bool

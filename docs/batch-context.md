@@ -44,3 +44,6 @@ Single-target calls using `message` retain their flat `items` response and
 singular `read_effect.through_message_id`. No new tool, database migration,
 content cache or credential permission is introduced. [Reply context](reply-context.md)
 and media permissions apply to both input forms.
+
+With `expand_album: true`, each target reserves at least nine older and nine
+newer candidates in the shared bound. See [album expansion](media-albums.md).

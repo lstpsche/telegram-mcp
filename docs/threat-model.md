@@ -592,3 +592,9 @@ discovery and atomic scope saving. Only exact peer IDs and the explicitly suppli
 local scope name are persisted. Folder rules and titles grant no authority; imports
 do not mutate grants, read state or Telegram folders. An incomplete traversal or
 oversized scope fails without replacing membership. See [folder scopes](folder-scopes.md).
+
+Album context expansion reserves the enlarged candidate window before fetching.
+Grouping does not authorize members: each passes existing grant/content/media
+checks. Only requested neighbors and authorized matching members enter the final
+context and receipt boundary. Coverage remains explicitly bounded, with no count
+or reference for withheld members. Shared batch preparation and release guards apply.

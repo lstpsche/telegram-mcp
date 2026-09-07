@@ -228,6 +228,7 @@ also supports `resolve_discussion` on channel-post context to navigate into a
 joined discussion group; see [reply and discussion exploration](docs/reply-context.md).
 
 Supported [media album members](docs/media-albums.md) share an `album_id` from 0.6.0, preserving grouping across pages while keeping captions on their original messages.
+Use `expand_album: true` on message context to include nearby authorized members.
 
 Read [poll questions, text options and available aggregate counts](docs/polls.md) through history/context. Search and catch-up provide a poll marker and question snippet.
 

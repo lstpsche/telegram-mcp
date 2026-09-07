@@ -159,7 +159,10 @@ func validateHistory(query model.HistoryQuery) error {
 	if query.ResolveDiscussion && (query.Target == 0 || (query.Peer.Kind() != model.PeerKindChannel && query.LinkUsername == "") || query.Peer.TopicID() != 0 || query.LinkTopic != 0) {
 		return model.TextError(model.ErrorInvalidInput, nil)
 	}
-	if query.ReplyDepth < 0 || query.ReplyDepth > 5 || (query.ReplyDepth > 0 && query.Target == 0) || query.Limit+query.ReplyDepth > model.MaximumPageSize {
+	if query.ExpandAlbum && query.Target == 0 {
+		return model.TextError(model.ErrorInvalidInput, nil)
+	}
+	if query.ReplyDepth < 0 || query.ReplyDepth > 5 || (query.ReplyDepth > 0 && query.Target == 0) || contextFetchQuery(query).Limit+query.ReplyDepth > model.MaximumPageSize {
 		return model.TextError(model.ErrorInvalidInput, nil)
 	}
 	if query.Target > 0 && query.Limit != query.BeforeCount+query.AfterCount+1 {
@@ -189,19 +192,20 @@ func (s *Service) collectContext(ctx context.Context, lease *policy.Lease, query
 	if query.Before > 0 && query.Before <= grant.MinID {
 		return preparedContext{}, model.TextError(model.ErrorPolicyDenied, nil)
 	}
-	candidates, err := s.backend.History(ctx, query)
+	fetchQuery := contextFetchQuery(query)
+	candidates, err := s.backend.History(ctx, fetchQuery)
 	if err != nil {
 		return preparedContext{}, err
 	}
 	if err := grant.CheckCurrent(s.now()); err != nil {
 		return preparedContext{}, err
 	}
-	if len(candidates) > query.Limit {
+	if len(candidates) > fetchQuery.Limit {
 		return preparedContext{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
 	items := make([]model.Message, 0, len(candidates))
 	seen := make(map[model.MessageID]bool, len(candidates))
-	partial := len(candidates) == query.Limit
+	partial := len(candidates) == fetchQuery.Limit
 	found := query.Target == 0
 	var through int32
 	older, newer := 0, 0
@@ -218,7 +222,7 @@ func (s *Service) collectContext(ctx context.Context, lease *policy.Lease, query
 			if message.ID.TelegramID() > query.Target {
 				newer++
 			}
-			if older > query.BeforeCount || newer > query.AfterCount {
+			if older > fetchQuery.BeforeCount || newer > fetchQuery.AfterCount {
 				return preparedContext{}, model.TextError(model.ErrorInvalidReference, nil)
 			}
 		}
@@ -253,6 +257,27 @@ func (s *Service) collectContext(ctx context.Context, lease *policy.Lease, query
 	}
 	if err := grant.CheckCurrent(s.now()); err != nil {
 		return preparedContext{}, err
+	}
+	if query.ExpandAlbum {
+		scannedItems := items
+		items = selectAlbumContext(query, candidates, items)
+		retained := make(map[model.MessageID]bool, len(items))
+		for _, item := range items {
+			retained[item.ID] = true
+		}
+		// A permitted discarded neighbor can still be fetched as a reply parent.
+		for _, item := range scannedItems {
+			if !retained[item.ID] {
+				delete(seen, item.ID)
+			}
+		}
+		through = 0
+		for _, item := range items {
+			through = max(through, item.ID.TelegramID())
+			if item.AlbumContext != nil && item.AlbumContext.State == "bounded" {
+				partial = true
+			}
+		}
 	}
 	if query.ReplyDepth > 0 {
 		if err := grant.CheckRead(through, s.now()); err != nil {
@@ -304,7 +329,7 @@ func (s *Service) messages(ctx context.Context, requestID string, queries []mode
 			}
 			targets[id] = true
 		}
-		total += q.Limit + q.ReplyDepth
+		total += contextFetchQuery(q).Limit + q.ReplyDepth
 	}
 	if total > model.MaximumPageSize {
 		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
@@ -559,6 +584,7 @@ func (s *Service) prepareMessage(candidate model.Candidate, grant policy.Grant, 
 // observations cannot describe one deduplicated result and reject the batch.
 func mergeContextMessage(a, b model.Message) (model.Message, error) {
 	normalize := func(m model.Message) model.Message {
+		m.AlbumContext = nil
 		m.ReplyChain = nil
 		m.DiscussionRoot = nil
 		if m.Image != nil {
@@ -580,6 +606,12 @@ func mergeContextMessage(a, b model.Message) (model.Message, error) {
 	}
 	if !reflect.DeepEqual(normalize(a), normalize(b)) {
 		return model.Message{}, model.TextError(model.ErrorInvalidReference, nil)
+	}
+	if a.AlbumContext != nil {
+		if b.AlbumContext != nil && !reflect.DeepEqual(a.AlbumContext, b.AlbumContext) {
+			return model.Message{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		b.AlbumContext = a.AlbumContext
 	}
 	if a.ReplyChain != nil {
 		if b.ReplyChain != nil && !reflect.DeepEqual(a.ReplyChain, b.ReplyChain) {
