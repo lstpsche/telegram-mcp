@@ -13,9 +13,12 @@ import (
 
 func TestEmptySearchRevalidatesPeerWithoutRequiringResultEntities(t *testing.T) {
 	for _, kind := range []model.PeerKind{model.PeerKindUser, model.PeerKindChat, model.PeerKindChannel} {
-		for _, sliced := range []bool{false, true} {
-			for _, mode := range []string{"valid", "changed", "recheck_error", "upstream", "checkpoint", "nonempty_missing_entity"} {
-				t.Run(fmt.Sprintf("%s/sliced=%t/%s", kind, sliced, mode), func(t *testing.T) {
+		for _, shape := range []string{"complete", "slice", "channel"} {
+			for _, mode := range []string{"valid", "changed", "recheck_error", "upstream", "checkpoint", "nonempty_missing_entity", "bad_pts"} {
+				if mode == "bad_pts" && shape != "channel" {
+					continue
+				}
+				t.Run(fmt.Sprintf("%s/%s/%s", kind, shape, mode), func(t *testing.T) {
 					searched := false
 					checks := 0
 					account, _ := newReadTestAccount(t, func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
@@ -34,7 +37,14 @@ func TestEmptySearchRevalidatesPeerWithoutRequiringResultEntities(t *testing.T) 
 							if mode == "nonempty_missing_entity" {
 								page.Messages = []tg.MessageClass{testMessage(20)}
 							}
-							if sliced {
+							if shape == "channel" {
+								pts := 12
+								if mode == "bad_pts" {
+									pts = 0
+								}
+								return encodeReadResponse(out, &tg.MessagesChannelMessages{Pts: pts, Messages: page.Messages})
+							}
+							if shape == "slice" {
 								return encodeReadResponse(out, &tg.MessagesMessagesSlice{Count: 10, Messages: page.Messages})
 							}
 							return encodeReadResponse(out, page)
@@ -68,7 +78,7 @@ func TestEmptySearchRevalidatesPeerWithoutRequiringResultEntities(t *testing.T) 
 					}
 					peer, _ := model.NewPeerID(kind, 42)
 					rows, err := account.Search(ctx, model.SearchQuery{Peer: peer, Query: "synthetic", MinID: 1, MaxID: 100, Limit: 5})
-					if mode == "valid" {
+					if mode == "valid" && (shape != "channel" || kind == model.PeerKindChannel) {
 						if err != nil || rows == nil || len(rows) != 0 || checks != 2 {
 							t.Fatal("legitimate empty result rejected", err, checks)
 						}

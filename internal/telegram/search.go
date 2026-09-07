@@ -79,6 +79,11 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 		emptyPage = page
 	case *tg.MessagesMessagesSlice:
 		emptyPage = page
+	case *tg.MessagesChannelMessages:
+		if q.Peer.Kind() != model.PeerKindChannel || page.Pts <= 0 {
+			return nil, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		emptyPage = page
 	}
 	if emptyPage != nil && len(emptyPage.GetMessages()) == 0 && len(emptyPage.GetUsers()) == 0 && len(emptyPage.GetChats()) == 0 && len(emptyPage.GetTopics()) == 0 {
 		if _, err := a.Chat(bounded, q.Peer); err != nil {
