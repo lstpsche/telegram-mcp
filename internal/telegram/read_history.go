@@ -209,15 +209,21 @@ type messagePage interface {
 }
 
 func (r *readRuntime) normalizePage(ctx context.Context, peer model.PeerID, result tg.MessagesMessagesClass, limit int) ([]model.Candidate, error) {
+	return r.normalizeMessagePage(ctx, peer, result, limit, false)
+}
+
+// Unread-mention RPCs may return a common message slice for a channel.
+// Exact entities and message peers are still validated before synchronization.
+func (r *readRuntime) normalizeMessagePage(ctx context.Context, peer model.PeerID, result tg.MessagesMessagesClass, limit int, allowChannelSlice bool) ([]model.Candidate, error) {
 	var page messagePage
 	switch value := result.(type) {
 	case *tg.MessagesMessages:
-		if peer.Kind() == model.PeerKindChannel {
+		if peer.Kind() == model.PeerKindChannel && !allowChannelSlice {
 			return nil, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		page = value
 	case *tg.MessagesMessagesSlice:
-		if peer.Kind() == model.PeerKindChannel {
+		if peer.Kind() == model.PeerKindChannel && !allowChannelSlice {
 			return nil, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		page = value
@@ -285,6 +291,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	if !matchesPeer(peer, message.PeerID) {
 		return model.Candidate{}, model.TextError(model.ErrorInvalidReference, errors.New("Telegram message dialog does not match request"))
 	}
+	candidate.UnreadMention = message.Mentioned && message.MediaUnread
 	candidate.Protected = message.Noforwards || len(message.RestrictionReason) > 0
 	candidate.Ephemeral = message.TTLPeriod != 0
 	candidate.Forwarded = !message.FwdFrom.Zero() || message.Flags.Has(2)

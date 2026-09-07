@@ -61,6 +61,12 @@ func TestTopicRoutesHistorySearchAndReceiptToExactThread(t *testing.T) {
 						t.Fatal("unscoped search")
 					}
 					return encodeReadResponse(out, page)
+				case *tg.MessagesGetUnreadMentionsRequest:
+					if q.TopMsgID != int(topicID) {
+						t.Fatal("unscoped mention search")
+					}
+					message.Mentioned, message.MediaUnread = true, true
+					return encodeReadResponse(out, &tg.MessagesMessagesSlice{Count: 1, Messages: page.Messages, Users: page.Users, Chats: page.Chats})
 				case *tg.MessagesReadDiscussionRequest:
 					receipts++
 					if q.MsgID != int(topicID) || q.ReadMaxID != 20 {
@@ -93,6 +99,10 @@ func TestTopicRoutesHistorySearchAndReceiptToExactThread(t *testing.T) {
 			rows, err := account.Search(ctx, model.SearchQuery{Peer: peer, Sender: "tgpeer:v1:user:2", Since: 99, Until: 102, MinID: 1, MaxID: 100, Limit: 20})
 			if err != nil || len(rows) != 1 || rows[0].SentAt != 100 || rows[0].Message.ID.Peer() != peer || receipts != 0 {
 				t.Fatal("topic sender/date traversal", err)
+			}
+			mentions, err := account.Search(ctx, model.SearchQuery{Peer: peer, UnreadMentionsOnly: true, MinID: 1, MaxID: 100, Limit: 20})
+			if err != nil || len(mentions) != 1 || !mentions[0].UnreadMention || receipts != 0 {
+				t.Fatal("topic mentions", err)
 			}
 			if err := account.Acknowledge(ctx, peer, 20); err != nil {
 				t.Fatal(err)

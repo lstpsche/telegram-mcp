@@ -206,6 +206,8 @@ Version 0.5.0 added [forum topics](docs/topic-access.md) and [original voice not
 | `open_voice_note` | Deliver an authorized original voice note as native MCP audio |
 | `open_image` | Open an authorized image as native MCP image content |
 
+Use `unread_mentions_only: true` on `search_messages` to find [unread mentions](docs/unread-mentions.md) in an authorized chat or scope without clearing them.
+
 Use `query` on `list_chats` or `list_topics` to find titles without opening message bodies. See [chat and topic search](docs/discovery-search.md).
 
 Named scopes let you group conversations for a project or recurring briefing. Manage them with the human `scope`, `scopes`, and `unscope` commands; agents discover their IDs through `list_scopes`. Scopes narrow existing access rather than granting new permissions. See [scope and access setup](docs/text-access.md).

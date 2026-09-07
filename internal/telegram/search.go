@@ -16,11 +16,11 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	}
 	query := q.Query
 	if q.Window != nil {
-		if q.Window.Validate() != nil || q.ReplyTo != "" || q.ThreadRoot != "" || query != "" || q.PinnedOnly || q.MediaType != "" || q.Sender != "" || q.Since != 0 || q.Until != 0 || q.SavedPeer != "" || q.SavedTag != (model.SavedTag{}) {
+		if q.Window.Validate() != nil || q.ReplyTo != "" || q.ThreadRoot != "" || query != "" || q.UnreadMentionsOnly || q.PinnedOnly || q.MediaType != "" || q.Sender != "" || q.Since != 0 || q.Until != 0 || q.SavedPeer != "" || q.SavedTag != (model.SavedTag{}) {
 			return nil, model.TextError(model.ErrorInvalidInput, nil)
 		}
 	} else {
-		filter, err := (model.SearchFilter{ReplyTo: q.ReplyTo, ThreadRoot: q.ThreadRoot, SavedPeer: q.SavedPeer, SavedTag: q.SavedTag, Sender: q.Sender, Since: q.Since, Until: q.Until, MediaType: q.MediaType, Query: query, PinnedOnly: q.PinnedOnly}).Normalize()
+		filter, err := (model.SearchFilter{ReplyTo: q.ReplyTo, ThreadRoot: q.ThreadRoot, SavedPeer: q.SavedPeer, SavedTag: q.SavedTag, Sender: q.Sender, Since: q.Since, Until: q.Until, MediaType: q.MediaType, Query: query, UnreadMentionsOnly: q.UnreadMentionsOnly, PinnedOnly: q.PinnedOnly}).Normalize()
 		if err != nil {
 			return nil, err
 		}
@@ -64,7 +64,13 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 		threadID = int(root.TelegramID())
 	}
 	var response tg.MessagesMessagesClass
-	if q.UsesHistory() {
+	if q.UnreadMentionsOnly {
+		request := &tg.MessagesGetUnreadMentionsRequest{Peer: input, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum}
+		if threadID != 0 {
+			request.SetTopMsgID(threadID)
+		}
+		response, err = a.reads.api.MessagesGetUnreadMentions(bounded, request)
+	} else if q.UsesHistory() {
 		until := q.Until
 		if q.Window != nil {
 			until = q.Window.Until
@@ -115,7 +121,7 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 		}
 		return []model.Candidate{}, nil
 	}
-	candidates, err := a.reads.normalizePage(bounded, q.Peer, response, q.Limit)
+	candidates, err := a.reads.normalizeMessagePage(bounded, q.Peer, response, q.Limit, q.UnreadMentionsOnly)
 	if err != nil {
 		return nil, err
 	}

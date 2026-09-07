@@ -57,7 +57,7 @@ eligible/excluded peer counts without Telegram I/O. Its freshness is
 `unavailable`. Scope membership narrows current access authority; it cannot
 authorize content or receipt effects. `list_unread` also accepts optional
 `scope` and `cursor`. `search_messages` requires exactly one of `peer` or
-`scope`, with optional `limit`, `cursor`, `pinned_only`, `media_type`, `sender`,
+`scope`, with optional `limit`, `cursor`, `unread_mentions_only`, `pinned_only`, `media_type`, `sender`,
 `since`, `until`, `saved_peer` and `saved_tag`. Query is required and nonempty
 unless another filter is active. Sender matches the returned author. Dates use
 whole-second RFC3339 timestamps, with inclusive since and exclusive until;

@@ -15,21 +15,22 @@ import (
 const cursorLifetime = 15 * time.Minute
 
 type cursorBinding struct {
-	ReplyTo        string                `json:"reply_to,omitempty"`
-	ThreadRoot     string                `json:"thread_root,omitempty"`
-	SavedPeer      string                `json:"saved_peer,omitempty"`
-	SavedTagDigest string                `json:"saved_tag_digest,omitempty"`
-	Since          int64                 `json:"since,omitempty"`
-	Until          int64                 `json:"until,omitempty"`
-	Sender         string                `json:"sender,omitempty"`
-	MediaType      model.SearchMediaType `json:"media_type,omitempty"`
-	PinnedOnly     bool                  `json:"pinned_only,omitempty"`
-	Operation      string                `json:"operation"`
-	Peer           model.PeerID          `json:"peer"`
-	QueryDigest    string                `json:"query_digest"`
-	Limit          int                   `json:"limit"`
-	Epoch          string                `json:"epoch"`
-	Revision       int64                 `json:"revision"`
+	UnreadMentionsOnly bool                  `json:"unread_mentions_only,omitempty"`
+	ReplyTo            string                `json:"reply_to,omitempty"`
+	ThreadRoot         string                `json:"thread_root,omitempty"`
+	SavedPeer          string                `json:"saved_peer,omitempty"`
+	SavedTagDigest     string                `json:"saved_tag_digest,omitempty"`
+	Since              int64                 `json:"since,omitempty"`
+	Until              int64                 `json:"until,omitempty"`
+	Sender             string                `json:"sender,omitempty"`
+	MediaType          model.SearchMediaType `json:"media_type,omitempty"`
+	PinnedOnly         bool                  `json:"pinned_only,omitempty"`
+	Operation          string                `json:"operation"`
+	Peer               model.PeerID          `json:"peer"`
+	QueryDigest        string                `json:"query_digest"`
+	Limit              int                   `json:"limit"`
+	Epoch              string                `json:"epoch"`
+	Revision           int64                 `json:"revision"`
 }
 
 type searchCursor struct {

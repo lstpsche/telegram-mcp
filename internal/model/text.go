@@ -58,7 +58,8 @@ type Message struct {
 // Candidate carries normalization evidence only inside the application.
 // Unsafe source bodies must not be copied into Message.Text.
 type Candidate struct {
-	Voice *MediaSource
+	UnreadMention bool
+	Voice         *MediaSource
 	// SentAt retains only timestamp evidence for date traversal, including excluded bodies.
 	SentAt      int64
 	Image       *MediaSource
@@ -119,6 +120,7 @@ func TextErrorCategory(err error) ErrorCategory {
 
 // SearchQuery is adapter input. Query text is transient and must never be logged.
 type SearchQuery struct {
+	UnreadMentionsOnly   bool
 	ReplyTo, ThreadRoot  string
 	SavedPeer            string
 	SavedTag             SavedTag
@@ -165,6 +167,7 @@ type Unread struct {
 
 // SearchFilter narrows message discovery without granting content access.
 type SearchFilter struct {
+	UnreadMentionsOnly  bool
 	ReplyTo, ThreadRoot string
 	SavedPeer           string
 	SavedTag            SavedTag
@@ -220,7 +223,7 @@ func (f SearchFilter) Normalize() (SearchFilter, error) {
 		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
 	f.Query = strings.TrimSpace(f.Query)
-	if (f.Query == "" && !f.PinnedOnly && f.MediaType == "" && f.Sender == "" && f.Since == 0 && f.Until == 0 && !f.HasSavedFilter() && f.ReplyTo == "" && f.ThreadRoot == "") || utf8.RuneCountInString(f.Query) > 256 {
+	if (f.Query == "" && !f.PinnedOnly && !f.UnreadMentionsOnly && f.MediaType == "" && f.Sender == "" && f.Since == 0 && f.Until == 0 && !f.HasSavedFilter() && f.ReplyTo == "" && f.ThreadRoot == "") || utf8.RuneCountInString(f.Query) > 256 {
 		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
 	return f, nil
@@ -247,7 +250,7 @@ func (m Message) ValidReply() bool {
 
 // UsesHistory selects the primary traversal when no Telegram search selector exists.
 func (q SearchQuery) UsesHistory() bool {
-	return q.Window != nil || (q.Query == "" && !q.PinnedOnly && q.MediaType == "")
+	return q.Window != nil || (q.Query == "" && !q.PinnedOnly && !q.UnreadMentionsOnly && q.MediaType == "")
 }
 
 // CheckReplyPeer keeps selectors within one exact conversation or topic.

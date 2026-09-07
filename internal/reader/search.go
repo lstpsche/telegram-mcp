@@ -3,6 +3,7 @@ package reader
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -59,7 +60,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if err != nil {
 		return Result{}, err
 	}
-	binding := cursorBinding{ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTagDigest: s.savedTagDigest(filter.SavedTag), Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
+	binding := cursorBinding{ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTagDigest: s.savedTagDigest(filter.SavedTag), Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	deadline := s.now().Add(cursorLifetime)
 	deadline = grant.Deadline(deadline)
 	cursor = searchCursor{Binding: binding, Ceiling: grant.MaxID, Expires: deadline.Unix()}
@@ -74,7 +75,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	}
 	ctx, stopCursor := context.WithTimeout(ctx, time.Unix(cursor.Expires, 0).Sub(s.now()))
 	defer stopCursor()
-	query := model.SearchQuery{ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTag: filter.SavedTag, Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
+	query := model.SearchQuery{ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTag: filter.SavedTag, Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
 	candidates, err := s.backend.Search(ctx, query)
 	if err != nil {
 		return Result{}, err
@@ -202,6 +203,10 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		}
 		if len(message.Text) > 64*1024 {
 			return searchWindow{}, model.TextError(model.ErrorResultTooLarge, nil)
+		}
+		if query.UnreadMentionsOnly && (!candidate.UnreadMention || (query.Query != "" && !strings.Contains(strings.ToLower(message.Text), strings.ToLower(query.Query)))) {
+			partial = true
+			continue
 		}
 		snippetText := message.Text
 		if message.Poll != nil {
