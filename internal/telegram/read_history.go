@@ -458,6 +458,13 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 			}
 			candidate.Message.DiscussionPeer = linked.String()
 		}
+
+		if message.EditDate != 0 || message.Flags.Has(15) {
+			if message.EditDate <= 0 || message.EditDate < message.Date {
+				return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
+			}
+			candidate.Message.EditedAt = time.Unix(int64(message.EditDate), 0).UTC().Format(time.RFC3339)
+		}
 		candidate.Message.Pinned = message.Pinned
 		candidate.Message.LinkPreview = preview
 		candidate.Message.Poll = poll

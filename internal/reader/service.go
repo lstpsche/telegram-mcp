@@ -172,12 +172,12 @@ func validateHistory(query model.HistoryQuery) error {
 }
 
 func (s *Service) Messages(ctx context.Context, requestID string, query model.HistoryQuery) (Result, error) {
-	return s.messages(ctx, requestID, []model.HistoryQuery{query}, false)
+	return s.messages(ctx, requestID, []model.HistoryQuery{query}, false, nil)
 }
 
 // Contexts prepares every target before issuing any conversation receipt.
 func (s *Service) Contexts(ctx context.Context, requestID string, queries []model.HistoryQuery) (Result, error) {
-	return s.messages(ctx, requestID, queries, true)
+	return s.messages(ctx, requestID, queries, true, nil)
 }
 
 type preparedContext struct {
@@ -309,8 +309,8 @@ func (s *Service) collectContext(ctx context.Context, lease *policy.Lease, query
 	return preparedContext{items: items, partial: partial, through: through}, nil
 }
 
-func (s *Service) messages(ctx context.Context, requestID string, queries []model.HistoryQuery, batch bool) (result Result, resultErr error) {
-	if len(queries) == 0 || len(queries) > model.MaximumContextTargets {
+func (s *Service) messages(ctx context.Context, requestID string, queries []model.HistoryQuery, batch bool, observations []messageObservation) (result Result, resultErr error) {
+	if len(queries) == 0 || len(queries) > model.MaximumContextTargets || len(observations) != 0 && len(observations) != len(queries) {
 		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
 	}
 	total := 0
@@ -350,8 +350,14 @@ func (s *Service) messages(ctx context.Context, requestID string, queries []mode
 	count := 0
 	attempted := false
 	grants := make([]policy.Grant, 0, len(queries))
+	var observationExpiry int64
 	defer func() {
-		resultErr = s.finish(ctx, lease, requestID, operation, count, attempted, resultErr, func() error { return s.checkGrantsCurrent(ctx, grants) })
+		resultErr = s.finish(ctx, lease, requestID, operation, count, attempted, resultErr, func() error {
+			if observationExpiry != 0 && observationExpiry <= s.now().Unix() {
+				return model.TextError(model.ErrorResourceExpired, nil)
+			}
+			return s.checkGrantsCurrent(ctx, grants)
+		})
 		if resultErr != nil {
 			result = Result{}
 		}
@@ -394,12 +400,29 @@ func (s *Service) messages(ctx context.Context, requestID string, queries []mode
 			unique[id] = true
 		}
 	}
-	fetchContext, stop := context.WithTimeout(ctx, deadline.Sub(s.now()))
-	defer stop()
-	epoch, revision, err := lease.Binding(fetchContext)
+
+	epoch, revision, err := lease.Binding(ctx)
 	if err != nil {
 		return Result{}, err
 	}
+	authority := mediaAuthority{epoch, revision}
+	for i, observation := range observations {
+		id, _ := model.NewMessageID(queries[i].Peer, queries[i].Target)
+		if observation.Message != id || observation.Authority != authority || observation.Expires > grants[i].Deadline(s.now().Add(observationLifetime)).Unix() {
+			return Result{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		if observation.Expires <= s.now().Unix() {
+			return Result{}, model.TextError(model.ErrorResourceExpired, nil)
+		}
+		if observationExpiry == 0 || observation.Expires < observationExpiry {
+			observationExpiry = observation.Expires
+		}
+	}
+	if observationExpiry != 0 && time.Unix(observationExpiry, 0).Before(deadline) {
+		deadline = time.Unix(observationExpiry, 0)
+	}
+	fetchContext, stop := context.WithTimeout(ctx, deadline.Sub(s.now()))
+	defer stop()
 	items := []model.Message{}
 	contexts := []model.MessageContext{}
 	seen := map[model.MessageID]int{}
@@ -472,6 +495,9 @@ func (s *Service) messages(ctx context.Context, requestID string, queries []mode
 		} else {
 			effect.ThroughMessageID = &receipts[0]
 		}
+	}
+	if err := s.observeMessages(items, grants, authority, observations); err != nil {
+		return Result{}, err
 	}
 	result, err = prepare(requestID, items, s.now(), partial, effect, nil, nil, contexts...)
 	if err != nil {

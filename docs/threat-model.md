@@ -637,3 +637,20 @@ or fetch another source. Embedded reply-quote bodies remain excluded because
 that separate source is not authorized by the containing message. Protected,
 ephemeral and other unsupported content checks still apply. No text conversion,
 link execution, content persistence or additional permission is introduced.
+
+## Client-held message observations
+
+Full reads mint signed, expiring mo1 observations containing only an exact
+reference, keyed representation digest and authority binding. Original text,
+filenames, entity targets and prior bodies are not stored or placed inside the
+token. Digests cover stable media source identity, not temporary resource
+handles. Context-dependent coverage is excluded from comparison. Any changed
+account epoch or policy revision invalidates an observation before content I/O.
+
+Refresh remains an exact current read, reusing the batch context lease, full
+pre-receipt budget, affected-prefix authorization and durable acknowledgment.
+Input-token expiry is checked through final audit; a late failure after a
+possible receipt withholds bodies and reports uncertainty. Missing or denied
+sources cannot prove deletion; no tombstone or historical completeness claim is
+made. Valid edit timestamps are provider metadata, not an event stream. No
+message index, persisted digest, historical body or new MCP permission is added.

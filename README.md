@@ -206,6 +206,8 @@ Version 0.5.0 added [forum topics](docs/topic-access.md) and [original voice not
 | `open_voice_note` | Deliver an authorized original voice note as native MCP audio |
 | `open_image` | Open an authorized image as native MCP image content |
 
+[Refresh previously read messages](docs/message-refresh.md) to detect changed content and inspect Telegram edit timestamps.
+
 Full message reads preserve [rich formatting](docs/message-formatting.md), including code blocks and named links, alongside unchanged text.
 
 Use `filename_query` on `search_messages` to find [attachments by filename](docs/media-search.md).

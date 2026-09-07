@@ -96,6 +96,9 @@ func (g Grant) CheckMessage(candidate model.Candidate, self model.PeerID, now ti
 		return err
 	}
 	message := candidate.Message
+	if err := message.ValidateEditDate(); err != nil {
+		return err
+	}
 	if err := model.ValidateTextEntities(message.Text, message.Entities); err != nil {
 		return err
 	}

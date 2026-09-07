@@ -398,3 +398,15 @@ are validated at the adapter and policy boundaries; malformed ranges fail
 without a body or acknowledgment. Containing blockquote formatting follows
 containing-author authority; embedded reply quotes remain excluded. Links and
 identifiers never trigger actions or grant access. See [message formatting](message-formatting.md).
+
+## Message observations and refresh
+
+Full message results include signed `observation` tokens. `get_message_context`
+alternatively accepts only `refresh` with 1–20 tokens, returning exact current
+bodies, new tokens, `refresh_state` changed/unchanged and batch contexts.
+Tokens bind exact ID, keyed content/media identity digest, account epoch, policy
+revision and expiry within 24 hours/current grant. They are not authorization or
+stored history. Missing/denied targets fail without deletion inference. Existing
+shared bounds and pre-ACK release rules apply even when unchanged. Full messages
+and search hits expose valid Telegram `edited_at` metadata when supplied; search
+dates still mean sending time. See [message refresh](message-refresh.md).

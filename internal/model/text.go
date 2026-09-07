@@ -31,6 +31,9 @@ type AlbumContext struct {
 }
 
 type Message struct {
+	Observation    string              `json:"observation,omitempty"`
+	RefreshState   string              `json:"refresh_state,omitempty"`
+	EditedAt       string              `json:"edited_at,omitempty"`
 	Entities       []TextEntity        `json:"entities,omitempty"`
 	AlbumContext   *AlbumContext       `json:"album_context,omitempty"`
 	URL            string              `json:"url,omitempty"`
@@ -138,6 +141,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	EditedAt         string              `json:"edited_at,omitempty"`
 	URL              string              `json:"url,omitempty"`
 	ThreadRoot       *MessageID          `json:"thread_root,omitempty"`
 	DiscussionPeer   string              `json:"discussion_peer,omitempty"`
