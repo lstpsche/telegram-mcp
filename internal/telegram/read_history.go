@@ -302,12 +302,19 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	candidate.Unsupported = (candidate.Forwarded && forward == nil) || (message.Post && !isBroadcast) || message.Legacy || message.Offline || message.FromScheduled || unsupportedSavedDialog || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
 	var image, document, voice *model.MediaSource
 	var poll *model.Poll
+	var preview *model.LinkPreview
 	if media, ok := message.Media.(*tg.MessageMediaPoll); ok {
 		poll, err = normalizePoll(media)
 		if err != nil {
 			return model.Candidate{}, err
 		}
 		candidate.Unsupported = candidate.Unsupported || poll == nil || message.Mentioned && message.MediaUnread || message.VideoProcessingPending || message.PaidSuggestedPostStars || message.PaidSuggestedPostTon || message.PaidMessageStars != 0 || !message.SuggestedPost.Zero()
+	} else if media, ok := message.Media.(*tg.MessageMediaWebPage); ok {
+		preview, err = normalizeLinkPreview(media)
+		if err != nil {
+			return model.Candidate{}, err
+		}
+		candidate.Unsupported = candidate.Unsupported || message.Mentioned && message.MediaUnread || message.VideoProcessingPending || message.PaidSuggestedPostStars || message.PaidSuggestedPostTon || message.PaidMessageStars != 0 || !message.SuggestedPost.Zero()
 	} else if message.Media != nil {
 		if _, empty := message.Media.(*tg.MessageMediaEmpty); !empty {
 			location := normalizeMedia(message)
@@ -406,7 +413,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	} else {
 		candidate.Unsupported = candidate.Unsupported || author <= 0 || !authors[author]
 	}
-	candidate.Unsupported = candidate.Unsupported || !candidate.Message.ValidAuthor() || message.Date <= 0 || (message.Message == "" && image == nil && document == nil && voice == nil && poll == nil)
+	candidate.Unsupported = candidate.Unsupported || !candidate.Message.ValidAuthor() || message.Date <= 0 || (message.Message == "" && image == nil && document == nil && voice == nil && poll == nil && preview == nil)
 	if !utf8.ValidString(message.Message) || len(message.Message) > 64*1024 {
 		return model.Candidate{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
@@ -417,6 +424,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 				return model.Candidate{}, err
 			}
 		}
+		candidate.Message.LinkPreview = preview
 		candidate.Message.Poll = poll
 		candidate.Message.Forward = forward
 		candidate.Message.Text = message.Message

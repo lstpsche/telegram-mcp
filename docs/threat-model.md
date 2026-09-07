@@ -464,3 +464,14 @@ voter identities, personal selections and quiz solutions are not exposed or
 persisted. No additional RPC or side effect is introduced. Unknown counts remain
 absent, and malformed mappings fail without content-bearing diagnostics. Existing
 complete-response budgeting precedes history/context acknowledgment. See [polls](polls.md).
+
+## Webpage previews
+
+Preview metadata is hostile content authorized by the containing message. URLs
+are not parsed, visited, or treated as access authority; manual previews may refer
+to a different URL from the message. Telegram's safety hints are not exposed as
+endorsements. Only bounded supplied display fields cross the adapter boundary;
+embedded media, cached pages, raw IDs/hashes and embeds do not. There is no page
+cache or additional network operation. Unknown and malformed constructors fail
+closed. Existing post-normalization policy, complete-response limits and receipt
+gates apply. See [link previews](link-previews.md).

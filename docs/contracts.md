@@ -295,3 +295,12 @@ History/context may include `poll`; search/catch-up use `has_poll` and a questio
 snippet. Optional aggregate counts preserve absent versus zero. Existing text
 authority, response budgets and read receipts apply; no voter lookup or voting
 is available. See [read-only polls](polls.md).
+
+## Link previews
+
+History/context preserve original message text alongside optional `link_preview`.
+Its `state` is `available`, `pending`, or `unavailable`; `manual` distinguishes
+previews that can refer to another URL. Supplied URL, site name, title and
+description are bounded untrusted display data. Search/catch-up include only
+`has_link_preview` and the original-text snippet. No page or preview media is
+fetched. See [link messages and previews](link-previews.md).
