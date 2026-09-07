@@ -28,7 +28,7 @@ type MediaSource struct {
 }
 
 func (i MediaSource) IsDocument() bool {
-	return i.Kind == "document" && (i.MIMEType == "application/pdf" || i.MIMEType == "text/plain")
+	return i.Kind == "document" && (i.MIMEType == "application/pdf" || IsTextDocumentMIME(i.MIMEType))
 }
 
 func (i MediaSource) IsVoice() bool { return i.Kind == "voice" && i.MIMEType == "audio/ogg" }
@@ -52,7 +52,7 @@ func (i MediaSource) Validate() error {
 		if i.Width != 0 || i.Height != 0 || !imageFingerprintPattern.MatchString(i.Fingerprint) {
 			return TextError(ErrorInvalidReference, nil)
 		}
-		if i.Size <= 0 || (i.MIMEType == "text/plain" && i.Size > MaximumTextAttachmentBytes) {
+		if i.Size <= 0 || (IsTextDocumentMIME(i.MIMEType) && i.Size > MaximumTextAttachmentBytes) {
 			return TextError(ErrorMediaTooLarge, nil)
 		}
 		return nil
@@ -110,4 +110,14 @@ func ValidAttachmentFilename(value string) bool {
 		}
 	}
 	return true
+}
+
+// IsTextDocumentMIME selects original UTF-8 delivery, never a parser or execution mode.
+func IsTextDocumentMIME(mime string) bool {
+	switch mime {
+	case "text/plain", "text/markdown", "text/csv", "application/json":
+		return true
+	default:
+		return false
+	}
 }

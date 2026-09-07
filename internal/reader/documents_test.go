@@ -47,7 +47,7 @@ func documentService(t *testing.T, mime string) (*Service, *imageFake, *policy.R
 }
 
 func TestDocumentDeliveryReauthorizesAndAcknowledges(t *testing.T) {
-	for _, mime := range []string{"text/plain", "application/pdf"} {
+	for _, mime := range []string{"text/plain", "text/markdown", "text/csv", "application/json", "application/pdf"} {
 		t.Run(mime, func(t *testing.T) {
 			s, f, _, _, token := documentService(t, mime)
 			want := bytes.Clone(f.data)

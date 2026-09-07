@@ -61,8 +61,8 @@ func validateDocumentData(source model.MediaSource, data []byte) error {
 	if int64(len(data)) != source.Size {
 		return model.TextError(model.ErrorInvalidReference, nil)
 	}
-	switch source.MIMEType {
-	case "text/plain":
+	switch {
+	case model.IsTextDocumentMIME(source.MIMEType):
 		if !utf8.Valid(data) {
 			return model.TextError(model.ErrorInvalidReference, nil)
 		}
@@ -71,7 +71,7 @@ func validateDocumentData(source model.MediaSource, data []byte) error {
 				return model.TextError(model.ErrorInvalidReference, nil)
 			}
 		}
-	case "application/pdf":
+	case source.MIMEType == "application/pdf":
 		if len(data) < 14 || !bytes.HasPrefix(data, []byte("%PDF-")) ||
 			(string(data[5:8]) != "2.0" && !(data[5] == '1' && data[6] == '.' && data[7] >= '0' && data[7] <= '7')) ||
 			(data[8] != '\r' && data[8] != '\n') || !bytes.HasSuffix(bytes.TrimRight(data, " \t\r\n"), []byte("%%EOF")) {

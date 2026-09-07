@@ -98,15 +98,16 @@ func (f *documentWireBackend) Acknowledge(_ context.Context, peer model.PeerID, 
 }
 
 func TestDocumentsOverStdioRelay(t *testing.T) {
-	t.Run("ordinary", func(t *testing.T) { testDocumentsOverStdioRelay(t, false, false) })
-	t.Run("forwarded", func(t *testing.T) { testDocumentsOverStdioRelay(t, true, false) })
-	t.Run("broadcast", func(t *testing.T) { testDocumentsOverStdioRelay(t, false, true) })
+	t.Run("ordinary", func(t *testing.T) { testDocumentsOverStdioRelay(t, false, false, "text/plain") })
+	t.Run("forwarded", func(t *testing.T) { testDocumentsOverStdioRelay(t, true, false, "text/plain") })
+	t.Run("broadcast", func(t *testing.T) { testDocumentsOverStdioRelay(t, false, true, "text/plain") })
 }
 
-func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool) {
+func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool, textMIME string) {
 	t.Helper()
 	_, base := wireService(t)
 	backend := newDocumentWireBackend(t, base)
+	backend.candidates[1].Document.MIMEType = textMIME
 	for i := range backend.candidates {
 		if !forwarded {
 			continue
@@ -440,4 +441,10 @@ func syntheticPDF() []byte {
 	}
 	fmt.Fprintf(&b, "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", xref)
 	return b.Bytes()
+}
+
+func TestTextFormatsOverStdioRelay(t *testing.T) {
+	for _, mime := range []string{"text/markdown", "text/csv", "application/json"} {
+		t.Run(mime, func(t *testing.T) { testDocumentsOverStdioRelay(t, false, false, mime) })
+	}
 }

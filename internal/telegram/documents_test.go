@@ -22,7 +22,7 @@ func attachmentMessage(mime string) *tg.Message {
 }
 
 func TestAttachmentNormalizationPreservesUntrustedFilenameAndCaptionlessDocuments(t *testing.T) {
-	for _, mime := range []string{"application/pdf", "text/plain"} {
+	for _, mime := range []string{"application/pdf", "text/plain", "text/markdown", "text/csv", "application/json"} {
 		message := attachmentMessage(mime)
 		c := imageCandidate(t, message)
 		if c.Document == nil || c.Image != nil || c.Document.MIMEType != mime || c.Message.Text != "" || c.Message.Date == "" || c.Document.Filename != "../../private-untrusted-name.exe" {
@@ -88,12 +88,12 @@ func TestUnsafeDocumentsExposeNeitherCaptionNorDescriptor(t *testing.T) {
 }
 
 func TestDocumentDownloadRenewsReferenceAndPreservesFiniteBudget(t *testing.T) {
-	for _, mime := range []string{"application/pdf", "text/plain"} {
+	for _, mime := range []string{"application/pdf", "text/plain", "text/markdown", "text/csv", "application/json"} {
 		t.Run(mime, func(t *testing.T) {
 			message := attachmentMessage(mime)
 			d := message.Media.(*tg.MessageMediaDocument).Document.(*tg.Document)
 			size := 3 << 20
-			if mime == "text/plain" {
+			if mime != "application/pdf" {
 				size = model.MaximumTextAttachmentBytes
 			}
 			d.Size = int64(size)

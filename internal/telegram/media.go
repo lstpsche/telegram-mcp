@@ -87,7 +87,7 @@ func normalizeMedia(message *tg.Message) *mediaLocation {
 		return &mediaLocation{source: source, dc: photo.DCID, location: &tg.InputPhotoFileLocation{ID: photo.ID, AccessHash: photo.AccessHash, FileReference: photo.FileReference, ThumbSize: size.kind}}
 	case *tg.MessageMediaDocument:
 		document, ok := media.Document.(*tg.Document)
-		if !ok || document == nil || media.Spoiler || media.Video || media.Round || media.Nopremium || media.TTLSeconds != 0 || media.Flags.Has(2) || len(media.AltDocuments) != 0 || media.VideoCover != nil || media.VideoTimestamp != 0 || document.ID == 0 || document.AccessHash == 0 || len(document.FileReference) == 0 || len(document.FileReference) > 4096 || document.DCID < 1 || len(document.VideoThumbs) != 0 || (document.MimeType != "image/jpeg" && document.MimeType != "image/png" && document.MimeType != "application/pdf" && document.MimeType != "text/plain" && document.MimeType != "audio/ogg") || len(document.Attributes) > 2 {
+		if !ok || document == nil || media.Spoiler || media.Video || media.Round || media.Nopremium || media.TTLSeconds != 0 || media.Flags.Has(2) || len(media.AltDocuments) != 0 || media.VideoCover != nil || media.VideoTimestamp != 0 || document.ID == 0 || document.AccessHash == 0 || len(document.FileReference) == 0 || len(document.FileReference) > 4096 || document.DCID < 1 || len(document.VideoThumbs) != 0 || (document.MimeType != "image/jpeg" && document.MimeType != "image/png" && document.MimeType != "application/pdf" && !model.IsTextDocumentMIME(document.MimeType) && document.MimeType != "audio/ogg") || len(document.Attributes) > 2 {
 			return nil
 		}
 		var audio *tg.DocumentAttributeAudio
@@ -114,7 +114,7 @@ func normalizeMedia(message *tg.Message) *mediaLocation {
 				return nil
 			}
 		}
-		isDocument := document.MimeType == "application/pdf" || document.MimeType == "text/plain"
+		isDocument := document.MimeType == "application/pdf" || model.IsTextDocumentMIME(document.MimeType)
 		rendition := photoRendition{size: document.Size}
 		isVoice := document.MimeType == "audio/ogg"
 		if media.Voice && !isVoice {

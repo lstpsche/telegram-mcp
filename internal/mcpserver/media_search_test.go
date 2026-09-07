@@ -40,6 +40,9 @@ func TestMediaSearchOverStdioRelay(t *testing.T) {
 		{model.SearchMediaImageFile, "image", model.MediaSource{Kind: "document", MIMEType: "image/png", Width: 32, Height: 32, Size: 100}},
 		{model.SearchMediaPDF, "document", model.MediaSource{Kind: "document", MIMEType: "application/pdf", Size: 100}},
 		{model.SearchMediaTextFile, "document", model.MediaSource{Kind: "document", MIMEType: "text/plain", Size: 100}},
+		{model.SearchMediaTextFile, "document", model.MediaSource{Kind: "document", MIMEType: "text/markdown", Size: 100}},
+		{model.SearchMediaTextFile, "document", model.MediaSource{Kind: "document", MIMEType: "text/csv", Size: 100}},
+		{model.SearchMediaTextFile, "document", model.MediaSource{Kind: "document", MIMEType: "application/json", Size: 100}},
 		{model.SearchMediaVoiceNote, "voice_note", model.MediaSource{Kind: "voice", MIMEType: "audio/ogg", Size: 100, Duration: 1}},
 	} {
 		t.Run(string(spec.kind), func(t *testing.T) {

@@ -654,3 +654,12 @@ possible receipt withholds bodies and reports uncertainty. Missing or denied
 sources cannot prove deletion; no tombstone or historical completeness claim is
 made. Valid edit timestamps are provider metadata, not an event stream. No
 message index, persisted digest, historical body or new MCP permission is added.
+
+## Additional text attachment formats
+
+Original UTF-8 document delivery accepts exact text/plain, text/markdown,
+text/csv and application/json MIME types under the existing Documents grant.
+All retain the 256 KiB and complete escaped response budgets, UTF-8/control
+validation, source rechecks, receipts and audit. Filenames are display data;
+no sniffing, parser, rendering, formula evaluation or new authority is added.
+Search text_file includes every supported text MIME. See [document access](document-access.md).

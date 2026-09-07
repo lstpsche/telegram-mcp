@@ -40,11 +40,14 @@ their own safe document handling and must not execute embedded actions or follow
 embedded links automatically. MCP defines embedded-resource delivery but leaves
 rendering to the client: [MCP tool results](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
 
-Only ordinary Telegram documents explicitly labeled `application/pdf` or
-`text/plain` are supported. Names and extensions never select a decoder or grant
-authority. HTML, Markdown-specific MIME types, generic octet streams, archives,
-Office documents, audio and other encodings are excluded. A text file labeled
-`text/plain` is delivered as plain text regardless of its filename.
+Ordinary Telegram documents explicitly labeled `application/pdf`, `text/plain`,
+`text/markdown`, `text/csv` or `application/json` are supported. All four text
+formats use the same original UTF-8 delivery and checks. Markdown is not rendered,
+CSV formulas are not evaluated, and JSON is not parsed or reformatted. Even
+syntactically invalid JSON is delivered as text when its encoding is valid.
+Names and extensions never select a decoder or grant authority. HTML, generic
+octet streams, archives, Office documents, audio and other encodings are excluded.
+`media_type: "text_file"` searches all four supported text MIME types.
 
 Limits and checks:
 

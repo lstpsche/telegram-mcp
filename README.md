@@ -202,7 +202,7 @@ Version 0.5.0 added [forum topics](docs/topic-access.md) and [original voice not
 | `list_unread` | Inspect unread counts and manual unread flags |
 | `list_scopes` | Discover human-managed groups of conversations |
 | `catch_up` | Retrieve snippets and attachment references across a scope for an explicit time window |
-| `open_document` | Open an authorized original PDF resource or plain-text attachment |
+| `open_document` | Open an authorized original PDF, plain text, Markdown, CSV or JSON attachment |
 | `open_voice_note` | Deliver an authorized original voice note as native MCP audio |
 | `open_image` | Open an authorized image as native MCP image content |
 

@@ -410,3 +410,12 @@ stored history. Missing/denied targets fail without deletion inference. Existing
 shared bounds and pre-ACK release rules apply even when unchanged. Full messages
 and search hits expose valid Telegram `edited_at` metadata when supplied; search
 dates still mean sending time. See [message refresh](message-refresh.md).
+
+## Additional text attachment formats
+
+Original UTF-8 document delivery accepts exact text/plain, text/markdown,
+text/csv and application/json MIME types under the existing Documents grant.
+All retain the 256 KiB and complete escaped response budgets, UTF-8/control
+validation, source rechecks, receipts and audit. Filenames are display data;
+no sniffing, parser, rendering, formula evaluation or new authority is added.
+Search text_file includes every supported text MIME. See [document access](document-access.md).

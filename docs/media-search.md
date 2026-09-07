@@ -18,7 +18,7 @@ only when no filter is active; see [sender/date filters](search-filters.md) and
 | `photo` | Supported Telegram photos |
 | `image_file` | Supported static JPEG/PNG images sent as files |
 | `pdf` | Supported PDF attachments |
-| `text_file` | Supported UTF-8 plain-text attachments |
+| `text_file` | Supported UTF-8 plain text, Markdown, CSV and JSON attachments |
 | `voice_note` | Supported original Ogg/Opus voice notes |
 
 A photo and an image sent as a file belong to different categories. Text-file

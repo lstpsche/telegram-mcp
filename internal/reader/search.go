@@ -237,7 +237,7 @@ func matchesSearchMedia(kind model.SearchMediaType, hit model.SearchHit) bool {
 	case model.SearchMediaPDF:
 		return hit.Document != nil && hit.Document.MIMEType == "application/pdf"
 	case model.SearchMediaTextFile:
-		return hit.Document != nil && hit.Document.MIMEType == "text/plain"
+		return hit.Document != nil && model.IsTextDocumentMIME(hit.Document.MIMEType)
 	case model.SearchMediaVoiceNote:
 		return hit.Voice != nil
 	default:

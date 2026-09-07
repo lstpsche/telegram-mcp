@@ -366,7 +366,7 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 	// PDFs retain their original size; image, voice and plain-text budgets remain.
 	if kind != mediaDocument || immutableSource.MIMEType != "application/pdf" {
 		contentBytes := base64.StdEncoding.EncodedLen(len(data))
-		if kind == mediaDocument && immutableSource.MIMEType == "text/plain" {
+		if kind == mediaDocument && model.IsTextDocumentMIME(immutableSource.MIMEType) {
 			encoded, encodeErr := json.Marshal(string(data))
 			if encodeErr != nil {
 				return Result{}, model.TextError(model.ErrorInternal, encodeErr)
