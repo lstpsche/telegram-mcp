@@ -45,7 +45,7 @@ func TestUnsafeDocumentsExposeNeitherCaptionNorDescriptor(t *testing.T) {
 		"protected": func(m *tg.Message, _ *tg.MessageMediaDocument, _ *tg.Document) { m.Noforwards = true },
 		"forwarded": func(m *tg.Message, _ *tg.MessageMediaDocument, _ *tg.Document) { m.Flags.Set(2) },
 		"quoted": func(m *tg.Message, _ *tg.MessageMediaDocument, _ *tg.Document) {
-			m.Entities = []tg.MessageEntityClass{&tg.MessageEntityBlockquote{}}
+			m.ReplyTo = &tg.MessageReplyHeader{Quote: true, QuoteText: "external quote"}
 		},
 		"ephemeral": func(m *tg.Message, _ *tg.MessageMediaDocument, _ *tg.Document) { m.TTLPeriod = 1 },
 		"ttl":       func(_ *tg.Message, m *tg.MessageMediaDocument, _ *tg.Document) { m.TTLSeconds = 1 },

@@ -388,3 +388,13 @@ It works with peer, scope and batch search and binds continuation via a keyed
 digest. Filename-only discovery traverses bounded history; filtered entries still
 consume the limit. Names never select file types, paths or permissions and are
 not logged or persisted. Renames invalidate existing media handles.
+
+## Rich message formatting
+
+Full message results may include bounded `entities` with `kind`, UTF-16
+`offset` and `length` into unchanged `text`, plus kind-specific inert metadata.
+Search snippets do not carry full-body offsets. At most 128 entities per message
+are validated at the adapter and policy boundaries; malformed ranges fail
+without a body or acknowledgment. Containing blockquote formatting follows
+containing-author authority; embedded reply quotes remain excluded. Links and
+identifiers never trigger actions or grant access. See [message formatting](message-formatting.md).

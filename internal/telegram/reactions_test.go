@@ -65,7 +65,7 @@ func TestReactionPresenceTagsAndMessageExclusions(t *testing.T) {
 				message.TTLPeriod = 1
 				excluded = true
 			case "quoted":
-				message.Entities = []tg.MessageEntityClass{&tg.MessageEntityBlockquote{}}
+				message.ReplyTo = &tg.MessageReplyHeader{Quote: true, QuoteText: "external quote"}
 				excluded = true
 			case "unsupported":
 				message.Media = &tg.MessageMediaContact{}

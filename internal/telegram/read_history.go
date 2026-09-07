@@ -299,11 +299,6 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	if candidate.Forwarded {
 		forward = normalizeForward(message.FwdFrom)
 	}
-	for _, entity := range message.Entities {
-		if _, ok := entity.(*tg.MessageEntityBlockquote); ok {
-			candidate.Quoted = true
-		}
-	}
 	// SavedPeerID groups notes and forwarded copies; it never selects authority.
 	unsupportedSavedDialog := message.SavedPeerID != nil && (peer.Kind() != model.PeerKindSelf || peer.TelegramID() != self || (!candidate.Forwarded && !matchesPeer(peer, message.SavedPeerID)))
 	candidate.Unsupported = (candidate.Forwarded && forward == nil) || (message.Post && !isBroadcast) || message.Legacy || message.Offline || message.FromScheduled || unsupportedSavedDialog || message.ViaBotID != 0 || message.ViaBusinessBotID != 0 || message.GuestchatViaFrom != nil || message.QuickReplyShortcutID != 0 || message.ReportDeliveryUntilDate != 0 || message.ScheduleRepeatPeriod != 0 || !message.RichMessage.Zero() || message.SummaryFromLanguage != ""
@@ -467,6 +462,10 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 		candidate.Message.LinkPreview = preview
 		candidate.Message.Poll = poll
 		candidate.Message.Forward = forward
+		candidate.Message.Entities, err = normalizeTextEntities(message.Message, message.Entities)
+		if err != nil {
+			return model.Candidate{}, err
+		}
 		candidate.Message.Text = message.Message
 		candidate.Message.Date = time.Unix(int64(message.Date), 0).UTC().Format(time.RFC3339)
 		candidate.Image = image

@@ -49,6 +49,11 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 				}
 				expected = c.Message.LinkPreview
 			}
+
+			if c.Message.Text != "" {
+				c.Message.Text = "😀 " + c.Message.Text
+				c.Message.Entities = []model.TextEntity{{Kind: "bold", Offset: 0, Length: 2}, {Kind: "pre", Offset: 3, Length: 3, Language: "go"}, {Kind: "text_url", Offset: 0, Length: 2, URL: "https://example.invalid/formatting"}}
+			}
 			service, err := reader.New(backend, base.repository, time.Now, []byte(strings.Repeat("k", 32)))
 			if err != nil {
 				t.Fatal(err)
@@ -150,6 +155,9 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 					t.Fatal("reaction summary differs")
 				}
 				if call.search {
+					if item["entities"] != nil {
+						t.Fatal("full-body entity offsets leaked into snippet")
+					}
 					snippet := c.Message.Text
 					if c.Message.Poll != nil {
 						snippet = c.Message.Poll.Question
@@ -170,6 +178,20 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 					var expectedBody map[string]any
 					if err := json.Unmarshal(expectedJSON, &expectedBody); err != nil {
 						t.Fatal(err)
+					}
+
+					if len(c.Message.Entities) > 0 {
+						data, err := json.Marshal(c.Message.Entities)
+						if err != nil {
+							t.Fatal(err)
+						}
+						var entities any
+						if err := json.Unmarshal(data, &entities); err != nil {
+							t.Fatal(err)
+						}
+						if !reflect.DeepEqual(item["entities"], entities) {
+							t.Fatal("formatting metadata differs")
+						}
 					}
 					if !reflect.DeepEqual(item[kind], expectedBody) || item["text"] != c.Message.Text {
 						t.Fatal("text media body differs")

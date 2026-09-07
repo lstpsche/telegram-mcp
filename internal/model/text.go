@@ -31,6 +31,7 @@ type AlbumContext struct {
 }
 
 type Message struct {
+	Entities       []TextEntity        `json:"entities,omitempty"`
 	AlbumContext   *AlbumContext       `json:"album_context,omitempty"`
 	URL            string              `json:"url,omitempty"`
 	DiscussionRoot *MessageID          `json:"discussion_root,omitempty"`

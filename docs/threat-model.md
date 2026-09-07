@@ -620,3 +620,20 @@ download destination or authority. Original names are bounded to 256 Unicode
 characters and 1024 bytes, require UTF-8 and contain no control characters.
 They participate in source revalidation and opaque-handle identity; a rename
 invalidates an earlier handle before download. Photos have no filename.
+
+## Message formatting entities
+
+Original message text remains unchanged. Bounded formatting annotations use
+validated UTF-16 ranges, including surrogate-pair boundaries, with bounded
+kind-specific metadata. Entity URLs, user and custom-emoji IDs are hostile
+metadata, never fetch instructions or authority. Input-only entities and
+composer diffs cannot be accepted as ordinary message annotations. Malformed
+entities fail; none are repaired into invented ranges. All full-body entity
+metadata participates in the existing pre-receipt response budget.
+
+A blockquote entity is styling inside the containing author's message, equivalent
+to that author typing a quotation into plain text. It does not establish origin
+or fetch another source. Embedded reply-quote bodies remain excluded because
+that separate source is not authorized by the containing message. Protected,
+ephemeral and other unsupported content checks still apply. No text conversion,
+link execution, content persistence or additional permission is introduced.

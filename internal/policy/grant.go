@@ -96,6 +96,9 @@ func (g Grant) CheckMessage(candidate model.Candidate, self model.PeerID, now ti
 		return err
 	}
 	message := candidate.Message
+	if err := model.ValidateTextEntities(message.Text, message.Entities); err != nil {
+		return err
+	}
 	if !message.ValidSavedPeer() || !message.ValidAlbum() || (message.AlbumID != "" && candidate.Image == nil && candidate.Document == nil && candidate.Voice == nil) {
 		return model.TextError(model.ErrorPolicyDenied, ErrDenied)
 	}

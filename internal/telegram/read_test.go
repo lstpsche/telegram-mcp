@@ -70,9 +70,6 @@ func testMessage(id int) *tg.Message {
 
 func TestReadNormalizationNeverCopiesUnsafeBodies(t *testing.T) {
 	for name, mutate := range map[string]func(*tg.Message){
-		"blockquote": func(m *tg.Message) {
-			m.Entities = []tg.MessageEntityClass{&tg.MessageEntityBlockquote{Offset: 0, Length: 5}}
-		},
 		"protected":      func(m *tg.Message) { m.Noforwards = true },
 		"expiring":       func(m *tg.Message) { m.TTLPeriod = 10 },
 		"forwarded":      func(m *tg.Message) { m.SetFwdFrom(tg.MessageFwdHeader{Date: 99, Imported: true}) },
