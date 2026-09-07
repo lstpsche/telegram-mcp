@@ -586,3 +586,9 @@ or persisted, and represented only by a keyed digest in signed cursor payloads.
 Validate every returned candidate before filtering. Nonmatching candidates retain
 pagination progress. All existing epoch/revision, expiry, freshness and required
 audit release guards apply, without read receipts or media access.
+
+Human folder imports retain the exclusive account lock across bounded Telegram
+discovery and atomic scope saving. Only exact peer IDs and the explicitly supplied
+local scope name are persisted. Folder rules and titles grant no authority; imports
+do not mutate grants, read state or Telegram folders. An incomplete traversal or
+oversized scope fails without replacing membership. See [folder scopes](folder-scopes.md).

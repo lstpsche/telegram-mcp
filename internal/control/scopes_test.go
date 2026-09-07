@@ -84,7 +84,7 @@ func TestScopeArgumentsRejectAmbiguityBeforeController(t *testing.T) {
 			t.Fatalf("args=%q code=%d calls=%d output=%q", args, code, control.calls, stdout.String())
 		}
 	}
-	if _, _, peers, ok := parseScope(oversized[1 : len(oversized)-2]); !ok || len(peers) != policy.MaximumScopePeers {
+	if _, _, peers, _, ok := parseScope(oversized[1 : len(oversized)-2]); !ok || len(peers) != policy.MaximumScopePeers {
 		t.Fatal("maximum supported membership rejected")
 	}
 }

@@ -44,6 +44,10 @@ func normalizePeerID(value tg.PeerClass, self int64) (model.PeerID, error) {
 // most limit remote dialogs, including unsupported entries. Telegram may return
 // more candidates; bound that response separately and resume after the consumed window.
 func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, limit int) (model.DialogPage, error) {
+	return a.dialogs(ctx, position, limit, nil)
+}
+
+func (a *Account) dialogs(ctx context.Context, position model.DialogPosition, limit int, filter *folderFilter) (model.DialogPage, error) {
 	if !a.Ready() {
 		return model.DialogPage{}, model.TextError(model.ErrorNotReady, nil)
 	}
@@ -214,6 +218,15 @@ func (a *Account) Dialogs(ctx context.Context, position model.DialogPosition, li
 		}
 		if !utf8.ValidString(chat.Title) || len(chat.Title) > 4096 {
 			return model.DialogPage{}, model.TextError(model.ErrorResultTooLarge, nil)
+		}
+		if filter != nil {
+			match, err := filter.matches(id, chat, dialog, users)
+			if err != nil {
+				return model.DialogPage{}, err
+			}
+			if !match {
+				continue
+			}
 		}
 		result.Items = append(result.Items, model.DialogEntry{Chat: chat, Unread: model.Unread{Peer: id, Count: dialog.UnreadCount, Marked: dialog.UnreadMark}})
 	}
