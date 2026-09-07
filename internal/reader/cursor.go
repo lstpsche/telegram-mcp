@@ -15,13 +15,14 @@ import (
 const cursorLifetime = 15 * time.Minute
 
 type cursorBinding struct {
-	PinnedOnly  bool         `json:"pinned_only,omitempty"`
-	Operation   string       `json:"operation"`
-	Peer        model.PeerID `json:"peer"`
-	QueryDigest string       `json:"query_digest"`
-	Limit       int          `json:"limit"`
-	Epoch       string       `json:"epoch"`
-	Revision    int64        `json:"revision"`
+	MediaType   model.SearchMediaType `json:"media_type,omitempty"`
+	PinnedOnly  bool                  `json:"pinned_only,omitempty"`
+	Operation   string                `json:"operation"`
+	Peer        model.PeerID          `json:"peer"`
+	QueryDigest string                `json:"query_digest"`
+	Limit       int                   `json:"limit"`
+	Epoch       string                `json:"epoch"`
+	Revision    int64                 `json:"revision"`
 }
 
 type searchCursor struct {

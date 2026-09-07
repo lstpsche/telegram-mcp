@@ -103,6 +103,7 @@ func TextErrorCategory(err error) ErrorCategory {
 
 // SearchQuery is adapter input. Query text is transient and must never be logged.
 type SearchQuery struct {
+	MediaType            SearchMediaType
 	PinnedOnly           bool
 	Window               *DateWindow
 	Peer                 PeerID
@@ -139,16 +140,32 @@ type Unread struct {
 
 // SearchFilter narrows message discovery without granting content access.
 type SearchFilter struct {
+	MediaType  SearchMediaType
 	Query      string
 	PinnedOnly bool
 }
 
+type SearchMediaType string
+
+const (
+	SearchMediaPhoto     SearchMediaType = "photo"
+	SearchMediaImageFile SearchMediaType = "image_file"
+	SearchMediaPDF       SearchMediaType = "pdf"
+	SearchMediaTextFile  SearchMediaType = "text_file"
+	SearchMediaVoiceNote SearchMediaType = "voice_note"
+)
+
 func (f SearchFilter) Normalize() (SearchFilter, error) {
+	switch f.MediaType {
+	case "", SearchMediaPhoto, SearchMediaImageFile, SearchMediaPDF, SearchMediaTextFile, SearchMediaVoiceNote:
+	default:
+		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
+	}
 	if !utf8.ValidString(f.Query) || len(f.Query) > 1024 {
 		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
 	f.Query = strings.TrimSpace(f.Query)
-	if (f.Query == "" && !f.PinnedOnly) || utf8.RuneCountInString(f.Query) > 256 {
+	if (f.Query == "" && !f.PinnedOnly && f.MediaType == "") || utf8.RuneCountInString(f.Query) > 256 {
 		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
 	return f, nil

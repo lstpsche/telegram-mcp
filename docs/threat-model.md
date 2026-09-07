@@ -499,3 +499,19 @@ is not persisted and can change between calls. Search emits bounded snippets
 without read acknowledgments; opening context retains the acknowledged-body
 boundary. Pins never change the untrusted status of message content. See
 [pinned-message discovery](pinned-messages.md).
+
+## Media search filters
+
+Provider media categories are broader than supported attachment types and do
+not establish permission or safe content. Search selects photo, document or
+voice candidates, then applies existing message policy, source validation and
+exact descriptor matching. PDF, text-file and image-file filters share the
+provider document category; no filenames are inspected or returned. Combining
+pins and media uses the provider pin filter and the same local intersection.
+
+Media filters are bound into both peer and scope cursors. Nonmatching, excluded
+and denied candidates consume the page budget and preserve continuation without
+releasing content or replacing a failed RPC with an empty success. Existing
+media permissions and byte/duration limits remain; search introduces no download,
+interpretation, receipt, index, persistence or additional authority. See
+[media search](media-search.md).

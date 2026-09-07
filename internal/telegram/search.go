@@ -16,11 +16,11 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	}
 	query := q.Query
 	if q.Window != nil {
-		if q.Window.Validate() != nil || query != "" || q.PinnedOnly {
+		if q.Window.Validate() != nil || query != "" || q.PinnedOnly || q.MediaType != "" {
 			return nil, model.TextError(model.ErrorInvalidInput, nil)
 		}
 	} else {
-		filter, err := (model.SearchFilter{Query: query, PinnedOnly: q.PinnedOnly}).Normalize()
+		filter, err := (model.SearchFilter{MediaType: q.MediaType, Query: query, PinnedOnly: q.PinnedOnly}).Normalize()
 		if err != nil {
 			return nil, err
 		}
@@ -52,8 +52,15 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 		response, err = a.reads.historyPage(bounded, q.Peer, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, OffsetDate: int(q.Window.Until), Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
 	} else {
 		request := &tg.MessagesSearchRequest{Peer: input, Q: query, Filter: &tg.InputMessagesFilterEmpty{}, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum}
-		if q.PinnedOnly {
+		switch {
+		case q.PinnedOnly:
 			request.Filter = &tg.InputMessagesFilterPinned{}
+		case q.MediaType == model.SearchMediaPhoto:
+			request.Filter = &tg.InputMessagesFilterPhotos{}
+		case q.MediaType == model.SearchMediaImageFile || q.MediaType == model.SearchMediaPDF || q.MediaType == model.SearchMediaTextFile:
+			request.Filter = &tg.InputMessagesFilterDocument{}
+		case q.MediaType == model.SearchMediaVoiceNote:
+			request.Filter = &tg.InputMessagesFilterVoice{}
 		}
 		if q.Peer.TopicID() != 0 {
 			request.SetTopMsgID(int(q.Peer.TopicID()))

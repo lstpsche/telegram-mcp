@@ -8,8 +8,8 @@ conversation or human-configured scope:
 ```
 
 Add `query` to narrow pins by text. Omit it, or pass an empty string, to discover
-pins without a text constraint. Ordinary searches still require a nonempty
-query. Queries are trimmed and bounded to 256 Unicode characters and 1024 input
+pins without a text constraint. Searches without a pin or media-type filter
+still require a nonempty query. Queries are trimmed and bounded to 256 Unicode characters and 1024 input
 bytes. Exactly one of `peer` or `scope` is required. Exact forum-topic peers work
 under the same topic grants as other searches.
 
@@ -20,8 +20,10 @@ body through the existing read-acknowledgment flow. Pin state is also available
 on ordinary search, catch-up, history and context results; false is omitted.
 
 Repeat the same peer or scope, normalized query, `pinned_only`, and limit with
-`next_cursor`. Changing the filter invalidates the cursor. Scope traversal is
-canonical peer-ID order, newest messages first within each peer. The limit
+`next_cursor`. An optional [media_type](media-search.md) narrows pins to supported
+attachments; repeat it with the cursor as well. Changing a filter invalidates
+the cursor. Scope traversal is canonical peer-ID order, newest messages first
+within each peer. The limit
 counts fetched candidates, including filtered entries; empty pages may still
 have continuation. Follow the cursor until it is null.
 

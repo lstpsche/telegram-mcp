@@ -13,16 +13,17 @@ import (
 )
 
 type scopeCursorBinding struct {
-	PinnedOnly    bool          `json:"pinned_only,omitempty"`
-	Since         int64         `json:"since,omitempty"`
-	Until         int64         `json:"until,omitempty"`
-	Operation     string        `json:"operation"`
-	Scope         model.ScopeID `json:"scope"`
-	MembersDigest string        `json:"members_digest"`
-	QueryDigest   string        `json:"query_digest"`
-	Limit         int           `json:"limit"`
-	Epoch         string        `json:"epoch"`
-	Revision      int64         `json:"revision"`
+	MediaType     model.SearchMediaType `json:"media_type,omitempty"`
+	PinnedOnly    bool                  `json:"pinned_only,omitempty"`
+	Since         int64                 `json:"since,omitempty"`
+	Until         int64                 `json:"until,omitempty"`
+	Operation     string                `json:"operation"`
+	Scope         model.ScopeID         `json:"scope"`
+	MembersDigest string                `json:"members_digest"`
+	QueryDigest   string                `json:"query_digest"`
+	Limit         int                   `json:"limit"`
+	Epoch         string                `json:"epoch"`
+	Revision      int64                 `json:"revision"`
 }
 
 type scopeSearchCursor struct {

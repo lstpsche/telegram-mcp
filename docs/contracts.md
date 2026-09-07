@@ -57,8 +57,8 @@ eligible/excluded peer counts without Telegram I/O. Its freshness is
 `unavailable`. Scope membership narrows current access authority; it cannot authorize
 content or receipt effects. `list_unread` also accepts optional `scope` and `cursor`.
 `search_messages` requires exactly one of `peer` or `scope`, with optional
-`limit`, `cursor`, and `pinned_only`. Query is required and nonempty unless
-`pinned_only` is true, in which case an omitted or empty query discovers pins
+`limit`, `cursor`, `pinned_only`, and `media_type`. Query is required and nonempty
+unless `pinned_only` is true or `media_type` is set; either allows discovery
 without a text constraint. Neither search nor unread acknowledges history.
 Scoped search visits canonical peer IDs in ascending bytewise order and returns
 newest messages first within each peer. It bounds fetched candidates, including
@@ -321,3 +321,11 @@ authority or instruction priority. Pinned-only search uses Telegram's pinned
 filter and rechecks the normalized pin state after policy filtering. Both peer
 and scope cursors bind `pinned_only`; switching the filter invalidates a cursor
 before fetching. See [pinned-message discovery](pinned-messages.md).
+
+`search_messages.media_type` accepts `photo`, `image_file`, `pdf`, `text_file`,
+or `voice_note`. It matches only supported media with current permission and a
+validated descriptor. The filter intersects `pinned_only` when both are set.
+Both cursor kinds bind the media type. Unsupported, unauthorized and nonmatching
+candidates still consume the fetched-candidate budget; empty pages can have
+continuation. Search never downloads or interprets attachment contents. See
+[media search](media-search.md).

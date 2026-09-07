@@ -59,7 +59,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if err != nil {
 		return Result{}, err
 	}
-	binding := cursorBinding{PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
+	binding := cursorBinding{MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	deadline := s.now().Add(cursorLifetime)
 	deadline = grant.Deadline(deadline)
 	cursor = searchCursor{Binding: binding, Ceiling: grant.MaxID, Expires: deadline.Unix()}
@@ -74,7 +74,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	}
 	ctx, stopCursor := context.WithTimeout(ctx, time.Unix(cursor.Expires, 0).Sub(s.now()))
 	defer stopCursor()
-	query := model.SearchQuery{PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
+	query := model.SearchQuery{MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
 	candidates, err := s.backend.Search(ctx, query)
 	if err != nil {
 		return Result{}, err
@@ -202,11 +202,36 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		if err != nil {
 			return searchWindow{}, err
 		}
-		items = append(items, model.SearchHit{Pinned: message.Pinned, Reactions: message.Reactions, HasLinkPreview: message.LinkPreview != nil, HasPoll: message.Poll != nil, AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated})
+		hit := model.SearchHit{Pinned: message.Pinned, Reactions: message.Reactions, HasLinkPreview: message.LinkPreview != nil, HasPoll: message.Poll != nil, AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated}
+		if !matchesSearchMedia(query.MediaType, hit) {
+			partial = true
+			continue
+		}
+		items = append(items, hit)
 	}
 
 	sort.Slice(items, func(i, j int) bool { return items[i].ID.TelegramID() > items[j].ID.TelegramID() })
 	return searchWindow{items: items, lowest: lowest, highest: highest, partial: partial, exhausted: exhausted}, nil
+}
+
+// Match only descriptors that have passed policy and media validation.
+func matchesSearchMedia(kind model.SearchMediaType, hit model.SearchHit) bool {
+	switch kind {
+	case "":
+		return true
+	case model.SearchMediaPhoto:
+		return hit.Image != nil && hit.Image.Kind == "photo"
+	case model.SearchMediaImageFile:
+		return hit.Image != nil && hit.Image.Kind == "document"
+	case model.SearchMediaPDF:
+		return hit.Document != nil && hit.Document.MIMEType == "application/pdf"
+	case model.SearchMediaTextFile:
+		return hit.Document != nil && hit.Document.MIMEType == "text/plain"
+	case model.SearchMediaVoiceNote:
+		return hit.Voice != nil
+	default:
+		return false
+	}
 }
 
 // ListUnread returns the first page of authorized whole-dialog counts.
