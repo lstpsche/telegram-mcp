@@ -17,7 +17,7 @@ import (
 )
 
 func TestTextMediaOverStdioRelay(t *testing.T) {
-	for _, variant := range []string{"poll", "available", "pending", "unavailable", "standalone"} {
+	for _, variant := range []string{"poll", "available", "pending", "unavailable", "standalone", "empty_reactions"} {
 		t.Run(variant, func(t *testing.T) {
 			kind := "link_preview"
 			if variant == "poll" {
@@ -28,6 +28,10 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 			backend.candidates = backend.candidates[:1]
 			c := &backend.candidates[0]
 			c.Document = nil
+			c.Message.Reactions = &model.Reactions{Minimal: true, Counts: []model.ReactionCount{{Kind: "emoji", Emoji: "👍", Count: 3}, {Kind: "custom_emoji", CustomEmojiID: "9223372036854775807", Count: 2}, {Kind: "paid", Count: 9}}}
+			if variant == "empty_reactions" {
+				c.Message.Reactions.Counts = []model.ReactionCount{}
+			}
 			var expected any
 			if kind == "poll" {
 				c.Message.Poll = &model.Poll{Question: strings.Repeat("я", 300), Options: []model.PollOption{{Text: "First"}, {Text: "Second"}}}
@@ -124,6 +128,17 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 					t.Fatal("mirrors differ")
 				}
 				item := body["items"].([]any)[0].(map[string]any)
+				reactionJSON, err := json.Marshal(c.Message.Reactions)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var expectedReactions map[string]any
+				if err := json.Unmarshal(reactionJSON, &expectedReactions); err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(item["reactions"], expectedReactions) {
+					t.Fatal("reaction summary differs")
+				}
 				if call.search {
 					snippet := c.Message.Text
 					if c.Message.Poll != nil {
@@ -173,7 +188,7 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(result.Content[0].(*mcp.TextContent).Text, "\""+kind+"\"") {
+			if strings.Contains(result.Content[0].(*mcp.TextContent).Text, "\""+kind+"\"") || strings.Contains(result.Content[0].(*mcp.TextContent).Text, "\"reactions\"") {
 				t.Fatal("revoked text media leaked")
 			}
 		})

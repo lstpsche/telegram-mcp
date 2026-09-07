@@ -25,6 +25,7 @@ type ReplyChain struct {
 }
 
 type Message struct {
+	Reactions   *Reactions          `json:"reactions,omitempty"`
 	LinkPreview *LinkPreview        `json:"link_preview,omitempty"`
 	Poll        *Poll               `json:"poll,omitempty"`
 	AlbumID     string              `json:"album_id,omitempty"`
@@ -109,6 +110,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	Reactions        *Reactions          `json:"reactions,omitempty"`
 	HasLinkPreview   bool                `json:"has_link_preview,omitempty"`
 	HasPoll          bool                `json:"has_poll,omitempty"`
 	AlbumID          string              `json:"album_id,omitempty"`

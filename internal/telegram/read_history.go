@@ -424,6 +424,12 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 				return model.Candidate{}, err
 			}
 		}
+		if supplied, present := message.GetReactions(); present {
+			candidate.Message.Reactions, err = normalizeReactions(peer, supplied)
+			if err != nil {
+				return model.Candidate{}, err
+			}
+		}
 		candidate.Message.LinkPreview = preview
 		candidate.Message.Poll = poll
 		candidate.Message.Forward = forward

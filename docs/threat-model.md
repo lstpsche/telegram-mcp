@@ -475,3 +475,13 @@ embedded media, cached pages, raw IDs/hashes and embeds do not. There is no page
 cache or additional network operation. Unknown and malformed constructors fail
 closed. Existing post-normalization policy, complete-response limits and receipt
 gates apply. See [link previews](link-previews.md).
+
+## Aggregate reactions
+
+Reaction summaries are hostile metadata under containing-message authority.
+Unicode labels and custom emoji IDs never authorize media or peer fetches. Only
+supplied aggregate counts and reduced/tag semantics are exposed; personal choices,
+reactor identities, paid leaderboards and listing hints are omitted. No reaction
+writes, reaction-read receipts, extra RPC or content persistence are introduced.
+Unknown or malformed aggregates fail closed and response budgeting precedes
+history acknowledgment. See [reaction summaries](reactions.md).

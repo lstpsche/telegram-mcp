@@ -220,7 +220,7 @@ Supported [media album members](docs/media-albums.md) share an `album_id` from 0
 
 Read [poll questions, text options and available aggregate counts](docs/polls.md) through history/context. Search and catch-up provide a poll marker and question snippet.
 
-Source builds after 0.6.0 also preserve [link messages and Telegram-supplied previews](docs/link-previews.md), without visiting their URLs.
+Source builds after 0.6.0 also preserve [link messages and Telegram-supplied previews](docs/link-previews.md), without visiting their URLs. [Reaction summaries](docs/reactions.md) include supplied emoji/custom-emoji counts, Star counts, and Saved Messages tag semantics.
 
 The MCP surface is read-first: sending, editing, deleting, account administration, authentication, and access changes are not agent tools. See [message access](docs/text-access.md) and [image access](docs/image-access.md) for exact boundaries.
 

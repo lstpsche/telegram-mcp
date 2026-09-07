@@ -304,3 +304,11 @@ previews that can refer to another URL. Supplied URL, site name, title and
 description are bounded untrusted display data. Search/catch-up include only
 `has_link_preview` and the original-text snippet. No page or preview media is
 fetched. See [link messages and previews](link-previews.md).
+
+## Reaction summaries
+
+History/context/search/catch-up may include `reactions` with `minimal`, `as_tags`
+and bounded ordered `counts`. Entries distinguish Unicode emoji, opaque custom
+emoji identifiers and paid Stars. Missing is not zero, tags are not endorsements,
+and counts do not establish distinct-person totals. Existing message authority
+and receipt boundaries apply. See [reaction summaries](reactions.md).
