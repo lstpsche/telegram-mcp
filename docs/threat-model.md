@@ -556,3 +556,24 @@ ordinary reactions do not match. The saved-tag cursor binding is keyed so tag
 text is not exposed in cursor payloads. Source and tag discovery uses authorized
 message results, never an unrestricted catalog across excluded saved content.
 No new persistence, acknowledgments, writes or authentication surface is added.
+
+## Batch context and navigation links
+
+Batches retain one policy lease, aggregate candidate and complete-response bounds,
+current grants and a single deadline. Every target is authorized before history
+fetches; all context is prepared before receipts. Coalescing takes the highest
+returned ID in each exact peer/topic and authorizes that entire affected prefix.
+No body escapes on failure. A later peer receipt or required audit failure after
+an earlier effect reports uncertainty for the whole batch; receipts cannot be
+rolled back. Conflicting overlapping message observations fail closed.
+
+Telegram message links are transient hostile input parsed against an exact HTTPS
+host/path/query allowlist and length/numeric bounds. Numeric paths supply strict
+IDs without changing authority. Public usernames require Full read before the
+bounded Telegram resolver RPC; only an exact matching joined supported channel
+entity is accepted, then the immutable peer/range is authorized normally. No HTTP
+fetch, join, content index, username authority, or stored URL is introduced.
+Explicit forum topics preserve parent/topic separation. Unsupported selectors
+are rejected without reinterpretation. Canonical numeric citations are generated
+from authorized message IDs and counted before read effects. See
+[batch context](batch-context.md) and [message links](message-links.md).

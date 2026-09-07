@@ -138,4 +138,50 @@ func TestDiscussionExplorationOverStdio(t *testing.T) {
 	if base.fetches.Load() != before || base.acks.Load() != 1 {
 		t.Fatal("invalid input caused I/O")
 	}
+	groupMessage, _ := model.NewMessageID(group, 20)
+	batch := call("get_message_context", map[string]any{"messages": []string{post.URL(), groupMessage.String()}})
+	if len(batch["items"].([]any)) != 2 || len(batch["contexts"].([]any)) != 2 || len(batch["read_effect"].(map[string]any)["through_message_ids"].([]any)) != 2 || base.acks.Load() != 3 {
+		t.Fatal("batch wire contract")
+	}
+	for _, value := range batch["items"].([]any) {
+		item := value.(map[string]any)
+		if item["url"] == "" {
+			t.Fatal("missing citation link")
+		}
+	}
+	public := call("get_message_context", map[string]any{"message": "https://t.me/synthetic_publisher/20"})
+	if public["items"].([]any)[0].(map[string]any)["id"] != post.String() || base.acks.Load() != 4 {
+		t.Fatal("public link contract")
+	}
+	before = base.fetches.Load()
+	for _, args := range []map[string]any{
+		{"messages": []string{post.String(), post.URL()}},
+		{"message": post.String(), "messages": []string{groupMessage.String()}},
+		{"messages": []string{}},
+		{"messages": []string{post.String(), "https://evil.test/c/42/20"}},
+		{"messages": []string{post.String(), groupMessage.String()}, "before": 49, "after": 49},
+	} {
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_message_context", Arguments: args})
+		if err != nil || !result.IsError {
+			t.Fatal("invalid batch accepted", err)
+		}
+	}
+	if base.fetches.Load() != before || base.acks.Load() != 4 {
+		t.Fatal("invalid batch performed I/O")
+	}
+}
+
+func (b *discussionWireBackend) ResolveMessagePublisher(_ context.Context, username string) (model.Chat, error) {
+	if username != "synthetic_publisher" {
+		return model.Chat{}, model.TextError(model.ErrorInvalidReference, nil)
+	}
+	return model.Chat{ID: b.source, Broadcast: true}, nil
+}
+
+func (b *discussionWireBackend) Acknowledge(_ context.Context, peer model.PeerID, through int32) error {
+	if (peer != b.source && peer != b.group) || through != 20 {
+		return model.TextError(model.ErrorInvalidReference, nil)
+	}
+	b.acks.Add(1)
+	return nil
 }

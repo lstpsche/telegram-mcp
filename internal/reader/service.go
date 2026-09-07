@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sort"
 	"time"
 
@@ -132,83 +133,63 @@ func (s *Service) Chats(ctx context.Context, requestID string, limit int, scopes
 	return result, nil
 }
 
-func (s *Service) Messages(ctx context.Context, requestID string, query model.HistoryQuery) (result Result, resultErr error) {
-	if query.Peer.String() == "" || query.Before < 0 || query.Target < 0 || query.BeforeCount < 0 || query.AfterCount < 0 || query.BeforeCount > 49 || query.AfterCount > 49 || (query.Target > 0 && query.Before != 0) {
-		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+func validateHistory(query model.HistoryQuery) error {
+	if query.LinkUsername != "" {
+		link, err := model.ParseMessageLink("https://t.me/" + query.LinkUsername + "/1")
+		if err != nil || link.Username != query.LinkUsername || query.Peer.String() != "" || query.Target <= 0 || query.LinkTopic < 0 || query.LinkTopic > query.Target {
+			return model.TextError(model.ErrorInvalidInput, nil)
+		}
+	} else if query.LinkTopic != 0 {
+		return model.TextError(model.ErrorInvalidInput, nil)
+	}
+	if (query.Peer.String() == "" && query.LinkUsername == "") || query.Before < 0 || query.Target < 0 || query.BeforeCount < 0 || query.AfterCount < 0 || query.BeforeCount > 49 || query.AfterCount > 49 || (query.Target > 0 && query.Before != 0) {
+		return model.TextError(model.ErrorInvalidInput, nil)
 	}
 	if err := model.ValidatePageSize(query.Limit); err != nil {
-		return Result{}, model.TextError(model.ErrorInvalidInput, err)
+		return model.TextError(model.ErrorInvalidInput, err)
 	}
-	if query.ResolveDiscussion && (query.Target == 0 || query.Peer.Kind() != model.PeerKindChannel || query.Peer.TopicID() != 0) {
-		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+	if query.ResolveDiscussion && (query.Target == 0 || (query.Peer.Kind() != model.PeerKindChannel && query.LinkUsername == "") || query.Peer.TopicID() != 0 || query.LinkTopic != 0) {
+		return model.TextError(model.ErrorInvalidInput, nil)
 	}
 	if query.ReplyDepth < 0 || query.ReplyDepth > 5 || (query.ReplyDepth > 0 && query.Target == 0) || query.Limit+query.ReplyDepth > model.MaximumPageSize {
-		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+		return model.TextError(model.ErrorInvalidInput, nil)
 	}
 	if query.Target > 0 && query.Limit != query.BeforeCount+query.AfterCount+1 {
-		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+		return model.TextError(model.ErrorInvalidInput, nil)
 	}
-	if !s.Ready() {
-		return Result{}, model.TextError(model.ErrorNotReady, nil)
-	}
-	ctx, cancel := context.WithTimeout(ctx, OperationTimeout)
-	defer cancel()
-	lease, err := s.policy.Acquire(ctx)
-	if err != nil {
-		return Result{}, err
-	}
-	operation := "list_messages"
-	if query.Target > 0 {
-		operation = "get_message_context"
-	}
-	count := 0
-	attemptedAck := false
-	releaseContext := ctx
-	var grant policy.Grant
-	defer func() {
-		resultErr = s.finish(ctx, lease, requestID, operation, count, attemptedAck, resultErr, func() error {
-			return s.checkGrantsCurrent(releaseContext, []policy.Grant{grant})
-		})
-		if resultErr != nil {
-			result = Result{}
-		}
-	}()
-	if query.ResolveDiscussion {
-		full, err := lease.FullRead(ctx)
-		if err != nil {
-			return Result{}, err
-		}
-		if !full {
-			return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
-		}
-	}
-	grant, err = lease.Grant(ctx, query.Peer)
-	if err != nil {
-		return Result{}, err
-	}
-	ctx, expires := context.WithTimeout(ctx, grant.Deadline(s.now().Add(OperationTimeout)).Sub(s.now()))
-	defer expires()
-	if query.Target > 0 && (query.Target < grant.MinID || query.Target > grant.MaxID) {
-		return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
-	}
-	epoch, revision, err := lease.Binding(ctx)
-	if err != nil {
-		return Result{}, err
-	}
+	return nil
+}
+
+func (s *Service) Messages(ctx context.Context, requestID string, query model.HistoryQuery) (Result, error) {
+	return s.messages(ctx, requestID, []model.HistoryQuery{query}, false)
+}
+
+// Contexts prepares every target before issuing any conversation receipt.
+func (s *Service) Contexts(ctx context.Context, requestID string, queries []model.HistoryQuery) (Result, error) {
+	return s.messages(ctx, requestID, queries, true)
+}
+
+type preparedContext struct {
+	items   []model.Message
+	partial bool
+	through int32
+}
+
+func (s *Service) collectContext(ctx context.Context, lease *policy.Lease, query model.HistoryQuery, grant policy.Grant, authority mediaAuthority) (preparedContext, error) {
 	query.MinID = grant.MinID
 	query.MaxID = grant.MaxID
 	if query.Before > 0 && query.Before <= grant.MinID {
-		return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
+		return preparedContext{}, model.TextError(model.ErrorPolicyDenied, nil)
 	}
 	candidates, err := s.backend.History(ctx, query)
 	if err != nil {
-		return Result{}, err
+		return preparedContext{}, err
 	}
 	if err := grant.CheckCurrent(s.now()); err != nil {
-		return Result{}, err
+		return preparedContext{}, err
 	}
 	if len(candidates) > query.Limit {
-		return Result{}, model.TextError(model.ErrorResultTooLarge, nil)
+		return preparedContext{}, model.TextError(model.ErrorResultTooLarge, nil)
 	}
 	items := make([]model.Message, 0, len(candidates))
 	seen := make(map[model.MessageID]bool, len(candidates))
@@ -219,7 +200,7 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 	for _, candidate := range candidates {
 		message := candidate.Message
 		if message.ID.Peer() != query.Peer || message.ID.String() == "" || seen[message.ID] {
-			return Result{}, model.TextError(model.ErrorInvalidReference, nil)
+			return preparedContext{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		seen[message.ID] = true
 		if query.Target > 0 {
@@ -230,26 +211,26 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 				newer++
 			}
 			if older > query.BeforeCount || newer > query.AfterCount {
-				return Result{}, model.TextError(model.ErrorInvalidReference, nil)
+				return preparedContext{}, model.TextError(model.ErrorInvalidReference, nil)
 			}
 		}
 		if query.Before > 0 && message.ID.TelegramID() >= query.Before {
-			return Result{}, model.TextError(model.ErrorInvalidReference, nil)
+			return preparedContext{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		if err := grant.CheckMessage(candidate, s.backend.SelfID(), s.now()); err != nil {
 			category := model.TextErrorCategory(err)
 			if category != model.ErrorPolicyDenied && category != model.ErrorProtectedContent && category != model.ErrorEphemeralContent && category != model.ErrorUnsupportedPeer {
-				return Result{}, err
+				return preparedContext{}, err
 			}
 			partial = true
 			continue
 		}
 		if message.Author.String() == "" {
-			return Result{}, model.TextError(model.ErrorInvalidReference, nil)
+			return preparedContext{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
-		message, err = s.prepareMessage(candidate, grant, mediaAuthority{epoch, revision})
+		message, err = s.prepareMessage(candidate, grant, authority)
 		if err != nil {
-			return Result{}, err
+			return preparedContext{}, err
 		}
 		if message.ID.TelegramID() == query.Target {
 			found = true
@@ -260,18 +241,18 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 		items = append(items, message)
 	}
 	if !found {
-		return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
+		return preparedContext{}, model.TextError(model.ErrorPolicyDenied, nil)
 	}
 	if err := grant.CheckCurrent(s.now()); err != nil {
-		return Result{}, err
+		return preparedContext{}, err
 	}
 	if query.ReplyDepth > 0 {
 		if err := grant.CheckRead(through, s.now()); err != nil {
-			return Result{}, err
+			return preparedContext{}, err
 		}
-		items, err = s.replyChain(ctx, query, grant, mediaAuthority{epoch, revision}, items, seen)
+		items, err = s.replyChain(ctx, query, grant, authority, items, seen)
 		if err != nil {
-			return Result{}, err
+			return preparedContext{}, err
 		}
 		for _, item := range items {
 			if item.ReplyChain != nil && item.ReplyChain.State != "complete" {
@@ -285,58 +266,202 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 			if items[i].ID.TelegramID() == query.Target {
 				items[i].DiscussionRoot, err = s.resolveDiscussion(ctx, lease, grant, items[i])
 				if err != nil {
-					return Result{}, err
+					return preparedContext{}, err
 				}
 			}
 		}
 	}
 
 	sort.Slice(items, func(i, j int) bool { return items[i].ID.TelegramID() > items[j].ID.TelegramID() })
-	effect := model.NoReadEffect()
-	if through > 0 {
-		if err := grant.CheckRead(through, s.now()); err != nil {
-			return Result{}, err
-		}
-		boundary, err := model.NewMessageID(query.Peer, through)
-		if err != nil {
-			return Result{}, err
-		}
-		effect = model.ReadEffect{Kind: model.ReadEffectHistoryMarkedRead, ThroughMessageID: &boundary}
+	return preparedContext{items: items, partial: partial, through: through}, nil
+}
+
+func (s *Service) messages(ctx context.Context, requestID string, queries []model.HistoryQuery, batch bool) (result Result, resultErr error) {
+	if len(queries) == 0 || len(queries) > model.MaximumContextTargets {
+		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
 	}
-	result, err = prepare(requestID, items, s.now(), partial, effect, nil, nil)
+	total := 0
+	targets := map[model.MessageID]bool{}
+	for _, q := range queries {
+		if err := validateHistory(q); err != nil {
+			return Result{}, err
+		}
+		if batch && q.LinkUsername == "" {
+			if q.Target == 0 {
+				return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+			}
+			id, err := model.NewMessageID(q.Peer, q.Target)
+			if err != nil || targets[id] {
+				return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+			}
+			targets[id] = true
+		}
+		total += q.Limit + q.ReplyDepth
+	}
+	if total > model.MaximumPageSize {
+		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+	}
+	if !s.Ready() {
+		return Result{}, model.TextError(model.ErrorNotReady, nil)
+	}
+	ctx, cancel := context.WithTimeout(ctx, OperationTimeout)
+	defer cancel()
+	lease, err := s.policy.Acquire(ctx)
 	if err != nil {
 		return Result{}, err
 	}
-	if !s.Ready() {
-		return Result{}, model.TextError(model.ErrorFreshnessDegraded, nil)
+	operation := "get_message_context"
+	if !batch && queries[0].Target == 0 {
+		operation = "list_messages"
 	}
-	if through > 0 {
-		// The lease excludes revocation; expiration is checked immediately before I/O.
-		if err := grant.CheckRead(through, s.now()); err != nil {
+	count := 0
+	attempted := false
+	grants := make([]policy.Grant, 0, len(queries))
+	defer func() {
+		resultErr = s.finish(ctx, lease, requestID, operation, count, attempted, resultErr, func() error { return s.checkGrantsCurrent(ctx, grants) })
+		if resultErr != nil {
+			result = Result{}
+		}
+	}()
+	deadline := s.now().Add(OperationTimeout)
+	for i, q := range queries {
+		if q.LinkUsername != "" {
+			q, err = s.resolveContextPublisher(ctx, lease, q)
+			if err != nil {
+				return Result{}, err
+			}
+			queries[i] = q
+		}
+		if q.ResolveDiscussion {
+			full, err := lease.FullRead(ctx)
+			if err != nil {
+				return Result{}, err
+			}
+			if !full {
+				return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
+			}
+		}
+		grant, err := lease.Grant(ctx, q.Peer)
+		if err != nil {
 			return Result{}, err
 		}
-		if err := ctx.Err(); err != nil {
+		if q.Target > 0 && (q.Target < grant.MinID || q.Target > grant.MaxID) {
+			return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
+		}
+		grants = append(grants, grant)
+		deadline = grant.Deadline(deadline)
+	}
+	if batch {
+		unique := map[model.MessageID]bool{}
+		for _, q := range queries {
+			id, err := model.NewMessageID(q.Peer, q.Target)
+			if err != nil || unique[id] {
+				return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+			}
+			unique[id] = true
+		}
+	}
+	fetchContext, stop := context.WithTimeout(ctx, deadline.Sub(s.now()))
+	defer stop()
+	epoch, revision, err := lease.Binding(fetchContext)
+	if err != nil {
+		return Result{}, err
+	}
+	items := []model.Message{}
+	contexts := []model.MessageContext{}
+	seen := map[model.MessageID]int{}
+	boundaries := map[model.PeerID]int32{}
+	partial := false
+	for i, q := range queries {
+		if err := s.checkGrantsCurrent(fetchContext, grants); err != nil {
 			return Result{}, err
 		}
-		attemptedAck = true
-		if err := s.backend.Acknowledge(ctx, query.Peer, through); err != nil {
+		prepared, err := s.collectContext(fetchContext, lease, q, grants[i], mediaAuthority{epoch, revision})
+		if err != nil {
+			return Result{}, err
+		}
+		partial = partial || prepared.partial
+		if prepared.through > boundaries[q.Peer] {
+			boundaries[q.Peer] = prepared.through
+		}
+		refs := make([]model.MessageID, 0, len(prepared.items))
+		for _, item := range prepared.items {
+			refs = append(refs, item.ID)
+			if index, exists := seen[item.ID]; exists {
+				merged, err := mergeContextMessage(items[index], item)
+				if err != nil {
+					return Result{}, err
+				}
+				items[index] = merged
+			} else {
+				seen[item.ID] = len(items)
+				items = append(items, item)
+			}
+		}
+		if batch {
+			target, _ := model.NewMessageID(q.Peer, q.Target)
+			contexts = append(contexts, model.MessageContext{Target: target, Messages: refs, Partial: prepared.partial})
+		}
+	}
+	// Stable peer ordering gives deterministic receipts and cross-conversation output.
+	peers := make([]model.PeerID, 0, len(boundaries))
+	for peer := range boundaries {
+		peers = append(peers, peer)
+	}
+	sort.Slice(peers, func(i, j int) bool { return peers[i].String() < peers[j].String() })
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].ID.Peer() != items[j].ID.Peer() {
+			return items[i].ID.Peer().String() < items[j].ID.Peer().String()
+		}
+		return items[i].ID.TelegramID() > items[j].ID.TelegramID()
+	})
+	receipts := make([]model.MessageID, 0, len(peers))
+	for _, peer := range peers {
+		for _, grant := range grants {
+			if grant.Peer == peer {
+				if err := grant.CheckRead(boundaries[peer], s.now()); err != nil {
+					return Result{}, err
+				}
+				break
+			}
+		}
+		id, err := model.NewMessageID(peer, boundaries[peer])
+		if err != nil {
+			return Result{}, err
+		}
+		receipts = append(receipts, id)
+	}
+	effect := model.NoReadEffect()
+	if len(receipts) > 0 {
+		effect.Kind = model.ReadEffectHistoryMarkedRead
+		if batch {
+			effect.ThroughMessageIDs = receipts
+		} else {
+			effect.ThroughMessageID = &receipts[0]
+		}
+	}
+	result, err = prepare(requestID, items, s.now(), partial, effect, nil, nil, contexts...)
+	if err != nil {
+		return Result{}, err
+	}
+
+	for _, peer := range peers {
+		if err := s.checkGrantsCurrent(fetchContext, grants); err != nil {
+			return Result{}, err
+		}
+		attempted = true
+		if err := s.backend.Acknowledge(fetchContext, peer, boundaries[peer]); err != nil {
 			return Result{}, model.TextError(model.ErrorReadEffectUncertain, err)
 		}
-		if err := grant.CheckCurrent(s.now()); err != nil {
-			return Result{}, model.TextError(model.ErrorReadEffectUncertain, err)
-		}
-		if err := ctx.Err(); err != nil {
-			return Result{}, model.TextError(model.ErrorReadEffectUncertain, err)
-		}
-		if !s.Ready() {
-			return Result{}, model.TextError(model.ErrorReadEffectUncertain, nil)
-		}
+	}
+	if err := s.checkGrantsCurrent(fetchContext, grants); err != nil {
+		return Result{}, err
 	}
 	count = len(items)
 	return result, nil
 }
 
-func prepare[T any](requestID string, items []T, now time.Time, partial bool, effect model.ReadEffect, next *string, coverage *model.ScopeCoverage) (Result, error) {
+func prepare[T any](requestID string, items []T, now time.Time, partial bool, effect model.ReadEffect, next *string, coverage *model.ScopeCoverage, contexts ...model.MessageContext) (Result, error) {
 	state := model.FreshnessLive
 	if coverage != nil && coverage.QueriedPeers == 0 {
 		state = model.FreshnessUnavailable
@@ -349,6 +474,7 @@ func prepare[T any](requestID string, items []T, now time.Time, partial bool, ef
 	if err != nil {
 		return Result{}, err
 	}
+	envelope.Contexts = contexts
 	envelope.Scope = coverage
 	envelope.Partial = partial
 	envelope.ReadEffect = effect
@@ -400,6 +526,7 @@ func (s *Service) finish(ctx context.Context, lease *policy.Lease, id, operation
 
 func (s *Service) prepareMessage(candidate model.Candidate, grant policy.Grant, authority mediaAuthority) (model.Message, error) {
 	message := candidate.Message
+	message.URL = message.ID.URL()
 	date, err := time.Parse(time.RFC3339Nano, message.Date)
 	if err != nil || date.IsZero() {
 		return model.Message{}, model.TextError(model.ErrorInvalidReference, nil)
@@ -418,4 +545,45 @@ func (s *Service) prepareMessage(candidate model.Candidate, grant policy.Grant, 
 		return model.Message{}, err
 	}
 	return message, nil
+}
+
+// Overlapping windows may add target-only navigation metadata. Conflicting
+// observations cannot describe one deduplicated result and reject the batch.
+func mergeContextMessage(a, b model.Message) (model.Message, error) {
+	normalize := func(m model.Message) model.Message {
+		m.ReplyChain = nil
+		m.DiscussionRoot = nil
+		if m.Image != nil {
+			copy := *m.Image
+			copy.Handle = ""
+			m.Image = &copy
+		}
+		if m.Document != nil {
+			copy := *m.Document
+			copy.Handle = ""
+			m.Document = &copy
+		}
+		if m.Voice != nil {
+			copy := *m.Voice
+			copy.Handle = ""
+			m.Voice = &copy
+		}
+		return m
+	}
+	if !reflect.DeepEqual(normalize(a), normalize(b)) {
+		return model.Message{}, model.TextError(model.ErrorInvalidReference, nil)
+	}
+	if a.ReplyChain != nil {
+		if b.ReplyChain != nil && !reflect.DeepEqual(a.ReplyChain, b.ReplyChain) {
+			return model.Message{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		b.ReplyChain = a.ReplyChain
+	}
+	if a.DiscussionRoot != nil {
+		if b.DiscussionRoot != nil && *a.DiscussionRoot != *b.DiscussionRoot {
+			return model.Message{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		b.DiscussionRoot = a.DiscussionRoot
+	}
+	return b, nil
 }

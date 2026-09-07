@@ -226,3 +226,22 @@ func TestScopeCoverageRejectsInconsistentCounts(t *testing.T) {
 		}
 	}
 }
+
+func TestBatchReadEffectValidation(t *testing.T) {
+	a, _ := ParseMessageID("tgmsg:v1:chat:42:20")
+	b, _ := ParseMessageID("tgmsg:v1:chat:43:20")
+	for _, effect := range []ReadEffect{
+		{Kind: ReadEffectNone, ThroughMessageIDs: []MessageID{a}},
+		{Kind: ReadEffectHistoryMarkedRead, ThroughMessageID: &a, ThroughMessageIDs: []MessageID{b}},
+		{Kind: ReadEffectHistoryMarkedRead, ThroughMessageIDs: []MessageID{a, a}},
+		{Kind: ReadEffectContentMarkedRead, ThroughMessageIDs: []MessageID{a}},
+		{Kind: ReadEffectHistoryMarkedRead, ThroughMessageIDs: []MessageID{{}}},
+	} {
+		if effect.Validate() == nil {
+			t.Fatal("invalid batch read effect accepted")
+		}
+	}
+	if err := (ReadEffect{Kind: ReadEffectHistoryMarkedRead, ThroughMessageIDs: []MessageID{a, b}}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

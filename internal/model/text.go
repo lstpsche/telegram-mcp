@@ -26,6 +26,7 @@ type ReplyChain struct {
 }
 
 type Message struct {
+	URL            string              `json:"url,omitempty"`
 	DiscussionRoot *MessageID          `json:"discussion_root,omitempty"`
 	ThreadRoot     *MessageID          `json:"thread_root,omitempty"`
 	DiscussionPeer string              `json:"discussion_peer,omitempty"`
@@ -67,6 +68,8 @@ type Candidate struct {
 // HistoryQuery uses inclusive grant bounds and exclusive Before selection.
 // Target selects context; BeforeCount/AfterCount count neighboring messages.
 type HistoryQuery struct {
+	LinkUsername      string
+	LinkTopic         int32
 	ResolveDiscussion bool
 	Peer              PeerID
 	Before            int32
@@ -124,6 +127,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	URL              string              `json:"url,omitempty"`
 	ThreadRoot       *MessageID          `json:"thread_root,omitempty"`
 	DiscussionPeer   string              `json:"discussion_peer,omitempty"`
 	SavedPeer        string              `json:"saved_peer,omitempty"`
@@ -250,4 +254,14 @@ func (f SearchFilter) CheckReplyPeer(peer PeerID) error {
 		}
 	}
 	return nil
+}
+
+// MaximumContextTargets bounds batch context preparation and read receipts.
+const MaximumContextTargets = 20
+
+// MessageContext associates a requested target with its deduplicated result IDs.
+type MessageContext struct {
+	Target   MessageID   `json:"target"`
+	Messages []MessageID `json:"messages"`
+	Partial  bool        `json:"partial"`
 }

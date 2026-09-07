@@ -214,7 +214,7 @@ func decodeEnvelope(data []byte) (model.Envelope[accountStatus], error) {
 	if err := envelope.Validate(); err != nil {
 		return envelope, err
 	}
-	if !exactKeys(data, "schema_version", "request_id", "freshness", "partial", "read_effect", "items", "next_cursor", "warnings", "untrusted_content") || envelope.Scope != nil || envelope.Partial || envelope.NextCursor != nil || len(envelope.Warnings) != 0 || envelope.ReadEffect != model.NoReadEffect() || envelope.Freshness.Telegram != model.FreshnessUnavailable || len(envelope.Items) != 1 {
+	if !exactKeys(data, "schema_version", "request_id", "freshness", "partial", "read_effect", "items", "next_cursor", "warnings", "untrusted_content") || envelope.Scope != nil || envelope.Partial || envelope.NextCursor != nil || len(envelope.Warnings) != 0 || envelope.ReadEffect.Kind != model.ReadEffectNone || envelope.Freshness.Telegram != model.FreshnessUnavailable || len(envelope.Items) != 1 {
 		return envelope, errors.New("invalid MCP status metadata")
 	}
 	var raw struct {

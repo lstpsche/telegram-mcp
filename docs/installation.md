@@ -9,7 +9,7 @@ Homebrew users on macOS or Linux can install with:
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcp install --version 0.8.0 --setup
+telegram-mcp install --version 1.0.0 --setup
 ```
 
 Homebrew supplies checksum-pinned platform binaries. The second command creates
@@ -32,9 +32,9 @@ For a managed release installation, download `install.sh` (macOS/Linux) or
 user. The script verifies a standalone control executable, which downloads and
 verifies the full archive before starting guided setup. The scripts accept an
 explicit stable version; release assets default to their packaged version.
-The source scripts default to 0.8.0. They do not require Go.
+The source scripts default to 1.0.0. They do not require Go.
 
-The equivalent control command is `telegram-mcp install --version 0.8.0 --setup`.
+The equivalent control command is `telegram-mcp install --version 1.0.0 --setup`.
 Omit `--setup` to prepare files without touching account or service state.
 Managed versions live under the OS user configuration directory at
 `Telegram MCP/install/versions/X.Y.Z`. Existing versions are checked in full and

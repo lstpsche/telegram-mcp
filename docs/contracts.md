@@ -343,3 +343,18 @@ Both cursor kinds bind the media type. Unsupported, unauthorized and nonmatching
 candidates still consume the fetched-candidate budget; empty pages can have
 continuation. Search never downloads or interprets attachment contents. See
 [media search](media-search.md).
+
+## Batched context and message links
+
+`get_message_context` accepts mutually exclusive `message` and `messages` inputs.
+Batch results add `contexts` entries (`target`, `messages`, `partial`) associating
+each target with IDs in the deduplicated `items` array. Batch read effects use
+`through_message_ids`, one boundary per exact peer/topic. Single input preserves
+`through_message_id`. Both forms keep schema version 1 and the same serialized
+response budget. See [batch context](batch-context.md).
+
+Context inputs also accept supported HTTPS Telegram message links. Numeric links
+map to strict IDs; public usernames require Full read and resolve only joined
+supported publishers before exact authorization. Message and search-hit `url`
+fields are optional generated numeric citations, never authority. See
+[message links](message-links.md) for accepted forms and explicit exclusions.

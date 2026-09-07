@@ -32,13 +32,19 @@ For example, after setting up access and a scope named `project`:
 
 Search, catch-up, and unread inspection do not mark chats read. **Opening history, message context, or an image can mark messages read**, including earlier messages in the affected conversation. These operations require permission for that read effect as well as permission to return content.
 
+Open several search results with one `get_message_context` call using `messages`.
+It accepts up to 20 targets, deduplicates overlapping context, and acknowledges
+each affected conversation once. You can also paste supported Telegram message
+links directly; channel and topic results include clickable source URLs.
+See [batch context](docs/batch-context.md) and [message links](docs/message-links.md).
+
 ## Installation
 
 On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsche/homebrew-tap):
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcp install --version 0.8.0 --setup
+telegram-mcp install --version 1.0.0 --setup
 ```
 
 The second command creates a private per-user installation and starts setup.
@@ -52,14 +58,14 @@ Download and inspect the script before running it if desired.
 
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
-  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.8.0/install.sh
+  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v1.0.0/install.sh
 sh install.sh
 ```
 
 **Windows PowerShell, without elevation**
 
 ```powershell
-Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.8.0/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v1.0.0/install.ps1 -OutFile install.ps1
 .\install.ps1
 ```
 
@@ -68,7 +74,7 @@ checksums. Downloads and checksums come from GitHub Releases; they establish
 integrity, not independent publisher identity. Credentials stay in your local
 interactive console.
 
-For manual installation, download an archive from [v0.8.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.8.0).
+For manual installation, download an archive from [v1.0.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v1.0.0).
 Archives support macOS, Linux and Windows on amd64 and arm64, and contain
 `telegram-mcp`, `telegram-mcpd`, documentation and checksums. Extract into a new
 private directory and follow the [platform instructions](docs/installation.md).
@@ -191,7 +197,7 @@ Version 0.5.0 added [forum topics](docs/topic-access.md) and [original voice not
 | `list_chats` | Discover conversations allowed by your current access settings |
 | `list_topics` | Discover individual forum topics allowed by your access settings |
 | `list_messages` | Read a bounded page of authorized history |
-| `get_message_context` | Retrieve context around a specific message |
+| `get_message_context` | Retrieve context around one message or a batch of IDs/Telegram message links |
 | `search_messages` | Search an authorized conversation or named scope; filter by sender, date, pins, attachments or Saved Messages source/tag |
 | `list_unread` | Inspect unread counts and manual unread flags |
 | `list_scopes` | Discover human-managed groups of conversations |

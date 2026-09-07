@@ -82,8 +82,9 @@ const (
 )
 
 type ReadEffect struct {
-	Kind             ReadEffectKind `json:"kind"`
-	ThroughMessageID *MessageID     `json:"through_message_id,omitempty"`
+	Kind              ReadEffectKind `json:"kind"`
+	ThroughMessageID  *MessageID     `json:"through_message_id,omitempty"`
+	ThroughMessageIDs []MessageID    `json:"through_message_ids,omitempty"`
 }
 
 func NoReadEffect() ReadEffect { return ReadEffect{Kind: ReadEffectNone} }
@@ -91,11 +92,22 @@ func NoReadEffect() ReadEffect { return ReadEffect{Kind: ReadEffectNone} }
 func (e ReadEffect) Validate() error {
 	switch e.Kind {
 	case ReadEffectNone:
-		if e.ThroughMessageID != nil {
+		if e.ThroughMessageID != nil || len(e.ThroughMessageIDs) > 0 {
 			return errors.New("none read effect cannot have a message reference")
 		}
 	case ReadEffectHistoryMarkedRead, ReadEffectContentMarkedRead:
-		if e.ThroughMessageID == nil || !e.ThroughMessageID.valid() {
+		if len(e.ThroughMessageIDs) > 0 {
+			if e.Kind != ReadEffectHistoryMarkedRead || e.ThroughMessageID != nil || len(e.ThroughMessageIDs) > MaximumContextTargets {
+				return errors.New("invalid batch read effect")
+			}
+			seen := map[PeerID]bool{}
+			for _, id := range e.ThroughMessageIDs {
+				if !id.valid() || seen[id.Peer()] {
+					return errors.New("invalid batch read boundary")
+				}
+				seen[id.Peer()] = true
+			}
+		} else if e.ThroughMessageID == nil || !e.ThroughMessageID.valid() {
 			return errors.New("state-affecting read effect requires a valid message reference")
 		}
 	default:
@@ -169,16 +181,17 @@ func (c ScopeCoverage) Validate() error {
 
 // Envelope is the shared v1 output shape for successful MCP results.
 type Envelope[T any] struct {
-	SchemaVersion    string         `json:"schema_version"`
-	Scope            *ScopeCoverage `json:"scope,omitempty"`
-	RequestID        string         `json:"request_id"`
-	Freshness        Freshness      `json:"freshness"`
-	Partial          bool           `json:"partial"`
-	ReadEffect       ReadEffect     `json:"read_effect"`
-	Items            []T            `json:"items"`
-	NextCursor       *string        `json:"next_cursor"`
-	Warnings         []WarningCode  `json:"warnings"`
-	UntrustedContent bool           `json:"untrusted_content"`
+	Contexts         []MessageContext `json:"contexts,omitempty"`
+	SchemaVersion    string           `json:"schema_version"`
+	Scope            *ScopeCoverage   `json:"scope,omitempty"`
+	RequestID        string           `json:"request_id"`
+	Freshness        Freshness        `json:"freshness"`
+	Partial          bool             `json:"partial"`
+	ReadEffect       ReadEffect       `json:"read_effect"`
+	Items            []T              `json:"items"`
+	NextCursor       *string          `json:"next_cursor"`
+	Warnings         []WarningCode    `json:"warnings"`
+	UntrustedContent bool             `json:"untrusted_content"`
 }
 
 func NewEnvelope[T any](requestID string, freshness Freshness, items []T) (Envelope[T], error) {
@@ -204,6 +217,30 @@ func NewEnvelope[T any](requestID string, freshness Freshness, items []T) (Envel
 }
 
 func (e Envelope[T]) Validate() error {
+	if len(e.Contexts) > 0 {
+		if len(e.Contexts) > MaximumContextTargets || len(e.ReadEffect.ThroughMessageIDs) == 0 {
+			return errors.New("invalid batch context envelope")
+		}
+		targets := map[MessageID]bool{}
+		for _, c := range e.Contexts {
+			if !c.Target.valid() || targets[c.Target] || len(c.Messages) == 0 || len(c.Messages) > MaximumPageSize {
+				return errors.New("invalid context association")
+			}
+			targets[c.Target] = true
+			found := false
+			seen := map[MessageID]bool{}
+			for _, id := range c.Messages {
+				if !id.valid() || id.Peer() != c.Target.Peer() || seen[id] {
+					return errors.New("invalid context message reference")
+				}
+				seen[id] = true
+				found = found || id == c.Target
+			}
+			if !found {
+				return errors.New("context target missing from association")
+			}
+		}
+	}
 	if e.Scope != nil {
 		if err := e.Scope.Validate(); err != nil {
 			return err
