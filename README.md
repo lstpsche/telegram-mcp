@@ -38,7 +38,7 @@ On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsch
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcp install --version 0.6.0 --setup
+telegram-mcp install --version 0.7.0 --setup
 ```
 
 The second command creates a private per-user installation and starts setup.
@@ -52,14 +52,14 @@ Download and inspect the script before running it if desired.
 
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
-  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.6.0/install.sh
+  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.7.0/install.sh
 sh install.sh
 ```
 
 **Windows PowerShell, without elevation**
 
 ```powershell
-Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.6.0/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.7.0/install.ps1 -OutFile install.ps1
 .\install.ps1
 ```
 
@@ -68,7 +68,7 @@ checksums. Downloads and checksums come from GitHub Releases; they establish
 integrity, not independent publisher identity. Credentials stay in your local
 interactive console.
 
-For manual installation, download an archive from [v0.6.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.6.0).
+For manual installation, download an archive from [v0.7.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.7.0).
 Archives support macOS, Linux and Windows on amd64 and arm64, and contain
 `telegram-mcp`, `telegram-mcpd`, documentation and checksums. Extract into a new
 private directory and follow the [platform instructions](docs/installation.md).
@@ -220,7 +220,7 @@ Supported [media album members](docs/media-albums.md) share an `album_id` from 0
 
 Read [poll questions, text options and available aggregate counts](docs/polls.md) through history/context. Search and catch-up provide a poll marker and question snippet.
 
-Source builds after 0.6.0 also preserve [link messages and Telegram-supplied previews](docs/link-previews.md), without visiting their URLs. [Reaction summaries](docs/reactions.md) include supplied emoji/custom-emoji counts, Star counts, and Saved Messages tag semantics. [Pinned-message discovery](docs/pinned-messages.md) finds reference material with `pinned_only: true` and an optional query. [Media search](docs/media-search.md) finds photos, image files, PDFs, plain-text files and voice notes without requiring caption text.
+Version 0.7.0 preserves [link messages and Telegram-supplied previews](docs/link-previews.md), without visiting their URLs. [Reaction summaries](docs/reactions.md) include supplied emoji/custom-emoji counts, Star counts, and Saved Messages tag semantics. [Pinned-message discovery](docs/pinned-messages.md) finds reference material with `pinned_only: true` and an optional query. [Media search](docs/media-search.md) finds photos, image files, PDFs, plain-text files and voice notes without requiring caption text.
 
 The MCP surface is read-first: sending, editing, deleting, account administration, authentication, and access changes are not agent tools. See [message access](docs/text-access.md) and [image access](docs/image-access.md) for exact boundaries.
 

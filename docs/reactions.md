@@ -1,6 +1,6 @@
 # Reaction summaries
 
-Source builds after 0.6.0 include optional `reactions` in history, message context,
+Version 0.7.0 includes optional `reactions` in history, message context,
 search and catch-up results. The summary contains `minimal`, `as_tags`, and an
 ordered `counts` array. Each entry has `kind` and `count`:
 

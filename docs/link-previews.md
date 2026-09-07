@@ -1,6 +1,6 @@
 # Link messages and previews
 
-Source builds after 0.6.0 preserve messages with Telegram webpage previews.
+Version 0.7.0 preserves messages with Telegram webpage previews.
 History and context include the original `text` and an optional `link_preview`
 with `state`, `manual`, and supplied `url`, `site_name`, `title`, and `description`.
 The preview is separate from the message: Telegram's manual previews can refer
