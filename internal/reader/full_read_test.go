@@ -160,7 +160,7 @@ func TestFullReadDialogPaginationBindingAndRevocation(t *testing.T) {
 				return model.DialogPage{Scanned: 1, Items: []model.DialogEntry{{Chat: model.Chat{ID: g.Peer, Title: "synthetic"}, Unread: model.Unread{Peer: g.Peer, Count: 2}}}}, nil
 			}
 			s.backend = backend
-			result, err := s.Chats(ctx, "req_full_page", 1, nil, "")
+			result, err := s.Chats(ctx, "req_full_page", 1, nil, "", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -205,7 +205,7 @@ func TestFullReadDialogPaginationBindingAndRevocation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			result, err = s.Chats(ctx, "req_full_next", limit, nil, token)
+			result, err = s.Chats(ctx, "req_full_next", limit, nil, token, "")
 			if change != "continue" {
 				if err == nil || len(result.JSON) != 0 || backend.dialogCalls != 1 {
 					t.Fatal("invalid token fetched", err)
@@ -249,7 +249,7 @@ func TestFullReadDialogFailureDiscardsResultsAndHoldsLease(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			result, err := s.Chats(context.Background(), "req_full_failure", 20, nil, "")
+			result, err := s.Chats(context.Background(), "req_full_failure", 20, nil, "", "")
 			if failure != "revocation" && (err == nil || len(result.JSON) != 0) {
 				t.Fatal("failure released metadata", err)
 			}
@@ -320,7 +320,7 @@ func TestFullReadDialogReleaseRechecksAfterAudit(t *testing.T) {
 				s.policy = repository
 				var result Result
 				if operation == "chats" {
-					result, err = s.Chats(ctx, "req_full_release", 20, nil, "")
+					result, err = s.Chats(ctx, "req_full_release", 20, nil, "", "")
 				} else {
 					result, err = s.UnreadPage(ctx, "req_full_release", nil, "")
 				}

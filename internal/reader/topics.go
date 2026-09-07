@@ -20,14 +20,19 @@ type topicBackend interface {
 }
 
 type topicCursor struct {
-	Peer      model.PeerID        `json:"peer"`
-	Position  model.TopicPosition `json:"position"`
-	Limit     int                 `json:"limit"`
-	Authority mediaAuthority      `json:"authority"`
-	Expires   int64               `json:"expires"`
+	QueryDigest string              `json:"query_digest,omitempty"`
+	Peer        model.PeerID        `json:"peer"`
+	Position    model.TopicPosition `json:"position"`
+	Limit       int                 `json:"limit"`
+	Authority   mediaAuthority      `json:"authority"`
+	Expires     int64               `json:"expires"`
 }
 
-func (s *Service) ListTopics(ctx context.Context, requestID string, peer model.PeerID, limit int, token string) (result Result, resultErr error) {
+func (s *Service) ListTopics(ctx context.Context, requestID string, peer model.PeerID, limit int, token, query string) (result Result, resultErr error) {
+	query, err := normalizeDiscoveryQuery(query)
+	if err != nil {
+		return Result{}, err
+	}
 	if peer.Kind() != model.PeerKindChannel || peer.TopicID() != 0 || model.ValidatePageSize(limit) != nil {
 		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
 	}
@@ -74,6 +79,9 @@ func (s *Service) ListTopics(ctx context.Context, requestID string, peer model.P
 			return Result{}, err
 		}
 		cursor := topicCursor{Peer: peer, Limit: limit, Authority: mediaAuthority{epoch, revision}, Expires: expires}
+		if query != "" {
+			cursor.QueryDigest = s.queryDigest("discovery-title-v1\x00" + query)
+		}
 		if token != "" {
 			invalid := func() (Result, error) { return Result{}, model.TextError(model.ErrorCursorInvalid, nil) }
 			parts := strings.Split(token, ".")
@@ -93,7 +101,7 @@ func (s *Service) ListTopics(ctx context.Context, requestID string, peer model.P
 				return invalid()
 			}
 			canonical, _ := json.Marshal(decoded)
-			if string(canonical) != string(payload) || decoded.Peer != peer || decoded.Limit != limit || decoded.Authority != cursor.Authority || decoded.Expires > expires || decoded.Position.Date <= 0 || decoded.Position.Topic <= 0 || decoded.Position.Message <= 0 {
+			if string(canonical) != string(payload) || decoded.QueryDigest != cursor.QueryDigest || decoded.Peer != peer || decoded.Limit != limit || decoded.Authority != cursor.Authority || decoded.Expires > expires || decoded.Position.Date <= 0 || decoded.Position.Topic <= 0 || decoded.Position.Message <= 0 {
 				return invalid()
 			}
 			cursor = decoded
@@ -158,6 +166,13 @@ func (s *Service) ListTopics(ctx context.Context, requestID string, peer model.P
 		}
 		seen[item.ID] = true
 	}
+	filtered := make([]model.Topic, 0, len(items))
+	for _, item := range items {
+		if strings.Contains(strings.ToLower(item.Title), query) {
+			filtered = append(filtered, item)
+		}
+	}
+	items = filtered
 	if err := check(); err != nil {
 		return Result{}, err
 	}

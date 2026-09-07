@@ -358,3 +358,11 @@ map to strict IDs; public usernames require Full read and resolve only joined
 supported publishers before exact authorization. Message and search-hit `url`
 fields are optional generated numeric citations, never authority. See
 [message links](message-links.md) for accepted forms and explicit exclusions.
+
+## Discovery title queries
+
+`list_chats` and `list_topics` accept optional `query` for normalized literal
+substring matching over authorized titles. Candidate limits and original
+continuation positions remain unchanged after filtering. Dialog/topic cursors
+bind a keyed normalized-query digest; an absent query preserves prior encoding.
+See [discovery search](discovery-search.md).

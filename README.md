@@ -194,8 +194,8 @@ Version 0.5.0 added [forum topics](docs/topic-access.md) and [original voice not
 | Tool | Purpose |
 | --- | --- |
 | `status` | Check account and message-engine readiness without fetching Telegram content |
-| `list_chats` | Discover conversations allowed by your current access settings |
-| `list_topics` | Discover individual forum topics allowed by your access settings |
+| `list_chats` | Discover authorized conversations; optionally search their titles |
+| `list_topics` | Discover authorized forum topics; optionally search their titles |
 | `list_messages` | Read a bounded page of authorized history |
 | `get_message_context` | Retrieve context around one message or a batch of IDs/Telegram message links |
 | `search_messages` | Search an authorized conversation or named scope; filter by sender, date, pins, attachments or Saved Messages source/tag |
@@ -205,6 +205,8 @@ Version 0.5.0 added [forum topics](docs/topic-access.md) and [original voice not
 | `open_document` | Open an authorized original PDF resource or plain-text attachment |
 | `open_voice_note` | Deliver an authorized original voice note as native MCP audio |
 | `open_image` | Open an authorized image as native MCP image content |
+
+Use `query` on `list_chats` or `list_topics` to find titles without opening message bodies. See [chat and topic search](docs/discovery-search.md).
 
 Named scopes let you group conversations for a project or recurring briefing. Manage them with the human `scope`, `scopes`, and `unscope` commands; agents discover their IDs through `list_scopes`. Scopes narrow existing access rather than granting new permissions. See [scope and access setup](docs/text-access.md).
 

@@ -287,7 +287,7 @@ func (s *Service) UnreadPage(ctx context.Context, requestID string, scopes []mod
 		return Result{}, err
 	}
 	if full && len(scopes) == 0 {
-		result, count, err = s.fullDialogs(ctx, lease, requestID, "list_unread", model.MaximumPageSize, token, &dialogExpiry)
+		result, count, err = s.fullDialogs(ctx, lease, requestID, "list_unread", model.MaximumPageSize, token, &dialogExpiry, "")
 		return result, err
 	}
 	if token != "" {

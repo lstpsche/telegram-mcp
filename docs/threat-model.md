@@ -577,3 +577,12 @@ Explicit forum topics preserve parent/topic separation. Unsupported selectors
 are rejected without reinterpretation. Canonical numeric citations are generated
 from authorized message IDs and counted before read effects. See
 [batch context](batch-context.md) and [message links](message-links.md).
+
+## Discovery title filtering
+
+Title queries narrow already-authorized discovery; they never authorize by title
+or resolve arbitrary users. Normalized UTF-8 queries are bounded, never logged
+or persisted, and represented only by a keyed digest in signed cursor payloads.
+Validate every returned candidate before filtering. Nonmatching candidates retain
+pagination progress. All existing epoch/revision, expiry, freshness and required
+audit release guards apply, without read receipts or media access.

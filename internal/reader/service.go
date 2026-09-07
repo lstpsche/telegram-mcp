@@ -8,7 +8,9 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/policy"
@@ -55,10 +57,14 @@ func New(backend Backend, repository *policy.Repository, now func() time.Time, c
 func (s *Service) Ready() bool { return s != nil && s.backend.Ready() }
 
 func (s *Service) ListChats(ctx context.Context, requestID string, limit int, scopes ...model.ScopeID) (Result, error) {
-	return s.Chats(ctx, requestID, limit, scopes, "")
+	return s.Chats(ctx, requestID, limit, scopes, "", "")
 }
 
-func (s *Service) Chats(ctx context.Context, requestID string, limit int, scopes []model.ScopeID, token string) (result Result, resultErr error) {
+func (s *Service) Chats(ctx context.Context, requestID string, limit int, scopes []model.ScopeID, token, query string) (result Result, resultErr error) {
+	query, err := normalizeDiscoveryQuery(query)
+	if err != nil {
+		return Result{}, err
+	}
 	if err := model.ValidatePageSize(limit); err != nil {
 		return Result{}, model.TextError(model.ErrorInvalidInput, err)
 	}
@@ -86,7 +92,7 @@ func (s *Service) Chats(ctx context.Context, requestID string, limit int, scopes
 		return Result{}, err
 	}
 	if full && len(scopes) == 0 {
-		result, count, err = s.fullDialogs(ctx, lease, requestID, "list_chats", limit, token, &dialogExpiry)
+		result, count, err = s.fullDialogs(ctx, lease, requestID, "list_chats", limit, token, &dialogExpiry, query)
 		return result, err
 	}
 	if token != "" {
@@ -112,10 +118,12 @@ func (s *Service) Chats(ctx context.Context, requestID string, limit int, scopes
 		if err != nil {
 			return Result{}, err
 		}
-		if chat.ID != grant.Peer {
+		if chat.ID != grant.Peer || !utf8.ValidString(chat.Title) || len(chat.Title) > 4096 {
 			return Result{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
-		items = append(items, chat)
+		if strings.Contains(strings.ToLower(chat.Title), query) {
+			items = append(items, chat)
+		}
 	}
 	if err := s.checkGrantsCurrent(ctx, selected); err != nil {
 		return Result{}, err

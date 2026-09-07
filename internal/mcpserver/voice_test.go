@@ -6,10 +6,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/reader"
@@ -110,6 +112,61 @@ func TestVoiceOverStdioRelay(t *testing.T) {
 	if err := json.Unmarshal([]byte(topics.Content[0].(*mcp.TextContent).Text), &topicEnvelope); err != nil || len(topicEnvelope.Items) != 1 || topicEnvelope.Items[0].ID != base.peer {
 		t.Fatal("topic identity did not survive relay", err)
 	}
+	inventory, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want int
+	}{
+		{"list_topics", map[string]any{"peer": parent.String(), "query": " TOPIC "}, 1},
+		{"list_topics", map[string]any{"peer": parent.String(), "query": "absent"}, 0},
+		{"list_chats", map[string]any{"scope": scope.ID.String(), "query": "SYNTHETIC"}, 1},
+		{"list_chats", map[string]any{"scope": scope.ID.String(), "query": "absent"}, 0},
+	} {
+		got, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
+		if err != nil || got.IsError {
+			t.Fatal("title search failed", err, got)
+		}
+		var value map[string]any
+		if err := json.Unmarshal([]byte(got.Content[0].(*mcp.TextContent).Text), &value); err != nil {
+			t.Fatal(err)
+		}
+		if len(value["items"].([]any)) != tc.want || !reflect.DeepEqual(value, got.StructuredContent) {
+			t.Fatal("title search output contract")
+		}
+		for _, tool := range inventory.Tools {
+			if tool.Name == tc.name {
+				raw, err := json.Marshal(tool.OutputSchema)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var schema jsonschema.Schema
+				if err := json.Unmarshal(raw, &schema); err != nil {
+					t.Fatal(err)
+				}
+				resolved, err := schema.Resolve(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := resolved.Validate(value); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	for _, query := range []any{"", "  ", nil, 7} {
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_topics", Arguments: map[string]any{"peer": parent.String(), "query": query}})
+		if err != nil || !result.IsError {
+			t.Fatal("invalid title query accepted", err)
+		}
+	}
+	if backend.acks.Load() != 0 || backend.downloads.Load() != 0 {
+		t.Fatal("title search affected media or receipts")
+	}
+
 	caught, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "catch_up", Arguments: map[string]any{"scope": scope.ID.String(), "since": "2026-09-05T00:00:00Z", "until": "2026-09-06T00:00:00Z"}})
 	if err != nil || caught.IsError {
 		t.Fatal("topic catch-up", err, caught)

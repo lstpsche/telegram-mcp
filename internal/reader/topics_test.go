@@ -32,7 +32,7 @@ func TestRestrictedTopicsDiscoverOnlyExactGrants(t *testing.T) {
 	topic, _ := model.NewTopicPeer(parent, 7)
 	backend := &topicFake{fakeBackend: f}
 	s.backend = backend
-	result, err := s.ListTopics(context.Background(), "req_topics_parent", parent, 20, "")
+	result, err := s.ListTopics(context.Background(), "req_topics_parent", parent, 20, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestRestrictedTopicsDiscoverOnlyExactGrants(t *testing.T) {
 	}
 	g.Peer = topic
 	saveGrant(t, p, g)
-	result, err = s.ListTopics(context.Background(), "req_topics_exact", parent, 1, "")
+	result, err = s.ListTopics(context.Background(), "req_topics_exact", parent, 1, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestTopicCursorBindsForumLimitPolicyAndLifetime(t *testing.T) {
 			topic, _ := model.NewTopicPeer(parent, 7)
 			backend := &topicFake{fakeBackend: f, page: model.TopicPage{Items: []model.Topic{{ID: topic, Title: "Synthetic"}}, Next: &model.TopicPosition{Date: 100, Message: 20, Topic: 7}}}
 			s.backend = backend
-			result, err := s.ListTopics(context.Background(), "req_topics_first", parent, 20, "")
+			result, err := s.ListTopics(context.Background(), "req_topics_first", parent, 20, "", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -93,7 +93,7 @@ func TestTopicCursorBindsForumLimitPolicyAndLifetime(t *testing.T) {
 			case "tamper":
 				token += "x"
 			}
-			result, err = s.ListTopics(context.Background(), "req_topics_denied", parent, limit, token)
+			result, err = s.ListTopics(context.Background(), "req_topics_denied", parent, limit, token, "")
 			if err == nil || len(result.JSON) != 0 || backend.listed != 1 || f.ackCalls != 0 {
 				t.Fatal("invalid cursor fetched or exposed metadata", err)
 			}

@@ -19,12 +19,13 @@ type dialogBackend interface {
 }
 
 type dialogCursor struct {
-	Operation string               `json:"operation"`
-	Epoch     string               `json:"epoch"`
-	Revision  int64                `json:"revision"`
-	Limit     int                  `json:"limit"`
-	Position  model.DialogPosition `json:"position"`
-	Expires   int64                `json:"expires"`
+	QueryDigest string               `json:"query_digest,omitempty"`
+	Operation   string               `json:"operation"`
+	Epoch       string               `json:"epoch"`
+	Revision    int64                `json:"revision"`
+	Limit       int                  `json:"limit"`
+	Position    model.DialogPosition `json:"position"`
+	Expires     int64                `json:"expires"`
 }
 
 func (s *Service) dialogSignature(payload string) []byte {
@@ -65,7 +66,7 @@ func (s *Service) decodeDialogCursor(token string, binding dialogCursor) (dialog
 		return invalid()
 	}
 	canonical, err := json.Marshal(cursor)
-	if err != nil || !bytes.Equal(payload, canonical) || cursor.Operation != binding.Operation || cursor.Epoch != binding.Epoch || cursor.Revision != binding.Revision || cursor.Limit != binding.Limit || !cursor.Position.Valid() || cursor.Expires > binding.Expires {
+	if err != nil || !bytes.Equal(payload, canonical) || cursor.QueryDigest != binding.QueryDigest || cursor.Operation != binding.Operation || cursor.Epoch != binding.Epoch || cursor.Revision != binding.Revision || cursor.Limit != binding.Limit || !cursor.Position.Valid() || cursor.Expires > binding.Expires {
 		return invalid()
 	}
 	if cursor.Expires <= s.now().Unix() {
@@ -76,7 +77,7 @@ func (s *Service) decodeDialogCursor(token string, binding dialogCursor) (dialog
 
 // fullDialogs is entered with verified full authority and the policy lease held
 // through caller audit and final validity. Each page performs one bounded lookup.
-func (s *Service) fullDialogs(ctx context.Context, lease *policy.Lease, requestID, operation string, limit int, token string, expiry *int64) (Result, int, error) {
+func (s *Service) fullDialogs(ctx context.Context, lease *policy.Lease, requestID, operation string, limit int, token string, expiry *int64, query string) (Result, int, error) {
 	backend, ok := s.backend.(dialogBackend)
 	if !ok {
 		return Result{}, 0, model.TextError(model.ErrorNotReady, nil)
@@ -86,6 +87,9 @@ func (s *Service) fullDialogs(ctx context.Context, lease *policy.Lease, requestI
 		return Result{}, 0, err
 	}
 	cursor := dialogCursor{Operation: operation, Epoch: epoch, Revision: revision, Limit: limit, Expires: s.now().Add(cursorLifetime).Unix()}
+	if query != "" {
+		cursor.QueryDigest = s.queryDigest("discovery-title-v1\x00" + query)
+	}
 	if token != "" {
 		cursor, err = s.decodeDialogCursor(token, cursor)
 		if err != nil {
@@ -111,7 +115,9 @@ func (s *Service) fullDialogs(ctx context.Context, lease *policy.Lease, requestI
 			return Result{}, 0, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		seen[entry.Chat.ID] = true
-		chats = append(chats, entry.Chat)
+		if strings.Contains(strings.ToLower(entry.Chat.Title), query) {
+			chats = append(chats, entry.Chat)
+		}
 		if entry.Unread.Count > 0 || entry.Unread.Marked {
 			unread = append(unread, entry.Unread)
 		}
