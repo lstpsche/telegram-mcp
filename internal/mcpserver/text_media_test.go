@@ -103,6 +103,7 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 				search bool
 			}{
 				{"search_messages", map[string]any{"peer": base.peer.String(), "query": "synthetic"}, true},
+				{"search_messages", map[string]any{"searches": []any{map[string]any{"peer": base.peer.String(), "query": "synthetic"}, map[string]any{"scope": scope.ID.String(), "pinned_only": true}}}, true},
 				{"search_messages", map[string]any{"peer": base.peer.String(), "pinned_only": true}, true},
 				{"search_messages", map[string]any{"scope": scope.ID.String(), "pinned_only": true}, true},
 				{"search_messages", map[string]any{"peer": base.peer.String(), "unread_mentions_only": true}, true},

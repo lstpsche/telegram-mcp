@@ -161,61 +161,46 @@ func (s *Service) CatchUp(ctx context.Context, requestID string, scopeID model.S
 	return s.searchScope(ctx, requestID, scopeID, model.SearchFilter{}, limit, token, &window, "")
 }
 
-func (s *Service) searchScope(ctx context.Context, requestID string, scopeID model.ScopeID, filter model.SearchFilter, limit int, token string, window *model.DateWindow, checkpointToken string) (result Result, resultErr error) {
+func (s *Service) searchScope(ctx context.Context, requestID string, scopeID model.ScopeID, filter model.SearchFilter, limit int, token string, window *model.DateWindow, checkpointToken string) (Result, error) {
+	if _, err := model.ParseScopeID(scopeID.String()); err != nil || model.ValidatePageSize(limit) != nil || len(token) > 4096 {
+		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+	}
+	operation := "search_messages"
+	if window != nil {
+		operation = "catch_up"
+	}
+	return s.completeSearch(ctx, requestID, operation, func(ctx context.Context, lease *policy.Lease) (searchPage, error) {
+		return s.searchScopePage(ctx, lease, scopeID, filter, limit, token, window, checkpointToken, policy.MaximumScopePeers)
+	})
+}
+
+func (s *Service) searchScopePage(ctx context.Context, lease *policy.Lease, scopeID model.ScopeID, filter model.SearchFilter, limit int, token string, window *model.DateWindow, checkpointToken string, maxLookups int) (searchPage, error) {
 	operation := "search_messages"
 	if window != nil {
 		operation = "catch_up"
 	}
 
-	if _, err := model.ParseScopeID(scopeID.String()); err != nil || model.ValidatePageSize(limit) != nil || len(token) > 4096 {
-		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
-	}
-	if !s.Ready() {
-		return Result{}, model.TextError(model.ErrorNotReady, nil)
-	}
-	ctx, cancel := context.WithTimeout(ctx, OperationTimeout)
-	defer cancel()
-	lease, err := s.policy.Acquire(ctx)
-	if err != nil {
-		return Result{}, err
-	}
-	count := 0
 	releaseContext := ctx
-	var grants []policy.Grant
 	var cursor scopeSearchCursor
-	beforeRelease := func() error {
-		if err := s.checkGrantsCurrent(releaseContext, grants); err != nil {
-			return err
-		}
-		if cursor.Expires <= s.now().Unix() {
-			return model.TextError(model.ErrorCursorExpired, nil)
-		}
-		return nil
-	}
-	defer func() {
-		resultErr = s.finish(ctx, lease, requestID, operation, count, false, resultErr, beforeRelease)
-		if resultErr != nil {
-			result = Result{}
-		}
-	}()
+
 	grants, coverage, err := s.selectGrants(ctx, lease, []model.ScopeID{scopeID})
 	if err != nil {
-		return Result{}, err
+		return searchPage{}, err
 	}
 	epoch, revision, err := lease.Binding(ctx)
 	if err != nil {
-		return Result{}, err
+		return searchPage{}, err
 	}
 	binding := scopeCursorBinding{Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Operation: operation, Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	var checkpointExpiry int64
 	if checkpointToken != "" {
 		checkpoint, err := s.decodeCatchUpCheckpoint(checkpointToken, binding)
 		if err != nil {
-			return Result{}, err
+			return searchPage{}, err
 		}
 		window.Since = checkpoint.Until
 		if err := window.Validate(); err != nil {
-			return Result{}, err
+			return searchPage{}, err
 		}
 		checkpointExpiry = checkpoint.Expires
 	}
@@ -244,14 +229,14 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 	if token != "" {
 		cursor, err = s.decodeScopeCursor(token, binding)
 		if err != nil {
-			return Result{}, err
+			return searchPage{}, err
 		}
 		if cursor.Index >= len(grants) || cursor.Expires > deadline.Unix() {
-			return Result{}, model.TextError(model.ErrorCursorInvalid, nil)
+			return searchPage{}, model.TextError(model.ErrorCursorInvalid, nil)
 		}
 		grant := grants[cursor.Index]
 		if cursor.Ceiling > grant.MaxID || cursor.Ceiling < grant.MinID || (cursor.Before != 0 && cursor.Before <= grant.MinID) {
-			return Result{}, model.TextError(model.ErrorCursorInvalid, nil)
+			return searchPage{}, model.TextError(model.ErrorCursorInvalid, nil)
 		}
 	}
 	ctx, stop := context.WithTimeout(ctx, time.Unix(cursor.Expires, 0).Sub(s.now()))
@@ -259,20 +244,20 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 	items := make([]model.SearchHit, 0)
 	remaining := limit
 	partial := coverage.ExcludedPeers > 0
-	for cursor.Index < len(grants) && remaining > 0 {
+	for cursor.Index < len(grants) && remaining > 0 && coverage.QueriedPeers < maxLookups {
 		if err := s.checkGrantsCurrent(ctx, grants); err != nil {
-			return Result{}, err
+			return searchPage{}, err
 		}
 		grant := grants[cursor.Index]
 		search := model.SearchQuery{Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Window: window, Peer: grant.Peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: remaining}
 		candidates, err := s.backend.Search(ctx, search)
 		if err != nil {
-			return Result{}, err
+			return searchPage{}, err
 		}
 		coverage.QueriedPeers++
 		normalized, err := s.normalizeSearchWindow(grant, search, candidates, mediaAuthority{epoch, revision})
 		if err != nil {
-			return Result{}, err
+			return searchPage{}, err
 		}
 		items = append(items, normalized.items...)
 		if coverage.CatchUp != nil {
@@ -300,10 +285,10 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 		}
 	}
 	if err := s.checkGrantsCurrent(ctx, grants); err != nil {
-		return Result{}, err
+		return searchPage{}, err
 	}
 	if cursor.Expires <= s.now().Unix() {
-		return Result{}, model.TextError(model.ErrorCursorExpired, nil)
+		return searchPage{}, model.TextError(model.ErrorCursorExpired, nil)
 	}
 	coverage.CompletedPeers = cursor.Index
 	if coverage.CatchUp != nil {
@@ -320,7 +305,7 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 	if cursor.Index < len(grants) {
 		encoded, err := s.encodeScopeCursor(cursor)
 		if err != nil {
-			return Result{}, err
+			return searchPage{}, err
 		}
 		next = &encoded
 		partial = true
@@ -332,13 +317,16 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 		}
 		coverage.CatchUp.Checkpoint, err = s.encodeCatchUpCheckpoint(catchUpCheckpoint{Scope: scopeID, MembersDigest: binding.MembersDigest, Epoch: epoch, Revision: revision, Until: window.Until, Expires: expires.Unix()})
 		if err != nil {
-			return Result{}, err
+			return searchPage{}, err
 		}
 	}
-	result, err = prepare(requestID, items, s.now(), partial, model.NoReadEffect(), next, coverage)
-	if err != nil {
-		return Result{}, err
-	}
-	count = len(items)
-	return result, nil
+	return searchPage{items: items, partial: partial, next: next, coverage: coverage, lookups: coverage.QueriedPeers, check: func() error {
+		if err := s.checkGrantsCurrent(releaseContext, grants); err != nil {
+			return err
+		}
+		if cursor.Expires <= s.now().Unix() {
+			return model.TextError(model.ErrorCursorExpired, nil)
+		}
+		return nil
+	}}, nil
 }

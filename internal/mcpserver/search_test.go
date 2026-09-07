@@ -221,3 +221,18 @@ func TestUnconfiguredSearchToolsRemainUnavailable(t *testing.T) {
 		}
 	}
 }
+
+func TestBatchSearchRejectsInvalidNestedRequests(t *testing.T) {
+	for _, input := range []string{
+		`{"searches":[{"peer":"tgpeer:v1:chat:42","query":"q","query":"other"}]}`,
+		`{"searches":[{"peer":"tgpeer:v1:chat:42","query":"q","unexpected":true}]}`,
+		`{"searches":[{"peer":"tgpeer:v1:chat:42","query":"q","cursor":null}]}`,
+		`{"searches":[]}`,
+		`{"searches":[{"peer":"tgpeer:v1:chat:42","query":"q"}],"peer":"tgpeer:v1:chat:42"}`,
+	} {
+		_, err := callSearch(context.Background(), nil, "req_nested", json.RawMessage(input))
+		if model.TextErrorCategory(err) != model.ErrorInvalidInput {
+			t.Fatal("invalid nested request accepted", err)
+		}
+	}
+}

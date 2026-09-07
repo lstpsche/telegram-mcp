@@ -366,3 +366,14 @@ substring matching over authorized titles. Candidate limits and original
 continuation positions remain unchanged after filtering. Dialog/topic cursors
 bind a keyed normalized-query digest; an absent query preserves prior encoding.
 See [discovery search](discovery-search.md).
+
+## Batch search
+
+`search_messages` also accepts `{ "searches": [...] }` with 1–10 ordinary
+search requests. Limits sum to at most 100; omitted limits are 20. The entire
+batch shares one policy lease, a 20-second deadline, at most 20 peer lookups,
+and the existing combined response budget. `items` deduplicates exact message
+IDs in first-seen order; `searches` associates each input with IDs, `partial`,
+`next_cursor`, and optional scope coverage. Top-level `next_cursor` is null.
+All entries must succeed, and inconsistent observations withhold the result.
+No history receipt or mention clearing occurs. See [batch search](batch-search.md).

@@ -11,7 +11,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/policy"
 )
 
-func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerID, filter model.SearchFilter, limit int, token string) (result Result, resultErr error) {
+func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerID, filter model.SearchFilter, limit int, token string) (Result, error) {
 	filter, err := filter.Normalize()
 	if err != nil {
 		return Result{}, err
@@ -19,46 +19,27 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if filter.CheckReplyPeer(peer) != nil || (filter.HasSavedFilter() && peer.Kind() != model.PeerKindSelf) || peer.String() == "" || model.ValidatePageSize(limit) != nil || len(token) > 4096 {
 		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
 	}
-	if !s.Ready() {
-		return Result{}, model.TextError(model.ErrorNotReady, nil)
-	}
-	ctx, cancel := context.WithTimeout(ctx, OperationTimeout)
-	defer cancel()
-	lease, err := s.policy.Acquire(ctx)
-	if err != nil {
-		return Result{}, err
-	}
-	count := 0
-	releaseContext := ctx
-	var grant policy.Grant
+	return s.completeSearch(ctx, requestID, "search_messages", func(ctx context.Context, lease *policy.Lease) (searchPage, error) {
+		return s.searchPeer(ctx, lease, peer, filter, limit, token)
+	})
+}
+
+func (s *Service) searchPeer(ctx context.Context, lease *policy.Lease, peer model.PeerID, filter model.SearchFilter, limit int, token string) (searchPage, error) {
 	var cursor searchCursor
-	beforeRelease := func() error {
-		if err := s.checkGrantsCurrent(releaseContext, []policy.Grant{grant}); err != nil {
-			return err
-		}
-		if cursor.Expires <= s.now().Unix() {
-			return model.TextError(model.ErrorCursorExpired, nil)
-		}
-		return nil
-	}
-	defer func() {
-		resultErr = s.finish(ctx, lease, requestID, "search_messages", count, false, resultErr, beforeRelease)
-		if resultErr != nil {
-			result = Result{}
-		}
-	}()
-	grant, err = lease.Grant(ctx, peer)
+	releaseContext := ctx
+
+	grant, err := lease.Grant(ctx, peer)
 	if err != nil {
-		return Result{}, err
+		return searchPage{}, err
 	}
 	if grant.Profile == policy.ProfileSelfAuthored && grant.Author != s.backend.SelfID() {
-		return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
+		return searchPage{}, model.TextError(model.ErrorPolicyDenied, nil)
 	}
 	ctx, expires := context.WithTimeout(ctx, grant.Deadline(s.now().Add(OperationTimeout)).Sub(s.now()))
 	defer expires()
 	epoch, revision, err := lease.Binding(ctx)
 	if err != nil {
-		return Result{}, err
+		return searchPage{}, err
 	}
 	binding := cursorBinding{ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTagDigest: s.savedTagDigest(filter.SavedTag), Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	deadline := s.now().Add(cursorLifetime)
@@ -67,10 +48,10 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if token != "" {
 		cursor, err = s.decodeCursor(token, binding)
 		if err != nil {
-			return Result{}, err
+			return searchPage{}, err
 		}
 		if cursor.Before <= grant.MinID || cursor.Ceiling > grant.MaxID || cursor.Expires > grant.Deadline(s.now().Add(cursorLifetime)).Unix() {
-			return Result{}, model.TextError(model.ErrorCursorInvalid, nil)
+			return searchPage{}, model.TextError(model.ErrorCursorInvalid, nil)
 		}
 	}
 	ctx, stopCursor := context.WithTimeout(ctx, time.Unix(cursor.Expires, 0).Sub(s.now()))
@@ -78,24 +59,24 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	query := model.SearchQuery{ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTag: filter.SavedTag, Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
 	candidates, err := s.backend.Search(ctx, query)
 	if err != nil {
-		return Result{}, err
+		return searchPage{}, err
 	}
 	window, err := s.normalizeSearchWindow(grant, query, candidates, mediaAuthority{epoch, revision})
 	if err != nil {
-		return Result{}, err
+		return searchPage{}, err
 	}
 	items, lowest, highest, partial := window.items, window.lowest, window.highest, window.partial
 	if err := grant.CheckCurrent(s.now()); err != nil {
-		return Result{}, err
+		return searchPage{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return Result{}, err
+		return searchPage{}, err
 	}
 	if !s.Ready() {
-		return Result{}, model.TextError(model.ErrorFreshnessDegraded, nil)
+		return searchPage{}, model.TextError(model.ErrorFreshnessDegraded, nil)
 	}
 	if cursor.Expires <= s.now().Unix() {
-		return Result{}, model.TextError(model.ErrorCursorExpired, nil)
+		return searchPage{}, model.TextError(model.ErrorCursorExpired, nil)
 	}
 	var next *string
 	if len(candidates) == limit && lowest > grant.MinID && !window.exhausted {
@@ -105,16 +86,19 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 		cursor.Before = lowest
 		encoded, err := s.encodeCursor(cursor)
 		if err != nil {
-			return Result{}, err
+			return searchPage{}, err
 		}
 		next = &encoded
 	}
-	result, err = prepare(requestID, items, s.now(), partial, model.NoReadEffect(), next, nil)
-	if err != nil {
-		return Result{}, err
-	}
-	count = len(items)
-	return result, nil
+	return searchPage{items: items, partial: partial, next: next, lookups: 1, check: func() error {
+		if err := s.checkGrantsCurrent(releaseContext, []policy.Grant{grant}); err != nil {
+			return err
+		}
+		if cursor.Expires <= s.now().Unix() {
+			return model.TextError(model.ErrorCursorExpired, nil)
+		}
+		return nil
+	}}, nil
 }
 
 type searchWindow struct {

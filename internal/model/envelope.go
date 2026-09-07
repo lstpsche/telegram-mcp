@@ -184,17 +184,18 @@ func (c ScopeCoverage) Validate() error {
 
 // Envelope is the shared v1 output shape for successful MCP results.
 type Envelope[T any] struct {
-	Contexts         []MessageContext `json:"contexts,omitempty"`
-	SchemaVersion    string           `json:"schema_version"`
-	Scope            *ScopeCoverage   `json:"scope,omitempty"`
-	RequestID        string           `json:"request_id"`
-	Freshness        Freshness        `json:"freshness"`
-	Partial          bool             `json:"partial"`
-	ReadEffect       ReadEffect       `json:"read_effect"`
-	Items            []T              `json:"items"`
-	NextCursor       *string          `json:"next_cursor"`
-	Warnings         []WarningCode    `json:"warnings"`
-	UntrustedContent bool             `json:"untrusted_content"`
+	Searches         []SearchAssociation `json:"searches,omitempty"`
+	Contexts         []MessageContext    `json:"contexts,omitempty"`
+	SchemaVersion    string              `json:"schema_version"`
+	Scope            *ScopeCoverage      `json:"scope,omitempty"`
+	RequestID        string              `json:"request_id"`
+	Freshness        Freshness           `json:"freshness"`
+	Partial          bool                `json:"partial"`
+	ReadEffect       ReadEffect          `json:"read_effect"`
+	Items            []T                 `json:"items"`
+	NextCursor       *string             `json:"next_cursor"`
+	Warnings         []WarningCode       `json:"warnings"`
+	UntrustedContent bool                `json:"untrusted_content"`
 }
 
 func NewEnvelope[T any](requestID string, freshness Freshness, items []T) (Envelope[T], error) {
@@ -220,6 +221,35 @@ func NewEnvelope[T any](requestID string, freshness Freshness, items []T) (Envel
 }
 
 func (e Envelope[T]) Validate() error {
+	if len(e.Searches) > 0 {
+		if len(e.Searches) > MaximumSearchRequests || len(e.Contexts) > 0 || e.NextCursor != nil || e.Scope != nil || e.ReadEffect.Kind != NoReadEffect().Kind {
+			return errors.New("invalid batch search envelope")
+		}
+		for _, search := range e.Searches {
+			if search.Messages == nil || len(search.Messages) > MaximumPageSize {
+				return errors.New("invalid search association")
+			}
+			seen := map[MessageID]bool{}
+			for _, id := range search.Messages {
+				if !id.valid() || seen[id] {
+					return errors.New("invalid search reference")
+				}
+				seen[id] = true
+			}
+			if search.NextCursor != nil && (len(*search.NextCursor) > 4096 || !cursorPattern.MatchString(*search.NextCursor)) {
+				return errors.New("invalid search cursor")
+			}
+			if search.Scope != nil {
+				if err := search.Scope.Validate(); err != nil {
+					return err
+				}
+				if search.Scope.CatchUp != nil {
+					return errors.New("invalid search coverage")
+				}
+			}
+		}
+	}
+
 	if len(e.Contexts) > 0 {
 		if len(e.Contexts) > MaximumContextTargets || len(e.ReadEffect.ThroughMessageIDs) == 0 {
 			return errors.New("invalid batch context envelope")
