@@ -150,7 +150,7 @@ func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID mod
 	if err != nil {
 		return Result{}, err
 	}
-	return s.searchScope(ctx, requestID, scopeID, filter, limit, token, nil)
+	return s.searchScope(ctx, requestID, scopeID, filter, limit, token, nil, "")
 }
 
 // CatchUp discovers bounded snippets in an explicit window without read receipts.
@@ -158,10 +158,10 @@ func (s *Service) CatchUp(ctx context.Context, requestID string, scopeID model.S
 	if err := window.Validate(); err != nil {
 		return Result{}, err
 	}
-	return s.searchScope(ctx, requestID, scopeID, model.SearchFilter{}, limit, token, &window)
+	return s.searchScope(ctx, requestID, scopeID, model.SearchFilter{}, limit, token, &window, "")
 }
 
-func (s *Service) searchScope(ctx context.Context, requestID string, scopeID model.ScopeID, filter model.SearchFilter, limit int, token string, window *model.DateWindow) (result Result, resultErr error) {
+func (s *Service) searchScope(ctx context.Context, requestID string, scopeID model.ScopeID, filter model.SearchFilter, limit int, token string, window *model.DateWindow, checkpointToken string) (result Result, resultErr error) {
 	operation := "search_messages"
 	if window != nil {
 		operation = "catch_up"
@@ -207,6 +207,18 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 		return Result{}, err
 	}
 	binding := scopeCursorBinding{Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Operation: operation, Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
+	var checkpointExpiry int64
+	if checkpointToken != "" {
+		checkpoint, err := s.decodeCatchUpCheckpoint(checkpointToken, binding)
+		if err != nil {
+			return Result{}, err
+		}
+		window.Since = checkpoint.Until
+		if err := window.Validate(); err != nil {
+			return Result{}, err
+		}
+		checkpointExpiry = checkpoint.Expires
+	}
 	if window != nil {
 		binding.Since, binding.Until = window.Since, window.Until
 		coverage.CatchUp = &model.CatchUpCoverage{
@@ -219,6 +231,9 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 		}
 	}
 	deadline := s.now().Add(cursorLifetime)
+	if checkpointExpiry != 0 && checkpointExpiry < deadline.Unix() {
+		deadline = time.Unix(checkpointExpiry, 0)
+	}
 	for _, grant := range grants {
 		deadline = grant.Deadline(deadline)
 	}
@@ -309,6 +324,16 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 		}
 		next = &encoded
 		partial = true
+	}
+	if window != nil && next == nil && window.Until <= s.now().Unix() {
+		expires := s.now().Add(catchUpCheckpointLifetime)
+		for _, grant := range grants {
+			expires = grant.Deadline(expires)
+		}
+		coverage.CatchUp.Checkpoint, err = s.encodeCatchUpCheckpoint(catchUpCheckpoint{Scope: scopeID, MembersDigest: binding.MembersDigest, Epoch: epoch, Revision: revision, Until: window.Until, Expires: expires.Unix()})
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	result, err = prepare(requestID, items, s.now(), partial, model.NoReadEffect(), next, coverage)
 	if err != nil {

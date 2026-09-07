@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -130,6 +131,14 @@ func TestAgentDiscoversScopeSearchesTwoPeersAndOpensExactContext(t *testing.T) {
 				if err := schemas[name].Validate(page); err != nil {
 					t.Fatal(err)
 				}
+				expected, err := json.Marshal(page)
+				if err != nil {
+					t.Fatal(err)
+				}
+				actual, err := json.Marshal(result.StructuredContent)
+				if err != nil || !bytes.Equal(expected, actual) {
+					t.Fatal("structured and text metadata differ", err)
+				}
 				return page
 			}
 			discovered := call("list_scopes", map[string]any{})["items"].([]any)[0].(map[string]any)
@@ -153,6 +162,21 @@ func TestAgentDiscoversScopeSearchesTwoPeersAndOpensExactContext(t *testing.T) {
 				coverage := terminal["scope"].(map[string]any)
 				if terminal["next_cursor"] != nil || coverage["completed_peers"] != float64(2) {
 					t.Fatal("catch-up did not finish")
+				}
+				checkpoint := coverage["catch_up"].(map[string]any)["checkpoint"].(string)
+				resumed := call("catch_up", map[string]any{"scope": scope.ID.String(), "checkpoint": checkpoint, "until": "2026-09-05T12:00:02Z"})
+				if len(resumed["items"].([]any)) != 0 || resumed["next_cursor"] != nil || resumed["scope"].(map[string]any)["catch_up"].(map[string]any)["since"] != "2026-09-05T12:00:01Z" {
+					t.Fatal("checkpoint resume lost over stdio")
+				}
+				for _, bad := range []map[string]any{
+					{"scope": scope.ID.String(), "since": "2026-09-05T12:00:00Z", "checkpoint": checkpoint, "until": "2026-09-05T12:00:02Z"},
+					{"scope": scope.ID.String(), "checkpoint": nil, "until": "2026-09-05T12:00:02Z"},
+					{"scope": scope.ID.String(), "checkpoint": "", "until": "2026-09-05T12:00:02Z"},
+				} {
+					invalid, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "catch_up", Arguments: bad})
+					if err != nil || !invalid.IsError {
+						t.Fatal("invalid checkpoint input accepted")
+					}
 				}
 				for _, peer := range coverage["catch_up"].(map[string]any)["peers"].([]any) {
 					if peer.(map[string]any)["state"] != "complete" {

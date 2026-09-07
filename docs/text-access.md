@@ -349,3 +349,7 @@ reauthorizes its target, including any edits or deletion.
 
 Original voice notes require Full read or `--allow-voice-notes`; see
 [voice access](voice-access.md) for audio limits and receipt semantics.
+
+Completed past catch-up windows return a signed client-held checkpoint. Use it
+instead of `since` with the next explicit `until`; see
+[incremental catch-up](incremental-catch-up.md).

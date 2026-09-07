@@ -598,3 +598,11 @@ Grouping does not authorize members: each passes existing grant/content/media
 checks. Only requested neighbors and authorized matching members enter the final
 context and receipt boundary. Coverage remains explicitly bounded, with no count
 or reference for withheld members. Shared batch preparation and release guards apply.
+
+Catch-up completion checkpoints use a separate HMAC domain and canonical bounded
+encoding. They bind scope, eligible membership, epoch, revision, completed date
+boundary and expiry. Reauthorization precedes fetching; an input checkpoint also
+caps the request deadline. A checkpoint is issued only on complete non-future
+windows and is released only after required audit and final validity checks.
+No persistent bookmark or message index is added. Ordinary page cursors and
+completion checkpoints cannot be substituted for one another.

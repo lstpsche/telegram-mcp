@@ -270,6 +270,7 @@ Read the [threat model](docs/threat-model.md) for the security boundaries. Exist
 | [Installation and diagnostics](docs/installation.md) | Platform setup, service start/stop/restart, upgrades, `doctor`, client reconnection |
 | [Authentication](docs/authentication.md) | Production and Test DC, phone/QR login, 2FA, logout and recovery |
 | [Message access](docs/text-access.md) | Restricted grants, Full read access, named scopes and read receipts |
+| [Incremental catch-up](docs/incremental-catch-up.md) | Resume completed scope windows using client-held checkpoints |
 | [Folder scopes](docs/folder-scopes.md) | Import Telegram folder membership into local scopes |
 | [Image access](docs/image-access.md) | Supported images, permissions and delivery limits |
 | [Metadata maintenance](docs/metadata-maintenance.md) | Settings backup/restore and audit retention; backups exclude credentials and do not restore access authority |

@@ -50,9 +50,10 @@ type CatchUpPeer struct {
 }
 
 type CatchUpCoverage struct {
-	Since string        `json:"since"`
-	Until string        `json:"until"`
-	Peers []CatchUpPeer `json:"peers"`
+	Checkpoint string        `json:"checkpoint,omitempty"`
+	Since      string        `json:"since"`
+	Until      string        `json:"until"`
+	Peers      []CatchUpPeer `json:"peers"`
 }
 
 // ParseSearchDate accepts explicit whole-second timestamps in Telegram's range.

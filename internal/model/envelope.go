@@ -153,6 +153,9 @@ func (c ScopeCoverage) Validate() error {
 		return errors.New("invalid scope coverage")
 	}
 	if c.CatchUp != nil {
+		if token := c.CatchUp.Checkpoint; token != "" && (c.CompletedPeers != c.EligiblePeers || len(token) > maximumCursorLength || !strings.HasPrefix(token, "cu1.") || !cursorPattern.MatchString(token)) {
+			return errors.New("invalid catch-up checkpoint coverage")
+		}
 		if _, err := ParseDateWindow(c.CatchUp.Since, c.CatchUp.Until); err != nil || c.CatchUp.Peers == nil || len(c.CatchUp.Peers) != c.EligiblePeers {
 			return errors.New("invalid catch-up coverage")
 		}
@@ -242,6 +245,9 @@ func (e Envelope[T]) Validate() error {
 		}
 	}
 	if e.Scope != nil {
+		if e.Scope.CatchUp != nil && e.Scope.CatchUp.Checkpoint != "" && e.NextCursor != nil {
+			return errors.New("unfinished catch-up cannot issue a checkpoint")
+		}
 		if err := e.Scope.Validate(); err != nil {
 			return err
 		}
