@@ -44,7 +44,7 @@ On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsch
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcp install --version 1.1.0 --setup
+telegram-mcp install --version 1.2.0 --setup
 ```
 
 The second command creates a private per-user installation and starts setup.
@@ -58,14 +58,14 @@ Download and inspect the script before running it if desired.
 
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
-  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v1.1.0/install.sh
+  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v1.2.0/install.sh
 sh install.sh
 ```
 
 **Windows PowerShell, without elevation**
 
 ```powershell
-Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v1.1.0/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v1.2.0/install.ps1 -OutFile install.ps1
 .\install.ps1
 ```
 
@@ -74,7 +74,7 @@ checksums. Downloads and checksums come from GitHub Releases; they establish
 integrity, not independent publisher identity. Credentials stay in your local
 interactive console.
 
-For manual installation, download an archive from [v1.1.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v1.1.0).
+For manual installation, download an archive from [v1.2.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v1.2.0).
 Archives support macOS, Linux and Windows on amd64 and arm64, and contain
 `telegram-mcp`, `telegram-mcpd`, documentation and checksums. Extract into a new
 private directory and follow the [platform instructions](docs/installation.md).
@@ -187,9 +187,11 @@ adopting an existing manual installation.
 
 ## Tools
 
-PDF/plain-text attachment support is available from v0.4.0. See [document access](docs/document-access.md).
-
-Version 0.5.0 added [forum topics](docs/topic-access.md) and [original voice notes](docs/voice-access.md). Voice delivery provides audio, without transcription.
+Version 1.2.0 adds unread mentions, batch search, attachment filename search,
+rich message formatting, message refresh with edit awareness, and Markdown, CSV
+and JSON attachment delivery. See [search](docs/media-search.md),
+[formatting](docs/message-formatting.md), [refresh](docs/message-refresh.md)
+and [document access](docs/document-access.md).
 
 | Tool | Purpose |
 | --- | --- |
