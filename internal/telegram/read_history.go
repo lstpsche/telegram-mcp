@@ -349,6 +349,12 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 						return model.Candidate{}, err
 					}
 					candidate.Message.ReplyTo = &parent
+					root, err := normalizeThreadRoot(peer, reply, isBroadcast)
+					if err != nil {
+						candidate.Unsupported = true
+					} else {
+						candidate.Message.ThreadRoot = root
+					}
 				}
 			}
 		}
@@ -440,6 +446,16 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 				return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
 			}
 		}
+		if replies, present := message.GetReplies(); present && replies.Comments {
+			if !isBroadcast || replies.ChannelID <= 0 || replies.ChannelID == peer.TelegramID() {
+				return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
+			}
+			linked, err := model.NewPeerID(model.PeerKindChannel, replies.ChannelID)
+			if err != nil {
+				return model.Candidate{}, err
+			}
+			candidate.Message.DiscussionPeer = linked.String()
+		}
 		candidate.Message.Pinned = message.Pinned
 		candidate.Message.LinkPreview = preview
 		candidate.Message.Poll = poll
@@ -452,6 +468,7 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 	} else {
 		candidate.Message.ChannelPost = nil
 		candidate.Message.ReplyTo = nil
+		candidate.Message.ThreadRoot = nil
 	}
 	return candidate, nil
 }

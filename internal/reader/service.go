@@ -139,6 +139,9 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 	if err := model.ValidatePageSize(query.Limit); err != nil {
 		return Result{}, model.TextError(model.ErrorInvalidInput, err)
 	}
+	if query.ResolveDiscussion && (query.Target == 0 || query.Peer.Kind() != model.PeerKindChannel || query.Peer.TopicID() != 0) {
+		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+	}
 	if query.ReplyDepth < 0 || query.ReplyDepth > 5 || (query.ReplyDepth > 0 && query.Target == 0) || query.Limit+query.ReplyDepth > model.MaximumPageSize {
 		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
 	}
@@ -170,6 +173,15 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 			result = Result{}
 		}
 	}()
+	if query.ResolveDiscussion {
+		full, err := lease.FullRead(ctx)
+		if err != nil {
+			return Result{}, err
+		}
+		if !full {
+			return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
+		}
+	}
 	grant, err = lease.Grant(ctx, query.Peer)
 	if err != nil {
 		return Result{}, err
@@ -264,6 +276,17 @@ func (s *Service) Messages(ctx context.Context, requestID string, query model.Hi
 		for _, item := range items {
 			if item.ReplyChain != nil && item.ReplyChain.State != "complete" {
 				partial = true
+			}
+		}
+	}
+
+	if query.ResolveDiscussion {
+		for i := range items {
+			if items[i].ID.TelegramID() == query.Target {
+				items[i].DiscussionRoot, err = s.resolveDiscussion(ctx, lease, grant, items[i])
+				if err != nil {
+					return Result{}, err
+				}
 			}
 		}
 	}

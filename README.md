@@ -38,7 +38,7 @@ On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsch
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcp install --version 0.7.0 --setup
+telegram-mcp install --version 0.8.0 --setup
 ```
 
 The second command creates a private per-user installation and starts setup.
@@ -52,14 +52,14 @@ Download and inspect the script before running it if desired.
 
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
-  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.7.0/install.sh
+  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v0.8.0/install.sh
 sh install.sh
 ```
 
 **Windows PowerShell, without elevation**
 
 ```powershell
-Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.7.0/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v0.8.0/install.ps1 -OutFile install.ps1
 .\install.ps1
 ```
 
@@ -68,7 +68,7 @@ checksums. Downloads and checksums come from GitHub Releases; they establish
 integrity, not independent publisher identity. Credentials stay in your local
 interactive console.
 
-For manual installation, download an archive from [v0.7.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.7.0).
+For manual installation, download an archive from [v0.8.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v0.8.0).
 Archives support macOS, Linux and Windows on amd64 and arm64, and contain
 `telegram-mcp`, `telegram-mcpd`, documentation and checksums. Extract into a new
 private directory and follow the [platform instructions](docs/installation.md).
@@ -215,6 +215,9 @@ them. See [forwarded messages](docs/forwarded-messages.md).
 Version 0.6.0 supports joined broadcast channels; see [channel access](docs/channel-access.md). Secret Chats and anonymous/channel authors in groups remain excluded. Bot-authored messages in supported conversations are included under the same access rules. Imported, quoted, protected, expiring, and unsupported media content is also filtered. A supported conversation can therefore contain messages that the server will not return.
 
 Version 0.6.0 adds [reply references and bounded parent context](docs/reply-context.md). Use `reply_depth` on `get_message_context` to follow authorized parents.
+Use `reply_to` or `thread_root` on `search_messages` to explore replies. Full read
+also supports `resolve_discussion` on channel-post context to navigate into a
+joined discussion group; see [reply and discussion exploration](docs/reply-context.md).
 
 Supported [media album members](docs/media-albums.md) share an `album_id` from 0.6.0, preserving grouping across pages while keeping captions on their original messages.
 

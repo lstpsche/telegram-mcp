@@ -302,6 +302,10 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 		attribution := *candidate.Message.Forward
 		candidate.Message.Forward = &attribution
 	}
+	if candidate.Message.ThreadRoot != nil {
+		root := *candidate.Message.ThreadRoot
+		candidate.Message.ThreadRoot = &root
+	}
 	if candidate.Message.ReplyTo != nil {
 		parent := *candidate.Message.ReplyTo
 		candidate.Message.ReplyTo = &parent
@@ -415,5 +419,5 @@ func sameReply(a, b *model.MessageID) bool {
 
 func sameMediaAttribution(a, b model.Message) bool {
 	return a.AlbumID == b.AlbumID && a.Author == b.Author && a.Date == b.Date &&
-		model.SameForward(a.Forward, b.Forward) && sameChannelPost(a.ChannelPost, b.ChannelPost) && sameReply(a.ReplyTo, b.ReplyTo)
+		model.SameForward(a.Forward, b.Forward) && sameChannelPost(a.ChannelPost, b.ChannelPost) && sameReply(a.ReplyTo, b.ReplyTo) && sameReply(a.ThreadRoot, b.ThreadRoot) && a.DiscussionPeer == b.DiscussionPeer
 }

@@ -15,7 +15,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if err != nil {
 		return Result{}, err
 	}
-	if (filter.HasSavedFilter() && peer.Kind() != model.PeerKindSelf) || peer.String() == "" || model.ValidatePageSize(limit) != nil || len(token) > 4096 {
+	if filter.CheckReplyPeer(peer) != nil || (filter.HasSavedFilter() && peer.Kind() != model.PeerKindSelf) || peer.String() == "" || model.ValidatePageSize(limit) != nil || len(token) > 4096 {
 		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
 	}
 	if !s.Ready() {
@@ -59,7 +59,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if err != nil {
 		return Result{}, err
 	}
-	binding := cursorBinding{SavedPeer: filter.SavedPeer, SavedTagDigest: s.savedTagDigest(filter.SavedTag), Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
+	binding := cursorBinding{ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTagDigest: s.savedTagDigest(filter.SavedTag), Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	deadline := s.now().Add(cursorLifetime)
 	deadline = grant.Deadline(deadline)
 	cursor = searchCursor{Binding: binding, Ceiling: grant.MaxID, Expires: deadline.Unix()}
@@ -74,7 +74,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	}
 	ctx, stopCursor := context.WithTimeout(ctx, time.Unix(cursor.Expires, 0).Sub(s.now()))
 	defer stopCursor()
-	query := model.SearchQuery{SavedPeer: filter.SavedPeer, SavedTag: filter.SavedTag, Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
+	query := model.SearchQuery{ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTag: filter.SavedTag, Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
 	candidates, err := s.backend.Search(ctx, query)
 	if err != nil {
 		return Result{}, err
@@ -171,6 +171,10 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 				return searchWindow{}, err
 			}
 		}
+		if (query.ReplyTo != "" && (message.ReplyTo == nil || message.ReplyTo.String() != query.ReplyTo)) || (query.ThreadRoot != "" && (message.ThreadRoot == nil || message.ThreadRoot.String() != query.ThreadRoot)) {
+			partial = true
+			continue
+		}
 		if query.PinnedOnly && !message.Pinned {
 			partial = true
 			continue
@@ -220,7 +224,7 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		if err != nil {
 			return searchWindow{}, err
 		}
-		hit := model.SearchHit{SavedPeer: message.SavedPeer, Pinned: message.Pinned, Reactions: message.Reactions, HasLinkPreview: message.LinkPreview != nil, HasPoll: message.Poll != nil, AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated}
+		hit := model.SearchHit{DiscussionPeer: message.DiscussionPeer, ThreadRoot: message.ThreadRoot, SavedPeer: message.SavedPeer, Pinned: message.Pinned, Reactions: message.Reactions, HasLinkPreview: message.LinkPreview != nil, HasPoll: message.Poll != nil, AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated}
 		if !matchesSearchMedia(query.MediaType, hit) {
 			partial = true
 			continue

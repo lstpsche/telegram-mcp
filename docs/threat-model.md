@@ -447,6 +447,25 @@ freshness failures discard the result. Embedded quote content and cross-peer
 reply metadata remain excluded. Reply chains reuse existing receipt and output
 budgets, and media source checks also compare reply IDs. See [reply context](reply-context.md).
 
+Reply exploration adds exact-peer `reply_to` and `thread_root` search selectors,
+not grants. Both bind into signed search cursors and are checked against each
+policy-authorized candidate; filtered candidates still consume the page budget.
+Forum roots stay inside exact topic authority. Untrusted thread references are
+validated for peer and older-ID consistency before release; media revalidation
+also compares thread and discussion-peer attribution.
+
+Optional channel discussion resolution uses the existing context operation and
+requires Full read before source I/O because `messages.getDiscussionMessage`
+cannot restrict incidental returned messages by grant range or author. The source
+post passes current content policy; the destination must independently be a
+joined supported ordinary supergroup before mapping I/O. Returned mapping IDs
+must belong to that group and the root must identify the exact source post.
+The source link and eligibility are rechecked before preparing the response.
+Incidental bodies are neither delivered nor persisted. All failures discard the
+context response, and only the source history prefix receives an acknowledgment.
+No mapping grants destination body access or changes group membership. See
+[reply context](reply-context.md) for supported workflows and limitations.
+
 ## Album membership
 
 Album IDs bind grouping metadata to the exact containing peer/topic and preserve

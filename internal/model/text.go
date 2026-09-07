@@ -26,23 +26,26 @@ type ReplyChain struct {
 }
 
 type Message struct {
-	SavedPeer   string              `json:"saved_peer,omitempty"`
-	Pinned      bool                `json:"pinned,omitempty"`
-	Reactions   *Reactions          `json:"reactions,omitempty"`
-	LinkPreview *LinkPreview        `json:"link_preview,omitempty"`
-	Poll        *Poll               `json:"poll,omitempty"`
-	AlbumID     string              `json:"album_id,omitempty"`
-	ReplyTo     *MessageID          `json:"reply_to,omitempty"`
-	ReplyChain  *ReplyChain         `json:"reply_chain,omitempty"`
-	ChannelPost *ChannelPost        `json:"channel_post,omitempty"`
-	Forward     *Forward            `json:"forward,omitempty"`
-	Voice       *VoiceDescriptor    `json:"voice_note,omitempty"`
-	Document    *DocumentDescriptor `json:"document,omitempty"`
-	Image       *ImageDescriptor    `json:"image,omitempty"`
-	ID          MessageID           `json:"id"`
-	Author      PeerID              `json:"author"`
-	Date        string              `json:"date"`
-	Text        string              `json:"text"`
+	DiscussionRoot *MessageID          `json:"discussion_root,omitempty"`
+	ThreadRoot     *MessageID          `json:"thread_root,omitempty"`
+	DiscussionPeer string              `json:"discussion_peer,omitempty"`
+	SavedPeer      string              `json:"saved_peer,omitempty"`
+	Pinned         bool                `json:"pinned,omitempty"`
+	Reactions      *Reactions          `json:"reactions,omitempty"`
+	LinkPreview    *LinkPreview        `json:"link_preview,omitempty"`
+	Poll           *Poll               `json:"poll,omitempty"`
+	AlbumID        string              `json:"album_id,omitempty"`
+	ReplyTo        *MessageID          `json:"reply_to,omitempty"`
+	ReplyChain     *ReplyChain         `json:"reply_chain,omitempty"`
+	ChannelPost    *ChannelPost        `json:"channel_post,omitempty"`
+	Forward        *Forward            `json:"forward,omitempty"`
+	Voice          *VoiceDescriptor    `json:"voice_note,omitempty"`
+	Document       *DocumentDescriptor `json:"document,omitempty"`
+	Image          *ImageDescriptor    `json:"image,omitempty"`
+	ID             MessageID           `json:"id"`
+	Author         PeerID              `json:"author"`
+	Date           string              `json:"date"`
+	Text           string              `json:"text"`
 }
 
 // Candidate carries normalization evidence only inside the application.
@@ -64,15 +67,16 @@ type Candidate struct {
 // HistoryQuery uses inclusive grant bounds and exclusive Before selection.
 // Target selects context; BeforeCount/AfterCount count neighboring messages.
 type HistoryQuery struct {
-	Peer        PeerID
-	Before      int32
-	ReplyDepth  int
-	Target      int32
-	BeforeCount int
-	AfterCount  int
-	MinID       int32
-	MaxID       int32
-	Limit       int
+	ResolveDiscussion bool
+	Peer              PeerID
+	Before            int32
+	ReplyDepth        int
+	Target            int32
+	BeforeCount       int
+	AfterCount        int
+	MinID             int32
+	MaxID             int32
+	Limit             int
 }
 
 // OperationError preserves an internal cause while its text is content-free.
@@ -105,6 +109,7 @@ func TextErrorCategory(err error) ErrorCategory {
 
 // SearchQuery is adapter input. Query text is transient and must never be logged.
 type SearchQuery struct {
+	ReplyTo, ThreadRoot  string
 	SavedPeer            string
 	SavedTag             SavedTag
 	Sender               string
@@ -119,6 +124,8 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	ThreadRoot       *MessageID          `json:"thread_root,omitempty"`
+	DiscussionPeer   string              `json:"discussion_peer,omitempty"`
 	SavedPeer        string              `json:"saved_peer,omitempty"`
 	Pinned           bool                `json:"pinned,omitempty"`
 	Reactions        *Reactions          `json:"reactions,omitempty"`
@@ -147,13 +154,14 @@ type Unread struct {
 
 // SearchFilter narrows message discovery without granting content access.
 type SearchFilter struct {
-	SavedPeer    string
-	SavedTag     SavedTag
-	Sender       string
-	Since, Until int64
-	MediaType    SearchMediaType
-	Query        string
-	PinnedOnly   bool
+	ReplyTo, ThreadRoot string
+	SavedPeer           string
+	SavedTag            SavedTag
+	Sender              string
+	Since, Until        int64
+	MediaType           SearchMediaType
+	Query               string
+	PinnedOnly          bool
 }
 
 type SearchMediaType string
@@ -167,6 +175,13 @@ const (
 )
 
 func (f SearchFilter) Normalize() (SearchFilter, error) {
+	for _, ref := range []string{f.ReplyTo, f.ThreadRoot} {
+		if ref != "" {
+			if _, err := ParseMessageID(ref); err != nil {
+				return SearchFilter{}, TextError(ErrorInvalidInput, nil)
+			}
+		}
+	}
 	if f.SavedPeer != "" {
 		peer, err := ParsePeerID(f.SavedPeer)
 		if err != nil || peer.TopicID() != 0 {
@@ -194,7 +209,7 @@ func (f SearchFilter) Normalize() (SearchFilter, error) {
 		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
 	f.Query = strings.TrimSpace(f.Query)
-	if (f.Query == "" && !f.PinnedOnly && f.MediaType == "" && f.Sender == "" && f.Since == 0 && f.Until == 0 && !f.HasSavedFilter()) || utf8.RuneCountInString(f.Query) > 256 {
+	if (f.Query == "" && !f.PinnedOnly && f.MediaType == "" && f.Sender == "" && f.Since == 0 && f.Until == 0 && !f.HasSavedFilter() && f.ReplyTo == "" && f.ThreadRoot == "") || utf8.RuneCountInString(f.Query) > 256 {
 		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
 	return f, nil
@@ -202,10 +217,37 @@ func (f SearchFilter) Normalize() (SearchFilter, error) {
 
 // ValidReply keeps reply navigation inside the exact conversation and older IDs.
 func (m Message) ValidReply() bool {
-	return m.ReplyTo == nil || (m.ReplyTo.String() != "" && m.ReplyTo.Peer() == m.ID.Peer() && m.ReplyTo.TelegramID() < m.ID.TelegramID())
+	if m.DiscussionRoot != nil && (m.DiscussionRoot.String() == "" || m.DiscussionRoot.Peer().String() != m.DiscussionPeer) {
+		return false
+	}
+	if m.DiscussionPeer != "" {
+		peer, err := ParsePeerID(m.DiscussionPeer)
+		if err != nil || peer.Kind() != PeerKindChannel || peer.TopicID() != 0 || peer == m.ID.Peer() || m.ChannelPost == nil {
+			return false
+		}
+	}
+	for _, ref := range []*MessageID{m.ReplyTo, m.ThreadRoot} {
+		if ref != nil && (ref.String() == "" || ref.Peer() != m.ID.Peer() || ref.TelegramID() >= m.ID.TelegramID()) {
+			return false
+		}
+	}
+	return m.ThreadRoot == nil || (m.ReplyTo != nil && m.ThreadRoot.TelegramID() <= m.ReplyTo.TelegramID())
 }
 
 // UsesHistory selects the primary traversal when no Telegram search selector exists.
 func (q SearchQuery) UsesHistory() bool {
 	return q.Window != nil || (q.Query == "" && !q.PinnedOnly && q.MediaType == "")
+}
+
+// CheckReplyPeer keeps selectors within one exact conversation or topic.
+func (f SearchFilter) CheckReplyPeer(peer PeerID) error {
+	for _, ref := range []string{f.ReplyTo, f.ThreadRoot} {
+		if ref != "" {
+			id, err := ParseMessageID(ref)
+			if err != nil || id.Peer() != peer {
+				return TextError(ErrorInvalidInput, nil)
+			}
+		}
+	}
+	return nil
 }

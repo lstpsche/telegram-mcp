@@ -15,6 +15,8 @@ import (
 const cursorLifetime = 15 * time.Minute
 
 type cursorBinding struct {
+	ReplyTo        string                `json:"reply_to,omitempty"`
+	ThreadRoot     string                `json:"thread_root,omitempty"`
 	SavedPeer      string                `json:"saved_peer,omitempty"`
 	SavedTagDigest string                `json:"saved_tag_digest,omitempty"`
 	Since          int64                 `json:"since,omitempty"`

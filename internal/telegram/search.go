@@ -16,15 +16,15 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	}
 	query := q.Query
 	if q.Window != nil {
-		if q.Window.Validate() != nil || query != "" || q.PinnedOnly || q.MediaType != "" || q.Sender != "" || q.Since != 0 || q.Until != 0 || q.SavedPeer != "" || q.SavedTag != (model.SavedTag{}) {
+		if q.Window.Validate() != nil || q.ReplyTo != "" || q.ThreadRoot != "" || query != "" || q.PinnedOnly || q.MediaType != "" || q.Sender != "" || q.Since != 0 || q.Until != 0 || q.SavedPeer != "" || q.SavedTag != (model.SavedTag{}) {
 			return nil, model.TextError(model.ErrorInvalidInput, nil)
 		}
 	} else {
-		filter, err := (model.SearchFilter{SavedPeer: q.SavedPeer, SavedTag: q.SavedTag, Sender: q.Sender, Since: q.Since, Until: q.Until, MediaType: q.MediaType, Query: query, PinnedOnly: q.PinnedOnly}).Normalize()
+		filter, err := (model.SearchFilter{ReplyTo: q.ReplyTo, ThreadRoot: q.ThreadRoot, SavedPeer: q.SavedPeer, SavedTag: q.SavedTag, Sender: q.Sender, Since: q.Since, Until: q.Until, MediaType: q.MediaType, Query: query, PinnedOnly: q.PinnedOnly}).Normalize()
 		if err != nil {
 			return nil, err
 		}
-		if filter.HasSavedFilter() && q.Peer.Kind() != model.PeerKindSelf {
+		if filter.CheckReplyPeer(q.Peer) != nil || filter.HasSavedFilter() && q.Peer.Kind() != model.PeerKindSelf {
 			return nil, model.TextError(model.ErrorInvalidInput, nil)
 		}
 		query = filter.Query
@@ -35,9 +35,11 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	}
 	bounded, cancel := context.WithTimeout(ctx, readDeadline)
 	defer cancel()
-	if chat, err := a.Chat(bounded, q.Peer); err != nil {
+	chat, err := a.Chat(bounded, q.Peer)
+	if err != nil {
 		return nil, err
-	} else if chat.Forum {
+	}
+	if chat.Forum {
 		return nil, model.TextError(model.ErrorUnsupportedPeer, nil)
 	}
 	input, err := a.reads.inputPeer(bounded, q.Peer)
@@ -51,13 +53,27 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 			offset = maximum
 		}
 	}
+	// Never ask a broadcast for replies: Telegram could traverse into its
+	// linked group before that separate conversation has been authorized.
+	threadID := int(q.Peer.TopicID())
+	if q.ThreadRoot != "" && q.Peer.Kind() == model.PeerKindChannel && q.Peer.TopicID() == 0 && !chat.Broadcast {
+		root, err := model.ParseMessageID(q.ThreadRoot)
+		if err != nil {
+			return nil, err
+		}
+		threadID = int(root.TelegramID())
+	}
 	var response tg.MessagesMessagesClass
 	if q.UsesHistory() {
 		until := q.Until
 		if q.Window != nil {
 			until = q.Window.Until
 		}
-		response, err = a.reads.historyPage(bounded, q.Peer, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, OffsetDate: int(until), Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
+		if threadID != 0 && q.Peer.TopicID() == 0 {
+			response, err = a.reads.api.MessagesGetReplies(bounded, &tg.MessagesGetRepliesRequest{Peer: input, MsgID: threadID, OffsetID: offset, OffsetDate: int(until), Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
+		} else {
+			response, err = a.reads.historyPage(bounded, q.Peer, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, OffsetDate: int(until), Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
+		}
 	} else {
 		request := &tg.MessagesSearchRequest{Peer: input, Q: query, Filter: &tg.InputMessagesFilterEmpty{}, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum}
 		switch {
@@ -70,8 +86,8 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 		case q.MediaType == model.SearchMediaVoiceNote:
 			request.Filter = &tg.InputMessagesFilterVoice{}
 		}
-		if q.Peer.TopicID() != 0 {
-			request.SetTopMsgID(int(q.Peer.TopicID()))
+		if threadID != 0 {
+			request.SetTopMsgID(threadID)
 		}
 		response, err = a.reads.api.MessagesSearch(bounded, request)
 	}

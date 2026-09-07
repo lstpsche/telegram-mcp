@@ -290,6 +290,14 @@ context tool accepts `reply_depth` (0–5, default 0) and reports bounded ancest
 coverage on the target. Exact authorization, unavailable-parent behavior and
 combined bounds are defined in [reply context](reply-context.md).
 
+Reply discovery accepts exact-peer `reply_to` and `thread_root` filters on
+`search_messages`, returning authorized snippets without receipts and binding
+both selectors into continuation tokens. `get_message_context` optionally accepts
+`resolve_discussion` under Full read and returns a validated `discussion_root`
+reference on the source channel post. Its receipt affects only the source context;
+linked group bodies require a separate authorized read. See
+[reply context](reply-context.md) for bounds and unavailable cases.
+
 ## Media albums
 
 Supported media members may include a conversation-scoped `album_id`. Captions

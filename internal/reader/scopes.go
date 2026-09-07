@@ -143,7 +143,7 @@ func (s *Service) checkGrantsCurrent(ctx context.Context, grants []policy.Grant)
 // SearchScope traverses exact peers in canonical order, newest first per peer.
 // The candidate budget includes filtered entries, so sparse pages stay bounded.
 func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID model.ScopeID, filter model.SearchFilter, limit int, token string) (Result, error) {
-	if filter.HasSavedFilter() {
+	if filter.HasSavedFilter() || filter.ReplyTo != "" || filter.ThreadRoot != "" {
 		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
 	}
 	filter, err := filter.Normalize()

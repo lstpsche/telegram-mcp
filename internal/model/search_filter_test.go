@@ -64,3 +64,39 @@ func TestSenderDateFilters(t *testing.T) {
 		t.Fatal("timezone normalization failed")
 	}
 }
+
+func TestReplySelectorsAndNavigationReferences(t *testing.T) {
+	peer, _ := NewPeerID(PeerKindChannel, 42)
+	topic, _ := NewTopicPeer(peer, 7)
+	id, _ := NewMessageID(topic, 20)
+	parent, _ := NewMessageID(topic, 10)
+	root, _ := NewMessageID(topic, 7)
+	m := Message{ID: id, ReplyTo: &parent, ThreadRoot: &root}
+	if !m.ValidReply() {
+		t.Fatal("valid topic references rejected")
+	}
+	outside, _ := NewMessageID(peer, 7)
+	m.ThreadRoot = &outside
+	if m.ValidReply() {
+		t.Fatal("parent forum substituted for topic")
+	}
+	future, _ := NewMessageID(topic, 15)
+	m.ThreadRoot = &future
+	if m.ValidReply() {
+		t.Fatal("root newer than immediate parent accepted")
+	}
+	for _, field := range []string{"reply", "thread"} {
+		f := SearchFilter{}
+		if field == "reply" {
+			f.ReplyTo = parent.String()
+		} else {
+			f.ThreadRoot = root.String()
+		}
+		if _, err := f.Normalize(); err != nil {
+			t.Fatal(err)
+		}
+		if f.CheckReplyPeer(topic) != nil || f.CheckReplyPeer(peer) == nil {
+			t.Fatal("topic selector lost authority boundary")
+		}
+	}
+}
