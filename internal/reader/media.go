@@ -98,7 +98,7 @@ func (s *Service) imageDescriptor(candidate model.Candidate, grant policy.Grant,
 	if err != nil {
 		return nil, err
 	}
-	return &model.ImageDescriptor{Handle: token, Kind: source.Kind, MIMEType: source.MIMEType, Width: source.Width, Height: source.Height, Size: source.Size}, nil
+	return &model.ImageDescriptor{Filename: source.Filename, Handle: token, Kind: source.Kind, MIMEType: source.MIMEType, Width: source.Width, Height: source.Height, Size: source.Size}, nil
 }
 
 func mediaOperation(kind mediaKind) (operation, prefix, domain string) {
@@ -349,13 +349,13 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 	}
 	effect := model.ReadEffect{Kind: model.ReadEffectHistoryMarkedRead, ThroughMessageID: &handle.Message}
 	if kind == mediaVoice {
-		descriptor := &model.VoiceDescriptor{Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size, Duration: immutableSource.Duration}
+		descriptor := &model.VoiceDescriptor{Filename: immutableSource.Filename, Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size, Duration: immutableSource.Duration}
 		result, err = prepare(requestID, []voiceItem{{AlbumID: candidate.Message.AlbumID, ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Voice: descriptor}}, s.now(), false, effect, nil, nil)
 	} else if kind == mediaDocument {
-		descriptor := &model.DocumentDescriptor{Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size}
+		descriptor := &model.DocumentDescriptor{Filename: immutableSource.Filename, Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size}
 		result, err = prepare(requestID, []documentItem{{AlbumID: candidate.Message.AlbumID, ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Document: descriptor}}, s.now(), false, effect, nil, nil)
 	} else {
-		descriptor := &model.ImageDescriptor{Handle: token, Kind: immutableSource.Kind, MIMEType: immutableSource.MIMEType, Width: immutableSource.Width, Height: immutableSource.Height, Size: immutableSource.Size}
+		descriptor := &model.ImageDescriptor{Filename: immutableSource.Filename, Handle: token, Kind: immutableSource.Kind, MIMEType: immutableSource.MIMEType, Width: immutableSource.Width, Height: immutableSource.Height, Size: immutableSource.Size}
 		result, err = prepare(requestID, []imageItem{{AlbumID: candidate.Message.AlbumID, ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Image: descriptor}}, s.now(), false, effect, nil, nil)
 	}
 	if err != nil {

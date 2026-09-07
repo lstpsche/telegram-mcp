@@ -1,6 +1,10 @@
 package model
 
-import "regexp"
+import (
+	"regexp"
+	"unicode"
+	"unicode/utf8"
+)
 
 const (
 	MaximumImageBytes       = 1 << 20
@@ -13,6 +17,7 @@ var imageFingerprintPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // MediaSource is transient adapter evidence, never a public file location.
 type MediaSource struct {
+	Filename    string `json:",omitempty"`
 	Kind        string
 	MIMEType    string
 	Width       int
@@ -28,6 +33,9 @@ func (i MediaSource) IsDocument() bool {
 
 func (i MediaSource) IsVoice() bool { return i.Kind == "voice" && i.MIMEType == "audio/ogg" }
 func (i MediaSource) Validate() error {
+	if !ValidAttachmentFilename(i.Filename) || i.Kind == "photo" && i.Filename != "" {
+		return TextError(ErrorInvalidReference, nil)
+	}
 	if i.IsVoice() {
 		if i.Width != 0 || i.Height != 0 || i.Duration <= 0 || i.Duration > MaximumVoiceDuration || !imageFingerprintPattern.MatchString(i.Fingerprint) {
 			return TextError(ErrorInvalidReference, nil)
@@ -60,6 +68,7 @@ func (i MediaSource) Validate() error {
 
 // ImageDescriptor exposes only bounded metadata and a reauthorized opaque handle.
 type ImageDescriptor struct {
+	Filename string `json:"filename,omitempty"`
 	Handle   string `json:"handle"`
 	Kind     string `json:"kind"`
 	MIMEType string `json:"mime_type"`
@@ -70,8 +79,9 @@ type ImageDescriptor struct {
 
 const MaximumTextAttachmentBytes = 256 << 10
 
-// DocumentDescriptor omits remote filenames and download locations.
+// DocumentDescriptor exposes untrusted display metadata, never a download location.
 type DocumentDescriptor struct {
+	Filename string `json:"filename,omitempty"`
 	Handle   string `json:"handle"`
 	MIMEType string `json:"mime_type"`
 	Size     int64  `json:"size"`
@@ -82,8 +92,22 @@ const MaximumVoiceDuration = 300
 
 // VoiceDescriptor describes original Ogg/Opus audio, never a remote location.
 type VoiceDescriptor struct {
+	Filename string `json:"filename,omitempty"`
 	Handle   string `json:"handle"`
 	MIMEType string `json:"mime_type"`
 	Size     int64  `json:"size"`
 	Duration int    `json:"duration_seconds"`
+}
+
+// ValidAttachmentFilename bounds display metadata without interpreting a path.
+func ValidAttachmentFilename(value string) bool {
+	if len(value) > 1024 || !utf8.ValidString(value) || utf8.RuneCountInString(value) > 256 {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }

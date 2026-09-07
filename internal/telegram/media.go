@@ -92,7 +92,7 @@ func normalizeMedia(message *tg.Message) *mediaLocation {
 		}
 		var audio *tg.DocumentAttributeAudio
 		var dimensions *tg.DocumentAttributeImageSize
-		filename := false
+		var filename *tg.DocumentAttributeFilename
 		for _, value := range document.Attributes {
 			switch value := value.(type) {
 			case *tg.DocumentAttributeAudio:
@@ -106,10 +106,10 @@ func normalizeMedia(message *tg.Message) *mediaLocation {
 				}
 				dimensions = value
 			case *tg.DocumentAttributeFilename:
-				if filename {
+				if filename != nil || !model.ValidAttachmentFilename(value.FileName) {
 					return nil
 				}
-				filename = true
+				filename = value
 			default:
 				return nil
 			}
@@ -143,6 +143,9 @@ func normalizeMedia(message *tg.Message) *mediaLocation {
 			rendition.kind = fmt.Sprintf("opus:%d", audio.Duration)
 		}
 		source := mediaIdentity(kind, document.MimeType, document.ID, rendition)
+		if filename != nil {
+			source.Filename = filename.FileName
+		}
 		if isVoice {
 			source.Duration = audio.Duration
 		}

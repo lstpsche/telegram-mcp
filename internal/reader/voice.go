@@ -46,7 +46,7 @@ func (s *Service) voiceDescriptor(candidate model.Candidate, grant policy.Grant,
 	if err != nil {
 		return nil, err
 	}
-	return &model.VoiceDescriptor{Handle: token, MIMEType: source.MIMEType, Size: source.Size, Duration: source.Duration}, nil
+	return &model.VoiceDescriptor{Filename: source.Filename, Handle: token, MIMEType: source.MIMEType, Size: source.Size, Duration: source.Duration}, nil
 }
 
 // Validate bounded Ogg framing and Opus headers, not decoded audio or transcription.

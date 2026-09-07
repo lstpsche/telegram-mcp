@@ -44,5 +44,20 @@ Telegram's [document filter](https://core.telegram.org/constructor/inputMessages
 is broader than PDF, text-file or image-file eligibility. The reader checks each
 returned attachment after policy and media validation. Photo and voice searches
 use their corresponding provider filters. When combined with pins, Telegram's
-pin filter selects candidates and the reader checks the media type. No recent
-history scan, extra search stream or local content index is introduced. An empty result does not prove the conversation has no attachments.
+pin filter selects candidates and the reader checks the media type. Media-type filtering introduces no extra search stream or local content index. An empty result does not prove the conversation has no attachments.
+
+Use `filename_query` to match a literal, case-insensitive substring of an
+attachment filename, for example `{"peer":"tgpeer:v1:chat:42","filename_query":"report"}`.
+The optional filename is returned on supported permitted document, image-file
+and voice-note descriptors. It remains untrusted display text, never a path or
+file-type authority. A file named report.exe may still be a declared PDF;
+existing MIME and byte validation decide how it can be opened. Ordinary photos
+and attachments without a filename do not match.
+
+Combine the selector with any existing peer/scope/batch search filters. When
+filename_query is the only selector, existing bounded history traversal finds
+candidates. Captions and file contents do not participate in this filter.
+Continue empty pages; repeat the same normalized filename query with each cursor.
+Queries are trimmed, lowercased and bounded to 256 Unicode characters/1024 bytes.
+Discovery downloads no bytes and performs no receipts. A changed filename
+invalidates an earlier media handle; discover a fresh handle before opening.

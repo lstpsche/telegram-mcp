@@ -64,3 +64,28 @@ func TestMediaSearchUsesProviderFiltersWithoutDownloads(t *testing.T) {
 		}
 	}
 }
+
+func TestFilenameOnlySearchUsesBoundedHistory(t *testing.T) {
+	calls := 0
+	account, _ := newReadTestAccount(t, func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
+		switch q := in.(type) {
+		case *tg.UpdatesGetStateRequest:
+			return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
+		case *tg.MessagesGetHistoryRequest:
+			calls++
+			if q.OffsetID != 21 || q.MinID != 9 || q.MaxID != 21 || q.Limit != 2 {
+				t.Fatal("filename traversal lost bounds")
+			}
+			m := attachmentMessage("application/pdf")
+			m.ID = 20
+			return encodeReadResponse(out, &tg.MessagesMessages{Messages: []tg.MessageClass{m}})
+		default:
+			t.Fatalf("unexpected filename discovery RPC %T", in)
+			return nil
+		}
+	})
+	rows, err := account.Search(context.Background(), model.SearchQuery{Peer: testSelfPeer(t), FilenameQuery: "report", MinID: 10, MaxID: 20, Limit: 2})
+	if err != nil || calls != 1 || len(rows) != 1 || rows[0].Document == nil || rows[0].Document.Filename == "" {
+		t.Fatal("filename history evidence lost", err)
+	}
+}

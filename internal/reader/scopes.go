@@ -191,7 +191,7 @@ func (s *Service) searchScopePage(ctx context.Context, lease *policy.Lease, scop
 	if err != nil {
 		return searchPage{}, err
 	}
-	binding := scopeCursorBinding{Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Operation: operation, Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
+	binding := scopeCursorBinding{FilenameDigest: s.filenameDigest(filter.FilenameQuery), Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Operation: operation, Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	var checkpointExpiry int64
 	if checkpointToken != "" {
 		checkpoint, err := s.decodeCatchUpCheckpoint(checkpointToken, binding)
@@ -249,7 +249,7 @@ func (s *Service) searchScopePage(ctx context.Context, lease *policy.Lease, scop
 			return searchPage{}, err
 		}
 		grant := grants[cursor.Index]
-		search := model.SearchQuery{Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Window: window, Peer: grant.Peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: remaining}
+		search := model.SearchQuery{FilenameQuery: filter.FilenameQuery, Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Window: window, Peer: grant.Peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: remaining}
 		candidates, err := s.backend.Search(ctx, search)
 		if err != nil {
 			return searchPage{}, err

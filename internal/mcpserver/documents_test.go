@@ -45,7 +45,7 @@ func newDocumentWireBackend(t *testing.T, base *wireBackend) *documentWireBacken
 			t.Fatal(err)
 		}
 		digest := sha256.Sum256(spec.data)
-		backend.candidates = append(backend.candidates, model.Candidate{SentAt: 1788609600, Message: model.Message{ID: id, Author: base.author, Date: "2026-09-05T12:00:00Z"}, Document: &model.MediaSource{Kind: "document", MIMEType: spec.mime, Size: int64(len(spec.data)), Fingerprint: hex.EncodeToString(digest[:])}})
+		backend.candidates = append(backend.candidates, model.Candidate{SentAt: 1788609600, Message: model.Message{ID: id, Author: base.author, Date: "2026-09-05T12:00:00Z"}, Document: &model.MediaSource{Filename: "synthetic.data", Kind: "document", MIMEType: spec.mime, Size: int64(len(spec.data)), Fingerprint: hex.EncodeToString(digest[:])}})
 		backend.data[id] = spec.data
 	}
 	return backend
@@ -67,7 +67,7 @@ func (f *documentWireBackend) History(_ context.Context, query model.HistoryQuer
 
 func (f *documentWireBackend) Search(_ context.Context, query model.SearchQuery) ([]model.Candidate, error) {
 	f.fetches.Add(1)
-	if query.Peer != f.peer || (query.Window == nil && query.Query != "synthetic" && !((query.PinnedOnly || query.UnreadMentionsOnly) && query.Query == "")) {
+	if query.Peer != f.peer || (query.Window == nil && query.Query != "synthetic" && !((query.PinnedOnly || query.UnreadMentionsOnly || query.FilenameQuery != "") && query.Query == "")) {
 		return nil, errors.New("unexpected document search")
 	}
 	if query.Window != nil {
@@ -177,6 +177,22 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool) {
 	}
 	schemas := make(map[string]*jsonschema.Resolved)
 	for _, tool := range inventory.Tools {
+
+		if tool.Name == "open_document" || tool.Name == "open_image" || tool.Name == "open_voice_note" {
+			encoded, err := json.Marshal(tool.InputSchema)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var input struct {
+				Properties map[string]any `json:"properties"`
+			}
+			if err := json.Unmarshal(encoded, &input); err != nil {
+				t.Fatal(err)
+			}
+			if len(input.Properties) != 1 || input.Properties["handle"] == nil {
+				t.Fatal("media opening advertised non-handle authority")
+			}
+		}
 		encoded, err := json.Marshal(tool.OutputSchema)
 		if err != nil {
 			t.Fatal(err)
@@ -267,6 +283,13 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool) {
 	discovered := scopes["items"].([]any)[0].(map[string]any)
 	if discovered["id"] != scope.ID.String() || backend.fetches.Load() != 0 {
 		t.Fatal("scope discovery changed its selection or fetched Telegram")
+	}
+
+	for _, selector := range []map[string]any{{"peer": base.peer.String(), "filename_query": "SYNTHETIC"}, {"scope": discovered["id"], "filename_query": "data"}, {"searches": []any{map[string]any{"peer": base.peer.String(), "filename_query": "synthetic"}}}} {
+		_, page := call("search_messages", selector)
+		if len(page["items"].([]any)) != 1 || page["items"].([]any)[0].(map[string]any)["document"].(map[string]any)["filename"] != "synthetic.data" {
+			t.Fatal("filename wire contract")
+		}
 	}
 	_, search := call("search_messages", map[string]any{"scope": discovered["id"], "query": "synthetic"})
 	pdf := search["items"].([]any)[0].(map[string]any)

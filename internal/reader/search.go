@@ -41,7 +41,7 @@ func (s *Service) searchPeer(ctx context.Context, lease *policy.Lease, peer mode
 	if err != nil {
 		return searchPage{}, err
 	}
-	binding := cursorBinding{ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTagDigest: s.savedTagDigest(filter.SavedTag), Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
+	binding := cursorBinding{FilenameDigest: s.filenameDigest(filter.FilenameQuery), ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTagDigest: s.savedTagDigest(filter.SavedTag), Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	deadline := s.now().Add(cursorLifetime)
 	deadline = grant.Deadline(deadline)
 	cursor = searchCursor{Binding: binding, Ceiling: grant.MaxID, Expires: deadline.Unix()}
@@ -56,7 +56,7 @@ func (s *Service) searchPeer(ctx context.Context, lease *policy.Lease, peer mode
 	}
 	ctx, stopCursor := context.WithTimeout(ctx, time.Unix(cursor.Expires, 0).Sub(s.now()))
 	defer stopCursor()
-	query := model.SearchQuery{ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTag: filter.SavedTag, Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
+	query := model.SearchQuery{FilenameQuery: filter.FilenameQuery, ReplyTo: filter.ReplyTo, ThreadRoot: filter.ThreadRoot, SavedPeer: filter.SavedPeer, SavedTag: filter.SavedTag, Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, UnreadMentionsOnly: filter.UnreadMentionsOnly, PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
 	candidates, err := s.backend.Search(ctx, query)
 	if err != nil {
 		return searchPage{}, err
@@ -214,7 +214,7 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 			return searchWindow{}, err
 		}
 		hit := model.SearchHit{URL: message.ID.URL(), DiscussionPeer: message.DiscussionPeer, ThreadRoot: message.ThreadRoot, SavedPeer: message.SavedPeer, Pinned: message.Pinned, Reactions: message.Reactions, HasLinkPreview: message.LinkPreview != nil, HasPoll: message.Poll != nil, AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated}
-		if !matchesSearchMedia(query.MediaType, hit) {
+		if !matchesSearchMedia(query.MediaType, hit) || !matchesFilename(query.FilenameQuery, hit) {
 			partial = true
 			continue
 		}
@@ -317,4 +317,20 @@ func (s *Service) UnreadPage(ctx context.Context, requestID string, scopes []mod
 	}
 	count = len(items)
 	return result, nil
+}
+
+func matchesFilename(query string, hit model.SearchHit) bool {
+	if query == "" {
+		return true
+	}
+	var filename string
+	switch {
+	case hit.Document != nil:
+		filename = hit.Document.Filename
+	case hit.Image != nil:
+		filename = hit.Image.Filename
+	case hit.Voice != nil:
+		filename = hit.Voice.Filename
+	}
+	return filename != "" && strings.Contains(strings.ToLower(filename), query)
 }

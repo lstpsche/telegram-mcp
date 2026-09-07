@@ -13,8 +13,8 @@ documents, images and read acknowledgments until revoked.
 
 The existing `list_messages`, `get_message_context`, `search_messages` and
 `catch_up` tools return an optional `document` descriptor containing only
-`handle`, `mime_type` and `size` in bytes. Remote filenames, document IDs, access
-hashes, file references and download locations are never exposed. A document
+`handle`, `mime_type`, `size` in bytes, and an optional untrusted `filename`.
+Document IDs, access hashes, file references and download locations are never exposed. A document
 may have a caption or no text. Search follows Telegram's matching rules; it
 does not search inside attachment bytes. Catch-up can discover captionless
 attachments in its selected time window.
@@ -66,7 +66,7 @@ Limits and checks:
 
 Protected, expiring, imported, quoted, spoiler, paid and unsupported media
 variants retain the existing exclusions. Supported documents may carry an
-optional filename attribute, which is discarded; animation, audio, video,
+optional bounded filename attribute, returned as display metadata; animation, audio, video,
 sticker and image-dimension attributes are rejected.
 
 Discovery downloads no attachment bytes. Search and catch-up do not mark chats

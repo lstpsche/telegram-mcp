@@ -21,18 +21,18 @@ func attachmentMessage(mime string) *tg.Message {
 	return m
 }
 
-func TestAttachmentNormalizationOmitsFilenamesAndAcceptsCaptionlessDocuments(t *testing.T) {
+func TestAttachmentNormalizationPreservesUntrustedFilenameAndCaptionlessDocuments(t *testing.T) {
 	for _, mime := range []string{"application/pdf", "text/plain"} {
 		message := attachmentMessage(mime)
 		c := imageCandidate(t, message)
-		if c.Document == nil || c.Image != nil || c.Document.MIMEType != mime || c.Message.Text != "" || c.Message.Date == "" {
+		if c.Document == nil || c.Image != nil || c.Document.MIMEType != mime || c.Message.Text != "" || c.Message.Date == "" || c.Document.Filename != "../../private-untrusted-name.exe" {
 			t.Fatal("missing captionless document")
 		}
 		encoded, err := json.Marshal(c)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, secret := range []string{"private-untrusted-name", "private-document-reference", "AccessHash", "FileReference"} {
+		for _, secret := range []string{"private-document-reference", "AccessHash", "FileReference"} {
 			if strings.Contains(string(encoded), secret) {
 				t.Fatal("private media metadata escaped adapter")
 			}
@@ -60,6 +60,12 @@ func TestUnsafeDocumentsExposeNeitherCaptionNorDescriptor(t *testing.T) {
 		},
 		"invalid size": func(_ *tg.Message, _ *tg.MessageMediaDocument, d *tg.Document) {
 			d.Size = 0
+		},
+		"oversized filename": func(_ *tg.Message, _ *tg.MessageMediaDocument, d *tg.Document) {
+			d.Attributes = []tg.DocumentAttributeClass{&tg.DocumentAttributeFilename{FileName: strings.Repeat("a", 257)}}
+		},
+		"control filename": func(_ *tg.Message, _ *tg.MessageMediaDocument, d *tg.Document) {
+			d.Attributes = []tg.DocumentAttributeClass{&tg.DocumentAttributeFilename{FileName: "bad\nname"}}
 		},
 		"duplicate filename": func(_ *tg.Message, _ *tg.MessageMediaDocument, d *tg.Document) {
 			d.Attributes = append(d.Attributes, d.Attributes[0])

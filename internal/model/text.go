@@ -120,6 +120,7 @@ func TextErrorCategory(err error) ErrorCategory {
 
 // SearchQuery is adapter input. Query text is transient and must never be logged.
 type SearchQuery struct {
+	FilenameQuery        string
 	UnreadMentionsOnly   bool
 	ReplyTo, ThreadRoot  string
 	SavedPeer            string
@@ -167,6 +168,7 @@ type Unread struct {
 
 // SearchFilter narrows message discovery without granting content access.
 type SearchFilter struct {
+	FilenameQuery       string
 	UnreadMentionsOnly  bool
 	ReplyTo, ThreadRoot string
 	SavedPeer           string
@@ -189,6 +191,16 @@ const (
 )
 
 func (f SearchFilter) Normalize() (SearchFilter, error) {
+	if f.FilenameQuery != "" {
+		if !ValidAttachmentFilename(f.FilenameQuery) {
+			return SearchFilter{}, TextError(ErrorInvalidInput, nil)
+		}
+		f.FilenameQuery = strings.ToLower(strings.TrimSpace(f.FilenameQuery))
+		if f.FilenameQuery == "" {
+			return SearchFilter{}, TextError(ErrorInvalidInput, nil)
+		}
+	}
+
 	for _, ref := range []string{f.ReplyTo, f.ThreadRoot} {
 		if ref != "" {
 			if _, err := ParseMessageID(ref); err != nil {
@@ -223,7 +235,7 @@ func (f SearchFilter) Normalize() (SearchFilter, error) {
 		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
 	f.Query = strings.TrimSpace(f.Query)
-	if (f.Query == "" && !f.PinnedOnly && !f.UnreadMentionsOnly && f.MediaType == "" && f.Sender == "" && f.Since == 0 && f.Until == 0 && !f.HasSavedFilter() && f.ReplyTo == "" && f.ThreadRoot == "") || utf8.RuneCountInString(f.Query) > 256 {
+	if (f.Query == "" && f.FilenameQuery == "" && !f.PinnedOnly && !f.UnreadMentionsOnly && f.MediaType == "" && f.Sender == "" && f.Since == 0 && f.Until == 0 && !f.HasSavedFilter() && f.ReplyTo == "" && f.ThreadRoot == "") || utf8.RuneCountInString(f.Query) > 256 {
 		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
 	return f, nil

@@ -46,7 +46,7 @@ func (s *Service) documentDescriptor(candidate model.Candidate, grant policy.Gra
 	if err != nil {
 		return nil, err
 	}
-	return &model.DocumentDescriptor{Handle: token, MIMEType: source.MIMEType, Size: source.Size}, nil
+	return &model.DocumentDescriptor{Filename: source.Filename, Handle: token, MIMEType: source.MIMEType, Size: source.Size}, nil
 }
 
 // Validate framing and encoding only. PDFs are original untrusted resources;

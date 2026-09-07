@@ -251,7 +251,8 @@ migrated and new restricted grants.
 Discovery exposes safe metadata only after the existing author/range/content
 checks. Signed five-minute handles contain a keyed image identity digest and
 exact message reference; policy revision and epoch changes invalidate them.
-No raw file location, reference, filename, or access hash crosses the adapter.
+No raw file location, reference or access hash crosses the adapter. Bounded
+attachment filenames may cross as untrusted display metadata, never filesystem paths.
 
 Opening reauthorizes before I/O, refetches the exact source before downloading,
 and checks it again after download and after the hooked receipt. Replaced,
@@ -352,7 +353,7 @@ Cross-use with image handles is rejected before Telegram access.
 
 The downloader reuses bounded media transport and exact-source normalization.
 Only declared PDF/plain-text MIME types and inert filename-only attribute sets
-are accepted; filenames are discarded, never used as paths or trust signals.
+are accepted; bounded filenames are display metadata, never paths or trust signals.
 Text encoding is not guessed. Exact byte counts, a chunk count derived from
 source size, one renewal and deadlines constrain downloads. Allocation grows
 with received chunks. PDFs have no fixed application byte or response cap;
@@ -525,7 +526,7 @@ Provider media categories are broader than supported attachment types and do
 not establish permission or safe content. Search selects photo, document or
 voice candidates, then applies existing message policy, source validation and
 exact descriptor matching. PDF, text-file and image-file filters share the
-provider document category; no filenames are inspected or returned. Combining
+provider document category. Filename filtering intersects only permitted descriptors. Combining
 pins and media uses the provider pin filter and the same local intersection.
 
 Media filters are bound into both peer and scope cursors. Nonmatching, excluded
@@ -606,3 +607,16 @@ caps the request deadline. A checkpoint is issued only on complete non-future
 windows and is released only after required audit and final validity checks.
 No persistent bookmark or message index is added. Ordinary page cursors and
 completion checkpoints cannot be substituted for one another.
+
+## Attachment filename search
+
+Optional filename_query matches a normalized case-insensitive literal substring
+of supported permitted attachment metadata, never captions, body bytes or hidden
+media. Candidate limits and continuation apply even when no filenames match.
+The field binds peer/scope cursors through a keyed digest; raw query text and
+filenames are never persisted or logged. Filename-only search uses existing
+bounded history traversal. Supplied extensions do not choose MIME type, decoder,
+download destination or authority. Original names are bounded to 256 Unicode
+characters and 1024 bytes, require UTF-8 and contain no control characters.
+They participate in source revalidation and opaque-handle identity; a rename
+invalidates an earlier handle before download. Photos have no filename.

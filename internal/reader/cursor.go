@@ -15,6 +15,7 @@ import (
 const cursorLifetime = 15 * time.Minute
 
 type cursorBinding struct {
+	FilenameDigest     string                `json:"filename_digest,omitempty"`
 	UnreadMentionsOnly bool                  `json:"unread_mentions_only,omitempty"`
 	ReplyTo            string                `json:"reply_to,omitempty"`
 	ThreadRoot         string                `json:"thread_root,omitempty"`
@@ -103,4 +104,11 @@ func (s *Service) savedTagDigest(tag model.SavedTag) string {
 		return ""
 	}
 	return s.queryDigest("saved-tag-v1\x00" + tag.Kind + "\x00" + tag.Emoji + "\x00" + tag.CustomEmojiID)
+}
+
+func (s *Service) filenameDigest(query string) string {
+	if query == "" {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(s.mediaMAC("search-filename-v1", query))
 }

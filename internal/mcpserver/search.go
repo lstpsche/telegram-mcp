@@ -10,7 +10,7 @@ import (
 )
 
 func singleSearchInputSchema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","additionalProperties":false,"allOf":[{"oneOf":[{"required":["peer"]},{"required":["scope"]}]},{"anyOf":[{"required":["query"]},{"required":["unread_mentions_only"],"properties":{"unread_mentions_only":{"const":true}}},{"required":["pinned_only"],"properties":{"pinned_only":{"const":true}}},{"required":["media_type"]},{"required":["sender"]},{"required":["since"]},{"required":["until"]},{"required":["saved_peer"]},{"required":["saved_tag"]},{"required":["reply_to"]},{"required":["thread_root"]}]}],"properties":{"scope":{"type":"string","pattern":"` + scopePattern + `"},"peer":{"type":"string","pattern":"` + peerPattern + `"},"saved_peer":{"type":"string","pattern":"^tgpeer:v1:(self|user|chat|channel):[1-9][0-9]*$"},"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"thread_root":{"type":"string","pattern":"` + messagePattern + `"},"saved_tag":` + savedTagSchema + `,"sender":{"type":"string","pattern":"^tgpeer:v1:(user|channel):[1-9][0-9]*$"},"since":{"type":"string","minLength":20,"maxLength":25},"until":{"type":"string","minLength":20,"maxLength":25},"unread_mentions_only":{"type":"boolean"},"pinned_only":{"type":"boolean"},"query":{"type":"string","maxLength":1024},"limit":{"type":"integer","minimum":1,"maximum":100},"cursor":{"type":"string","minLength":1,"maxLength":4096},"media_type":{"type":"string","enum":["photo","image_file","pdf","text_file","voice_note"]}}}`)
+	return json.RawMessage(`{"type":"object","additionalProperties":false,"allOf":[{"oneOf":[{"required":["peer"]},{"required":["scope"]}]},{"anyOf":[{"required":["filename_query"]},{"required":["query"]},{"required":["unread_mentions_only"],"properties":{"unread_mentions_only":{"const":true}}},{"required":["pinned_only"],"properties":{"pinned_only":{"const":true}}},{"required":["media_type"]},{"required":["sender"]},{"required":["since"]},{"required":["until"]},{"required":["saved_peer"]},{"required":["saved_tag"]},{"required":["reply_to"]},{"required":["thread_root"]}]}],"properties":{"filename_query":{"type":"string","minLength":1,"maxLength":1024},"scope":{"type":"string","pattern":"` + scopePattern + `"},"peer":{"type":"string","pattern":"` + peerPattern + `"},"saved_peer":{"type":"string","pattern":"^tgpeer:v1:(self|user|chat|channel):[1-9][0-9]*$"},"reply_to":{"type":"string","pattern":"` + messagePattern + `"},"thread_root":{"type":"string","pattern":"` + messagePattern + `"},"saved_tag":` + savedTagSchema + `,"sender":{"type":"string","pattern":"^tgpeer:v1:(user|channel):[1-9][0-9]*$"},"since":{"type":"string","minLength":20,"maxLength":25},"until":{"type":"string","minLength":20,"maxLength":25},"unread_mentions_only":{"type":"boolean"},"pinned_only":{"type":"boolean"},"query":{"type":"string","maxLength":1024},"limit":{"type":"integer","minimum":1,"maximum":100},"cursor":{"type":"string","minLength":1,"maxLength":4096},"media_type":{"type":"string","enum":["photo","image_file","pdf","text_file","voice_note"]}}}`)
 }
 
 func batchSearchInputSchema() json.RawMessage {
@@ -21,6 +21,7 @@ func batchSearchInputSchema() json.RawMessage {
 func parseSearchRequest(args json.RawMessage) (model.SearchRequest, error) {
 	limit := model.DefaultPageSize
 	input, err := model.DecodeStrict[struct {
+		FilenameQuery      string                `json:"filename_query"`
 		ReplyTo            string                `json:"reply_to"`
 		ThreadRoot         string                `json:"thread_root"`
 		SavedPeer          string                `json:"saved_peer"`
@@ -56,7 +57,7 @@ func parseSearchRequest(args json.RawMessage) (model.SearchRequest, error) {
 	if input.Limit != nil {
 		limit = *input.Limit
 	}
-	filter := model.SearchFilter{ReplyTo: input.ReplyTo, ThreadRoot: input.ThreadRoot, SavedPeer: input.SavedPeer, Sender: input.Sender, MediaType: input.MediaType, Query: input.Query, UnreadMentionsOnly: input.UnreadMentionsOnly, PinnedOnly: input.PinnedOnly}
+	filter := model.SearchFilter{FilenameQuery: input.FilenameQuery, ReplyTo: input.ReplyTo, ThreadRoot: input.ThreadRoot, SavedPeer: input.SavedPeer, Sender: input.Sender, MediaType: input.MediaType, Query: input.Query, UnreadMentionsOnly: input.UnreadMentionsOnly, PinnedOnly: input.PinnedOnly}
 	if input.SavedTag != nil {
 		if !input.SavedTag.Valid() {
 			return model.SearchRequest{}, model.TextError(model.ErrorInvalidInput, nil)

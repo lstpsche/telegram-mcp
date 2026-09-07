@@ -206,6 +206,8 @@ Version 0.5.0 added [forum topics](docs/topic-access.md) and [original voice not
 | `open_voice_note` | Deliver an authorized original voice note as native MCP audio |
 | `open_image` | Open an authorized image as native MCP image content |
 
+Use `filename_query` on `search_messages` to find [attachments by filename](docs/media-search.md).
+
 Pass `searches` to `search_messages` for [batch search](docs/batch-search.md) with deduplicated hits and independent pagination.
 
 Use `unread_mentions_only: true` on `search_messages` to find [unread mentions](docs/unread-mentions.md) in an authorized chat or scope without clearing them.

@@ -377,3 +377,14 @@ IDs in first-seen order; `searches` associates each input with IDs, `partial`,
 `next_cursor`, and optional scope coverage. Top-level `next_cursor` is null.
 All entries must succeed, and inconsistent observations withhold the result.
 No history receipt or mention clearing occurs. See [batch search](batch-search.md).
+
+## Attachment filenames
+
+Supported media descriptors may include untrusted `filename` display metadata
+(maximum 256 Unicode characters/1024 bytes, valid UTF-8 without controls).
+`search_messages.filename_query` performs trimmed, case-insensitive literal
+substring matching after policy and media validation; captions never match it.
+It works with peer, scope and batch search and binds continuation via a keyed
+digest. Filename-only discovery traverses bounded history; filtered entries still
+consume the limit. Names never select file types, paths or permissions and are
+not logged or persisted. Renames invalidate existing media handles.

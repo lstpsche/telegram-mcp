@@ -13,6 +13,7 @@ import (
 )
 
 type scopeCursorBinding struct {
+	FilenameDigest     string                `json:"filename_digest,omitempty"`
 	UnreadMentionsOnly bool                  `json:"unread_mentions_only,omitempty"`
 	Sender             string                `json:"sender,omitempty"`
 	MediaType          model.SearchMediaType `json:"media_type,omitempty"`
