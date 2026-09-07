@@ -143,6 +143,9 @@ func (s *Service) checkGrantsCurrent(ctx context.Context, grants []policy.Grant)
 // SearchScope traverses exact peers in canonical order, newest first per peer.
 // The candidate budget includes filtered entries, so sparse pages stay bounded.
 func (s *Service) SearchScope(ctx context.Context, requestID string, scopeID model.ScopeID, filter model.SearchFilter, limit int, token string) (Result, error) {
+	if filter.HasSavedFilter() {
+		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
+	}
 	filter, err := filter.Normalize()
 	if err != nil {
 		return Result{}, err
@@ -203,7 +206,7 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 	if err != nil {
 		return Result{}, err
 	}
-	binding := scopeCursorBinding{MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Operation: operation, Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
+	binding := scopeCursorBinding{Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Operation: operation, Scope: scopeID, MembersDigest: s.scopeMembersDigest(grants), QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	if window != nil {
 		binding.Since, binding.Until = window.Since, window.Until
 		coverage.CatchUp = &model.CatchUpCoverage{
@@ -246,7 +249,7 @@ func (s *Service) searchScope(ctx context.Context, requestID string, scopeID mod
 			return Result{}, err
 		}
 		grant := grants[cursor.Index]
-		search := model.SearchQuery{MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Window: window, Peer: grant.Peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: remaining}
+		search := model.SearchQuery{Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Window: window, Peer: grant.Peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: remaining}
 		candidates, err := s.backend.Search(ctx, search)
 		if err != nil {
 			return Result{}, err

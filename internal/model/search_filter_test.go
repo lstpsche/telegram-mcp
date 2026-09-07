@@ -41,3 +41,26 @@ func TestSearchMediaTypeValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestSenderDateFilters(t *testing.T) {
+	for _, f := range []SearchFilter{{Sender: "tgpeer:v1:user:1"}, {Sender: "tgpeer:v1:channel:1"}, {Since: 1}, {Until: 2}, {Since: 1, Until: 2}} {
+		if _, err := f.Normalize(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []SearchFilter{{Sender: "name"}, {Sender: "tgpeer:v1:self:1"}, {Sender: "tgpeer:v1:chat:1"}, {Sender: "tgpeer:v1:channel:1:topic:1"}, {Since: -1}, {Until: -1}, {Since: 2, Until: 2}, {Since: 3, Until: 2}, {Until: 2147483648}} {
+		if _, err := f.Normalize(); TextErrorCategory(err) != ErrorInvalidInput {
+			t.Fatal("invalid filter accepted")
+		}
+	}
+	for _, date := range []string{"", "2026-09-07", "2026-09-07T12:00:00", "2026-09-07T12:00:00.1Z", "1970-01-01T00:00:00Z", "2040-01-01T00:00:00Z"} {
+		if _, err := ParseSearchDate(date); err == nil {
+			t.Fatal("invalid date accepted")
+		}
+	}
+	a, err := ParseSearchDate("2026-09-07T12:00:00+03:00")
+	b, _ := ParseSearchDate("2026-09-07T09:00:00Z")
+	if err != nil || a != b {
+		t.Fatal("timezone normalization failed")
+	}
+}

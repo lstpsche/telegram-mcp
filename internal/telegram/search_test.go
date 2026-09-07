@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gotd/td/bin"
@@ -337,6 +338,42 @@ func TestDateSearchRejectsUnboundedOrMixedQueryBeforeIO(t *testing.T) {
 	} {
 		if _, err := account.Search(context.Background(), q); model.TextErrorCategory(err) != model.ErrorInvalidInput {
 			t.Fatal("invalid date query accepted")
+		}
+	}
+}
+
+func TestSenderDateSearchTraversal(t *testing.T) {
+	for _, query := range []string{"", "needle", " \t ", " needle "} {
+		normalized := strings.TrimSpace(query)
+		calls := 0
+		account, _ := newReadTestAccount(t, func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
+			switch q := in.(type) {
+			case *tg.UpdatesGetStateRequest:
+				return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
+			case *tg.MessagesGetHistoryRequest:
+				calls++
+				if normalized != "" || q.OffsetDate != 105 || q.Limit != 2 || q.MinID != 9 || q.MaxID != 21 {
+					t.Fatal("incorrect history request")
+				}
+			case *tg.MessagesSearchRequest:
+				calls++
+				if normalized == "" || q.Q != normalized || q.MinDate != 0 || q.MaxDate != 0 {
+					t.Fatal("incorrect search request")
+				}
+			default:
+				t.Fatalf("unexpected RPC %T", in)
+			}
+			a, b := testMessage(20), testMessage(19)
+			a.Date = 104
+			b.Date = 103
+			return encodeReadResponse(out, &tg.MessagesMessages{Messages: []tg.MessageClass{a, b}})
+		})
+		rows, err := account.Search(context.Background(), model.SearchQuery{Peer: testSelfPeer(t), Sender: "tgpeer:v1:user:1", Since: 102, Until: 105, Query: query, MinID: 10, MaxID: 20, Limit: 2})
+		if err != nil || len(rows) != 2 || calls != 1 {
+			t.Fatal("sender/date routing", err)
+		}
+		if normalized == "" && rows[0].SentAt != 104 {
+			t.Fatal("missing traversal date")
 		}
 	}
 }

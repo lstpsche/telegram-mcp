@@ -88,6 +88,15 @@ func TestSearchUnreadAndContextOverStdio(t *testing.T) {
 		}
 		return content
 	}
+	for _, selector := range []map[string]any{{"peer": backend.peer.String()}, {"scope": scope.ID.String()}} {
+		selector["sender"] = backend.author.String()
+		selector["since"] = "2026-09-05T15:00:00+03:00"
+		selector["until"] = "2026-09-05T12:00:01Z"
+		page := call("search_messages", selector)
+		if len(page["items"].([]any)) != 2 || backend.acks.Load() != 0 {
+			t.Fatal("sender/date wire contract")
+		}
+	}
 	beforeScopes := backend.fetches.Load()
 	scopes := call("list_scopes", map[string]any{})
 	if backend.fetches.Load() != beforeScopes || len(scopes["items"].([]any)) != 2 || scopes["freshness"].(map[string]any)["telegram"] != "unavailable" {
@@ -152,6 +161,11 @@ func TestSearchUnreadAndContextOverStdio(t *testing.T) {
 	before := backend.fetches.Load()
 	for _, args := range []string{
 		`{"query":"q"}`,
+		`{"peer":"tgpeer:v1:chat:42","sender":"tgpeer:v1:self:7"}`,
+		`{"peer":"tgpeer:v1:chat:42","sender":null,"query":"q"}`,
+		`{"peer":"tgpeer:v1:chat:42","since":"2026-09-05"}`,
+		`{"peer":"tgpeer:v1:chat:42","since":null,"query":"q"}`,
+		`{"peer":"tgpeer:v1:chat:42","since":"2026-09-05T12:00:01Z","until":"2026-09-05T12:00:00Z"}`,
 		`{"peer":"tgpeer:v1:chat:42","scope":"` + scope.ID.String() + `","query":"q"}`,
 		`{"scope":null,"query":"q"}`,
 		`{"scope":"work","query":"q"}`,

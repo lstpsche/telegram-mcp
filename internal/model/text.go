@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"unicode/utf8"
 )
@@ -25,6 +26,7 @@ type ReplyChain struct {
 }
 
 type Message struct {
+	SavedPeer   string              `json:"saved_peer,omitempty"`
 	Pinned      bool                `json:"pinned,omitempty"`
 	Reactions   *Reactions          `json:"reactions,omitempty"`
 	LinkPreview *LinkPreview        `json:"link_preview,omitempty"`
@@ -103,6 +105,10 @@ func TextErrorCategory(err error) ErrorCategory {
 
 // SearchQuery is adapter input. Query text is transient and must never be logged.
 type SearchQuery struct {
+	SavedPeer            string
+	SavedTag             SavedTag
+	Sender               string
+	Since, Until         int64
 	MediaType            SearchMediaType
 	PinnedOnly           bool
 	Window               *DateWindow
@@ -113,6 +119,7 @@ type SearchQuery struct {
 }
 
 type SearchHit struct {
+	SavedPeer        string              `json:"saved_peer,omitempty"`
 	Pinned           bool                `json:"pinned,omitempty"`
 	Reactions        *Reactions          `json:"reactions,omitempty"`
 	HasLinkPreview   bool                `json:"has_link_preview,omitempty"`
@@ -140,9 +147,13 @@ type Unread struct {
 
 // SearchFilter narrows message discovery without granting content access.
 type SearchFilter struct {
-	MediaType  SearchMediaType
-	Query      string
-	PinnedOnly bool
+	SavedPeer    string
+	SavedTag     SavedTag
+	Sender       string
+	Since, Until int64
+	MediaType    SearchMediaType
+	Query        string
+	PinnedOnly   bool
 }
 
 type SearchMediaType string
@@ -156,6 +167,24 @@ const (
 )
 
 func (f SearchFilter) Normalize() (SearchFilter, error) {
+	if f.SavedPeer != "" {
+		peer, err := ParsePeerID(f.SavedPeer)
+		if err != nil || peer.TopicID() != 0 {
+			return SearchFilter{}, TextError(ErrorInvalidInput, nil)
+		}
+	}
+	if f.SavedTag != (SavedTag{}) && !f.SavedTag.Valid() {
+		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
+	}
+	if f.Sender != "" {
+		peer, err := ParsePeerID(f.Sender)
+		if err != nil || (peer.Kind() != PeerKindUser && peer.Kind() != PeerKindChannel) || peer.TopicID() != 0 {
+			return SearchFilter{}, TextError(ErrorInvalidInput, nil)
+		}
+	}
+	if f.Since < 0 || f.Until < 0 || f.Since > math.MaxInt32 || f.Until > math.MaxInt32 || (f.Since != 0 && f.Until != 0 && f.Until <= f.Since) {
+		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
+	}
 	switch f.MediaType {
 	case "", SearchMediaPhoto, SearchMediaImageFile, SearchMediaPDF, SearchMediaTextFile, SearchMediaVoiceNote:
 	default:
@@ -165,7 +194,7 @@ func (f SearchFilter) Normalize() (SearchFilter, error) {
 		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
 	f.Query = strings.TrimSpace(f.Query)
-	if (f.Query == "" && !f.PinnedOnly && f.MediaType == "") || utf8.RuneCountInString(f.Query) > 256 {
+	if (f.Query == "" && !f.PinnedOnly && f.MediaType == "" && f.Sender == "" && f.Since == 0 && f.Until == 0 && !f.HasSavedFilter()) || utf8.RuneCountInString(f.Query) > 256 {
 		return SearchFilter{}, TextError(ErrorInvalidInput, nil)
 	}
 	return f, nil
@@ -174,4 +203,9 @@ func (f SearchFilter) Normalize() (SearchFilter, error) {
 // ValidReply keeps reply navigation inside the exact conversation and older IDs.
 func (m Message) ValidReply() bool {
 	return m.ReplyTo == nil || (m.ReplyTo.String() != "" && m.ReplyTo.Peer() == m.ID.Peer() && m.ReplyTo.TelegramID() < m.ID.TelegramID())
+}
+
+// UsesHistory selects the primary traversal when no Telegram search selector exists.
+func (q SearchQuery) UsesHistory() bool {
+	return q.Window != nil || (q.Query == "" && !q.PinnedOnly && q.MediaType == "")
 }

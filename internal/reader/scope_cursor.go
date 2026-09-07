@@ -13,6 +13,7 @@ import (
 )
 
 type scopeCursorBinding struct {
+	Sender        string                `json:"sender,omitempty"`
 	MediaType     model.SearchMediaType `json:"media_type,omitempty"`
 	PinnedOnly    bool                  `json:"pinned_only,omitempty"`
 	Since         int64                 `json:"since,omitempty"`

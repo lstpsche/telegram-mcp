@@ -11,16 +11,29 @@ import (
 )
 
 func (r *readRuntime) peerID(value tg.PeerClass) (model.PeerID, error) {
+	return normalizePeerID(value, r.self.Load())
+}
+
+func normalizePeerID(value tg.PeerClass, self int64) (model.PeerID, error) {
 	switch p := value.(type) {
 	case *tg.PeerUser:
+		if p == nil {
+			return model.PeerID{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
 		kind := model.PeerKindUser
-		if p.UserID == r.self.Load() {
+		if p.UserID == self {
 			kind = model.PeerKindSelf
 		}
 		return model.NewPeerID(kind, p.UserID)
 	case *tg.PeerChat:
+		if p == nil {
+			return model.PeerID{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
 		return model.NewPeerID(model.PeerKindChat, p.ChatID)
 	case *tg.PeerChannel:
+		if p == nil {
+			return model.PeerID{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
 		return model.NewPeerID(model.PeerKindChannel, p.ChannelID)
 	default:
 		return model.PeerID{}, model.TextError(model.ErrorInvalidReference, nil)

@@ -15,14 +15,19 @@ import (
 const cursorLifetime = 15 * time.Minute
 
 type cursorBinding struct {
-	MediaType   model.SearchMediaType `json:"media_type,omitempty"`
-	PinnedOnly  bool                  `json:"pinned_only,omitempty"`
-	Operation   string                `json:"operation"`
-	Peer        model.PeerID          `json:"peer"`
-	QueryDigest string                `json:"query_digest"`
-	Limit       int                   `json:"limit"`
-	Epoch       string                `json:"epoch"`
-	Revision    int64                 `json:"revision"`
+	SavedPeer      string                `json:"saved_peer,omitempty"`
+	SavedTagDigest string                `json:"saved_tag_digest,omitempty"`
+	Since          int64                 `json:"since,omitempty"`
+	Until          int64                 `json:"until,omitempty"`
+	Sender         string                `json:"sender,omitempty"`
+	MediaType      model.SearchMediaType `json:"media_type,omitempty"`
+	PinnedOnly     bool                  `json:"pinned_only,omitempty"`
+	Operation      string                `json:"operation"`
+	Peer           model.PeerID          `json:"peer"`
+	QueryDigest    string                `json:"query_digest"`
+	Limit          int                   `json:"limit"`
+	Epoch          string                `json:"epoch"`
+	Revision       int64                 `json:"revision"`
 }
 
 type searchCursor struct {
@@ -88,4 +93,11 @@ func (s *Service) decodeCursor(token string, binding cursorBinding) (searchCurso
 		return invalid()
 	}
 	return cursor, nil
+}
+
+func (s *Service) savedTagDigest(tag model.SavedTag) string {
+	if tag == (model.SavedTag{}) {
+		return ""
+	}
+	return s.queryDigest("saved-tag-v1\x00" + tag.Kind + "\x00" + tag.Emoji + "\x00" + tag.CustomEmojiID)
 }

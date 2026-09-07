@@ -9,8 +9,9 @@ Find supported attachments using `search_messages` with a `media_type`:
 Use exactly one `peer` or human-configured `scope`. Exact forum topics use the
 same topic IDs and authority as ordinary search. An optional `query` narrows
 Telegram's search results; it does not search inside PDFs, text files or audio.
-With a media filter, query may be omitted or empty. Without a media or pin
-filter, query remains required and nonempty.
+With a media filter, query may be omitted or empty. A nonempty query is required
+only when no filter is active; see [sender/date filters](search-filters.md) and
+[Saved Messages](saved-messages.md).
 
 | `media_type` | Matches |
 | --- | --- |

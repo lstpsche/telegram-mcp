@@ -15,7 +15,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if err != nil {
 		return Result{}, err
 	}
-	if peer.String() == "" || model.ValidatePageSize(limit) != nil || len(token) > 4096 {
+	if (filter.HasSavedFilter() && peer.Kind() != model.PeerKindSelf) || peer.String() == "" || model.ValidatePageSize(limit) != nil || len(token) > 4096 {
 		return Result{}, model.TextError(model.ErrorInvalidInput, nil)
 	}
 	if !s.Ready() {
@@ -59,7 +59,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	if err != nil {
 		return Result{}, err
 	}
-	binding := cursorBinding{MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
+	binding := cursorBinding{SavedPeer: filter.SavedPeer, SavedTagDigest: s.savedTagDigest(filter.SavedTag), Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Operation: "search_messages", Peer: peer, QueryDigest: s.queryDigest(filter.Query), Limit: limit, Epoch: epoch, Revision: revision}
 	deadline := s.now().Add(cursorLifetime)
 	deadline = grant.Deadline(deadline)
 	cursor = searchCursor{Binding: binding, Ceiling: grant.MaxID, Expires: deadline.Unix()}
@@ -74,7 +74,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 	}
 	ctx, stopCursor := context.WithTimeout(ctx, time.Unix(cursor.Expires, 0).Sub(s.now()))
 	defer stopCursor()
-	query := model.SearchQuery{MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
+	query := model.SearchQuery{SavedPeer: filter.SavedPeer, SavedTag: filter.SavedTag, Sender: filter.Sender, Since: filter.Since, Until: filter.Until, MediaType: filter.MediaType, PinnedOnly: filter.PinnedOnly, Peer: peer, Query: filter.Query, MinID: grant.MinID, MaxID: cursor.Ceiling, Before: cursor.Before, Limit: limit}
 	candidates, err := s.backend.Search(ctx, query)
 	if err != nil {
 		return Result{}, err
@@ -97,7 +97,7 @@ func (s *Service) Search(ctx context.Context, requestID string, peer model.PeerI
 		return Result{}, model.TextError(model.ErrorCursorExpired, nil)
 	}
 	var next *string
-	if len(candidates) == limit && lowest > grant.MinID {
+	if len(candidates) == limit && lowest > grant.MinID && !window.exhausted {
 		if cursor.Before == 0 {
 			cursor.Ceiling = highest
 		}
@@ -146,15 +146,19 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		if id > highest {
 			highest = id
 		}
-		if query.Window != nil && candidate.SentAt != 0 {
+		if query.UsesHistory() && candidate.SentAt != 0 {
 			if candidate.SentAt < 0 {
 				return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
 			}
-			if candidate.SentAt < query.Window.Since {
+			since, until := query.Since, query.Until
+			if query.Window != nil {
+				since, until = query.Window.Since, query.Window.Until
+			}
+			if since != 0 && candidate.SentAt < since {
 				exhausted = true
 				continue
 			}
-			if candidate.SentAt >= query.Window.Until {
+			if until != 0 && candidate.SentAt >= until {
 				continue
 			}
 		}
@@ -177,6 +181,20 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		date, err := time.Parse(time.RFC3339Nano, message.Date)
 		if err != nil || date.IsZero() || (query.Window != nil && date.Unix() != candidate.SentAt) || !message.ValidAuthor() || (message.Text == "" && candidate.Image == nil && candidate.Document == nil && candidate.Voice == nil && message.Poll == nil && message.LinkPreview == nil) || !utf8.ValidString(message.Text) {
 			return searchWindow{}, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		if query.Since != 0 && date.Unix() < query.Since {
+			continue
+		}
+		if query.Until != 0 && date.Unix() >= query.Until {
+			continue
+		}
+		if (query.SavedPeer != "" && message.SavedPeer != query.SavedPeer) || (query.SavedTag != (model.SavedTag{}) && !query.SavedTag.Matches(message.Reactions)) {
+			partial = true
+			continue
+		}
+		if query.Sender != "" && message.Author.String() != query.Sender {
+			partial = true
+			continue
 		}
 		if len(message.Text) > 64*1024 {
 			return searchWindow{}, model.TextError(model.ErrorResultTooLarge, nil)
@@ -202,7 +220,7 @@ func (s *Service) normalizeSearchWindow(grant policy.Grant, query model.SearchQu
 		if err != nil {
 			return searchWindow{}, err
 		}
-		hit := model.SearchHit{Pinned: message.Pinned, Reactions: message.Reactions, HasLinkPreview: message.LinkPreview != nil, HasPoll: message.Poll != nil, AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated}
+		hit := model.SearchHit{SavedPeer: message.SavedPeer, Pinned: message.Pinned, Reactions: message.Reactions, HasLinkPreview: message.LinkPreview != nil, HasPoll: message.Poll != nil, AlbumID: message.AlbumID, ReplyTo: message.ReplyTo, ChannelPost: message.ChannelPost, Forward: message.Forward, Voice: voice, Image: descriptor, Document: document, ID: message.ID, Author: message.Author, Date: date.UTC().Format(time.RFC3339Nano), Snippet: string(snippet), SnippetTruncated: truncated}
 		if !matchesSearchMedia(query.MediaType, hit) {
 			partial = true
 			continue

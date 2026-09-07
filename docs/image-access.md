@@ -9,13 +9,14 @@ its author, message range, expiry, or separate read-prefix authority.
 `telegram-mcp grants` reports the current `images` setting.
 
 `list_messages`, `get_message_context`, and `search_messages` include an
-optional `image` object only for permitted images. It contains `handle`,
-`kind` (`photo` or `document`), `mime_type`, `width`, `height`, and `size`
-in bytes. Discovery downloads no image bytes. A permitted image can have empty
-text or a caption; history/context can discover images with no caption.
-Search still requires a nonempty query and follows Telegram's matching rules.
-Search metadata has no read acknowledgment; history/context retain their
-existing acknowledgment before delivery.
+optional `image` object only for permitted images. It contains `handle`, `kind`
+(`photo` or `document`), `mime_type`, `width`, `height`, and `size` in bytes.
+Discovery downloads no image bytes. A permitted image can have empty text or a
+caption; history/context can discover images with no caption. Use [media
+search](media-search.md) to find photos or image files without caption text.
+Text queries follow Telegram's matching rules. Search metadata has no read
+acknowledgment; history/context retain their existing acknowledgment before
+delivery.
 
 Call `open_image` with exactly `{ "handle": "<returned handle>" }` to retrieve
 one image. The result contains a native MCP image block and the standard

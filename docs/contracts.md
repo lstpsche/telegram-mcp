@@ -54,24 +54,30 @@ tools advertise read side effects rather than `readOnlyHint: true`.
 
 `list_scopes` accepts an empty object and returns local scope IDs, names, and
 eligible/excluded peer counts without Telegram I/O. Its freshness is
-`unavailable`. Scope membership narrows current access authority; it cannot authorize
-content or receipt effects. `list_unread` also accepts optional `scope` and `cursor`.
-`search_messages` requires exactly one of `peer` or `scope`, with optional
-`limit`, `cursor`, `pinned_only`, and `media_type`. Query is required and nonempty
-unless `pinned_only` is true or `media_type` is set; either allows discovery
-without a text constraint. Neither search nor unread acknowledges history.
-Scoped search visits canonical peer IDs in ascending bytewise order and returns
-newest messages first within each peer. It bounds fetched candidates, including
-filtered ones, to the requested limit and backend lookups to 20 per request.
-See [text access](text-access.md) for continuation and eligibility semantics.
+`unavailable`. Scope membership narrows current access authority; it cannot
+authorize content or receipt effects. `list_unread` also accepts optional
+`scope` and `cursor`. `search_messages` requires exactly one of `peer` or
+`scope`, with optional `limit`, `cursor`, `pinned_only`, `media_type`, `sender`,
+`since`, `until`, `saved_peer` and `saved_tag`. Query is required and nonempty
+unless another filter is active. Sender matches the returned author. Dates use
+whole-second RFC3339 timestamps, with inclusive since and exclusive until;
+either is optional. Saved source/tag filters require an exact self peer and
+narrow saved copies, never their origins. See [search
+filters](search-filters.md) and [Saved Messages
+organization](saved-messages.md). Neither search nor unread acknowledges
+history. Scoped search visits canonical peer IDs in ascending bytewise order and
+returns newest messages first within each peer. It bounds fetched candidates,
+including filtered ones, to the requested limit and backend lookups to 20 per
+request. See [text access](text-access.md) for continuation and eligibility
+semantics.
 
 `catch_up` requires `scope`, `since`, and `until`, with optional `limit` and
 `cursor`. Dates use RFC3339 with an explicit timezone and no fractional seconds.
 The range is [since, until): start included, end excluded. Both must be positive
 Unix timestamps within Telegram's signed 32-bit timestamp range. There is no
-implicit current time. The response uses search-hit snippets and image references,
-never full bodies or read receipts. Ordinary `search_messages` still requires a
-nonempty query.
+implicit current time. The response uses search-hit snippets and image
+references, never full bodies or read receipts. `search_messages` can also
+narrow by sender and optional date bounds.
 
 Catch-up requires the `scope` coverage object and its `catch_up` field:
 `since` and `until` normalized to UTC, and a `peers` array containing each

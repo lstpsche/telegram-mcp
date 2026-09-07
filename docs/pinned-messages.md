@@ -7,11 +7,12 @@ conversation or human-configured scope:
 {"peer":"tgpeer:v1:chat:42","pinned_only":true,"limit":20}
 ```
 
-Add `query` to narrow pins by text. Omit it, or pass an empty string, to discover
-pins without a text constraint. Searches without a pin or media-type filter
-still require a nonempty query. Queries are trimmed and bounded to 256 Unicode characters and 1024 input
-bytes. Exactly one of `peer` or `scope` is required. Exact forum-topic peers work
-under the same topic grants as other searches.
+Add `query` to narrow pins by text. Omit it, or pass an empty string, to
+discover pins without a text constraint. Searches without any active filter
+still require a nonempty query. See also [sender/date
+filters](search-filters.md). Queries are trimmed and bounded to 256 Unicode
+characters and 1024 input bytes. Exactly one of `peer` or `scope` is required.
+Exact forum-topic peers work under the same topic grants as other searches.
 
 Results use the existing search-hit envelope: snippets of up to 240 characters,
 authorized media references, `pinned: true`, and `read_effect.kind: "none"`.

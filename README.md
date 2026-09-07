@@ -13,7 +13,7 @@ Telegram MCP is an **unofficial client using Telegram's API**, with no Telegram 
 | Workflow | Capabilities |
 | --- | --- |
 | **Catch up** | Get a briefing across a named group of chats for an explicit date range |
-| **Search** | Find messages in an authorized conversation or across a named scope |
+| **Search** | Find messages by text, sender, date, attachment type or pin in an authorized conversation or named scope |
 | **Read context** | Open message history and the conversation around a search result |
 | **Open documents** | Read original PDFs and UTF-8 plain-text attachments |
 | **View images** | Deliver supported JPEG/PNG photos and document attachments directly to the agent |
@@ -192,7 +192,7 @@ Version 0.5.0 added [forum topics](docs/topic-access.md) and [original voice not
 | `list_topics` | Discover individual forum topics allowed by your access settings |
 | `list_messages` | Read a bounded page of authorized history |
 | `get_message_context` | Retrieve context around a specific message |
-| `search_messages` | Search an authorized conversation or named scope; use `pinned_only` for pins or `media_type` for attachments |
+| `search_messages` | Search an authorized conversation or named scope; filter by sender, date, pins, attachments or Saved Messages source/tag |
 | `list_unread` | Inspect unread counts and manual unread flags |
 | `list_scopes` | Discover human-managed groups of conversations |
 | `catch_up` | Retrieve snippets and attachment references across a scope for an explicit time window |
@@ -221,6 +221,8 @@ Supported [media album members](docs/media-albums.md) share an `album_id` from 0
 Read [poll questions, text options and available aggregate counts](docs/polls.md) through history/context. Search and catch-up provide a poll marker and question snippet.
 
 Version 0.7.0 preserves [link messages and Telegram-supplied previews](docs/link-previews.md), without visiting their URLs. [Reaction summaries](docs/reactions.md) include supplied emoji/custom-emoji counts, Star counts, and Saved Messages tag semantics. [Pinned-message discovery](docs/pinned-messages.md) finds reference material with `pinned_only: true` and an optional query. [Media search](docs/media-search.md) finds photos, image files, PDFs, plain-text files and voice notes without requiring caption text.
+
+Narrow searches by [sender and date](docs/search-filters.md), including across named scopes. Use [Saved Messages source and tag filters](docs/saved-messages.md) to revisit organized saved content.
 
 The MCP surface is read-first: sending, editing, deleting, account administration, authentication, and access changes are not agent tools. See [message access](docs/text-access.md) and [image access](docs/image-access.md) for exact boundaries.
 

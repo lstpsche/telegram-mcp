@@ -41,8 +41,8 @@ func TestTopicRoutesHistorySearchAndReceiptToExactThread(t *testing.T) {
 					return encodeReadResponse(out, &tg.MessagesForumTopics{Pts: 12, Count: 1, Topics: []tg.ForumTopicClass{topic}, Chats: []tg.ChatClass{group}})
 				case *tg.MessagesGetRepliesRequest:
 					history++
-					if q.MsgID != int(topicID) {
-						t.Fatal("wrong history thread")
+					if q.MsgID != int(topicID) || (history == 2 && q.OffsetDate != 102) {
+						t.Fatal("wrong history thread or date")
 					}
 					return encodeReadResponse(out, page)
 				case *tg.MessagesSearchRequest:
@@ -90,13 +90,17 @@ func TestTopicRoutesHistorySearchAndReceiptToExactThread(t *testing.T) {
 			if _, err := account.Search(ctx, model.SearchQuery{Peer: peer, MediaType: model.SearchMediaPDF, MinID: 1, MaxID: 100, Limit: 20}); err != nil {
 				t.Fatal(err)
 			}
+			rows, err := account.Search(ctx, model.SearchQuery{Peer: peer, Sender: "tgpeer:v1:user:2", Since: 99, Until: 102, MinID: 1, MaxID: 100, Limit: 20})
+			if err != nil || len(rows) != 1 || rows[0].SentAt != 100 || rows[0].Message.ID.Peer() != peer || receipts != 0 {
+				t.Fatal("topic sender/date traversal", err)
+			}
 			if err := account.Acknowledge(ctx, peer, 20); err != nil {
 				t.Fatal(err)
 			}
 			if err := account.Acknowledge(ctx, parent, 20); model.TextErrorCategory(err) != model.ErrorUnsupportedPeer {
 				t.Fatal("forum receipt accepted", err)
 			}
-			if history != 1 || search != 3 || receipts != 1 {
+			if history != 2 || search != 3 || receipts != 1 {
 				t.Fatal(history, search, receipts)
 			}
 		})

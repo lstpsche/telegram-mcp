@@ -16,16 +16,20 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	}
 	query := q.Query
 	if q.Window != nil {
-		if q.Window.Validate() != nil || query != "" || q.PinnedOnly || q.MediaType != "" {
+		if q.Window.Validate() != nil || query != "" || q.PinnedOnly || q.MediaType != "" || q.Sender != "" || q.Since != 0 || q.Until != 0 || q.SavedPeer != "" || q.SavedTag != (model.SavedTag{}) {
 			return nil, model.TextError(model.ErrorInvalidInput, nil)
 		}
 	} else {
-		filter, err := (model.SearchFilter{MediaType: q.MediaType, Query: query, PinnedOnly: q.PinnedOnly}).Normalize()
+		filter, err := (model.SearchFilter{SavedPeer: q.SavedPeer, SavedTag: q.SavedTag, Sender: q.Sender, Since: q.Since, Until: q.Until, MediaType: q.MediaType, Query: query, PinnedOnly: q.PinnedOnly}).Normalize()
 		if err != nil {
 			return nil, err
 		}
+		if filter.HasSavedFilter() && q.Peer.Kind() != model.PeerKindSelf {
+			return nil, model.TextError(model.ErrorInvalidInput, nil)
+		}
 		query = filter.Query
 	}
+	q.Query = query
 	if q.MinID <= 0 || q.MaxID < q.MinID || q.Before < 0 || (q.Before > 0 && q.Before <= q.MinID) || model.ValidatePageSize(q.Limit) != nil {
 		return nil, model.TextError(model.ErrorInvalidInput, nil)
 	}
@@ -48,8 +52,12 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 		}
 	}
 	var response tg.MessagesMessagesClass
-	if q.Window != nil {
-		response, err = a.reads.historyPage(bounded, q.Peer, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, OffsetDate: int(q.Window.Until), Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
+	if q.UsesHistory() {
+		until := q.Until
+		if q.Window != nil {
+			until = q.Window.Until
+		}
+		response, err = a.reads.historyPage(bounded, q.Peer, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offset, OffsetDate: int(until), Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum})
 	} else {
 		request := &tg.MessagesSearchRequest{Peer: input, Q: query, Filter: &tg.InputMessagesFilterEmpty{}, OffsetID: offset, Limit: q.Limit, MinID: int(q.MinID) - 1, MaxID: maximum}
 		switch {
@@ -95,7 +103,7 @@ func (a *Account) Search(ctx context.Context, q model.SearchQuery) ([]model.Cand
 	if err != nil {
 		return nil, err
 	}
-	if q.Window != nil {
+	if q.UsesHistory() {
 		if err := dateCandidates(q.Peer, response, candidates); err != nil {
 			return nil, err
 		}

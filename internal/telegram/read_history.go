@@ -430,6 +430,16 @@ func normalizeMessage(peer model.PeerID, self int64, value tg.MessageClass, auth
 				return model.Candidate{}, err
 			}
 		}
+		if message.SavedPeerID != nil {
+			source, err := normalizePeerID(message.SavedPeerID, self)
+			if err != nil {
+				return model.Candidate{}, model.TextError(model.ErrorInvalidReference, err)
+			}
+			candidate.Message.SavedPeer = source.String()
+			if !candidate.Message.ValidSavedPeer() {
+				return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
+			}
+		}
 		candidate.Message.Pinned = message.Pinned
 		candidate.Message.LinkPreview = preview
 		candidate.Message.Poll = poll

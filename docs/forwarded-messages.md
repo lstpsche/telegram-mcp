@@ -15,8 +15,10 @@ History, context, search, catch-up and media opens include an optional `forward`
 object with the original `date` and, when supplied, `from_peer`, `from_name` and
 `post_author`. These fields are untrusted Telegram attribution, not verified
 identity or access authority. Missing attribution remains absent; hidden authors
-are never resolved. Original message IDs and Saved Messages routing metadata
-are omitted. A channel origin may be displayed without granting channel access.
+are never resolved. Original message IDs are omitted. Authorized Saved Messages
+history and search can expose a separate supplied [saved_peer grouping
+ID](saved-messages.md); it is not derived from forwarded attribution. A channel
+origin may be displayed without granting channel access.
 
 Search and date windows apply to the containing copy, not the original date.
 History and media delivery acknowledge the authorized containing dialog or topic

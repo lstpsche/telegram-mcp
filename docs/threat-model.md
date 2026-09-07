@@ -515,3 +515,25 @@ releasing content or replacing a failed RPC with an empty success. Existing
 media permissions and byte/duration limits remain; search introduces no download,
 interpretation, receipt, index, persistence or additional authority. See
 [media search](media-search.md).
+
+## Sender, date and Saved Messages selectors
+
+Sender and time bounds narrow candidates after containing-message policy checks.
+Sender means the normalized author, not forwarded attribution or a channel
+signature. Date-only and other searches without text/media/pin selectors use
+history traversal with validated ordering; empty-query search dates are not
+trusted. Dates remain transient, and peer/scope cursors bind normalized bounds
+and sender alongside existing authority and expiry. Every fetched candidate
+consumes the page budget, including nonmatches and excluded content.
+
+Saved source grouping is copied only from supplied saved_peer_id on otherwise
+supported authorized Saved Messages. It is a strict kinded non-topic ID; self
+references must identify the containing account. Missing source metadata is
+unknown. Hidden authors are not resolved or inferred. A grouping ID never
+selects a grant, resolves access hashes or causes original-conversation reads.
+Only exact self-peer searches accept saved_peer/saved_tag, excluding scopes.
+Reaction tags require validated as_tags data and a positive count; paid and
+ordinary reactions do not match. The saved-tag cursor binding is keyed so tag
+text is not exposed in cursor payloads. Source and tag discovery uses authorized
+message results, never an unrestricted catalog across excluded saved content.
+No new persistence, acknowledgments, writes or authentication surface is added.

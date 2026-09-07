@@ -96,7 +96,7 @@ func (g Grant) CheckMessage(candidate model.Candidate, self model.PeerID, now ti
 		return err
 	}
 	message := candidate.Message
-	if !message.ValidAlbum() || (message.AlbumID != "" && candidate.Image == nil && candidate.Document == nil && candidate.Voice == nil) {
+	if !message.ValidSavedPeer() || !message.ValidAlbum() || (message.AlbumID != "" && candidate.Image == nil && candidate.Document == nil && candidate.Voice == nil) {
 		return model.TextError(model.ErrorPolicyDenied, ErrDenied)
 	}
 	if !message.Reactions.Valid(message.ID.Peer()) || !message.LinkPreview.Valid() || !message.Poll.Valid() {

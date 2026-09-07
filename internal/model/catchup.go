@@ -16,21 +16,11 @@ type DateWindow struct {
 var secondTimestamp = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-](0[0-9]|1[0-9]|2[0-3]):[0-5][0-9])$`)
 
 func ParseDateWindow(since, until string) (DateWindow, error) {
-	parse := func(value string) (int64, error) {
-		if !secondTimestamp.MatchString(value) {
-			return 0, TextError(ErrorInvalidInput, nil)
-		}
-		t, err := time.Parse(time.RFC3339, value)
-		if err != nil || t.Nanosecond() != 0 {
-			return 0, TextError(ErrorInvalidInput, nil)
-		}
-		return t.Unix(), nil
-	}
-	start, err := parse(since)
+	start, err := ParseSearchDate(since)
 	if err != nil {
 		return DateWindow{}, err
 	}
-	end, err := parse(until)
+	end, err := ParseSearchDate(until)
 	if err != nil {
 		return DateWindow{}, err
 	}
@@ -63,4 +53,16 @@ type CatchUpCoverage struct {
 	Since string        `json:"since"`
 	Until string        `json:"until"`
 	Peers []CatchUpPeer `json:"peers"`
+}
+
+// ParseSearchDate accepts explicit whole-second timestamps in Telegram's range.
+func ParseSearchDate(value string) (int64, error) {
+	if !secondTimestamp.MatchString(value) {
+		return 0, TextError(ErrorInvalidInput, nil)
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil || t.Nanosecond() != 0 || t.Unix() <= 0 || t.Unix() > math.MaxInt32 {
+		return 0, TextError(ErrorInvalidInput, nil)
+	}
+	return t.Unix(), nil
 }
