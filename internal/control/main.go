@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/app"
 	"github.com/lstpsche/telegram-mcp/internal/buildinfo"
@@ -173,7 +174,7 @@ func runContext(
 		if args[1] == "qr" {
 			method = tgaccount.AuthMethodQR
 		}
-		outcome, err := control.Authenticate(ctx, method, prompt)
+		outcome, err := authenticate(ctx, control, method, prompt)
 		if err != nil {
 			writeControlError(stderr, err)
 			return 1
@@ -188,6 +189,29 @@ func runContext(
 		fmt.Fprintln(stderr, "telegram-mcp: unknown command")
 		return 2
 	}
+}
+
+type qrPrompt struct {
+	tgaccount.Prompt
+	displayError *operatorcli.QRCodeSizeError
+}
+
+func (p *qrPrompt) ShowQRCode(ctx context.Context, tokenURL string, expiresAt time.Time) error {
+	p.displayError = nil
+	err := p.Prompt.ShowQRCode(ctx, tokenURL, expiresAt)
+	errors.As(err, &p.displayError)
+	return err
+}
+
+func authenticate(ctx context.Context, control controller, method tgaccount.AuthMethod, prompt tgaccount.Prompt) (app.AuthOutcome, error) {
+	qr := &qrPrompt{Prompt: prompt}
+	outcome, err := control.Authenticate(ctx, method, qr)
+	if err != nil && qr.displayError != nil {
+		// The account boundary sanitizes external errors. Preserve only the
+		// console's typed, credential-free sizing guidance for the operator.
+		return outcome, &humanStepError{hint: qr.displayError.Error(), cause: err}
+	}
+	return outcome, err
 }
 
 func configurationReader(openTerminal terminalFactory) app.ConfigurationReader {

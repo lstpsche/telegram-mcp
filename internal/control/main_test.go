@@ -10,10 +10,55 @@ import (
 	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/app"
+	operatorcli "github.com/lstpsche/telegram-mcp/internal/cli"
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	metastore "github.com/lstpsche/telegram-mcp/internal/store"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
 )
+
+type qrDisplayController struct{ fakeController }
+
+func (f *qrDisplayController) Authenticate(ctx context.Context, _ tgaccount.AuthMethod, prompt tgaccount.Prompt) (app.AuthOutcome, error) {
+	if err := prompt.ShowQRCode(ctx, "tg://login?token=synthetic-secret", time.Now().Add(time.Minute)); err != nil {
+		return app.AuthOutcome{}, errors.Join(tgaccount.ErrTelegramUnavailable, errors.New("raw-external-secret"))
+	}
+	return app.AuthOutcome{Performed: true}, nil
+}
+
+type qrDisplayTerminal struct {
+	fakeTerminal
+	displayError error
+}
+
+func (p *qrDisplayTerminal) ShowQRCode(context.Context, string, time.Time) error {
+	return p.displayError
+}
+
+func TestQRAuthenticationReportsOnlyTrustedConsoleSizing(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		err     error
+		message string
+	}{
+		{name: "sizing guidance", err: &operatorcli.QRCodeSizeError{Columns: 80, Rows: 24, RequiredColumns: 91, RequiredRows: 48}, message: "needs at least 91 columns and 48 rows"},
+		{name: "arbitrary prompt error", err: errors.New("raw-prompt-secret"), message: "Telegram operation is unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prompt := &qrDisplayTerminal{displayError: tc.err}
+			var stdout, stderr bytes.Buffer
+			code := runContext(context.Background(), []string{"auth", "qr"}, &stdout, &stderr,
+				func() (controller, error) { return &qrDisplayController{}, nil },
+				func() (terminal, error) { return prompt, nil })
+			if code != 1 || stdout.Len() != 0 || !prompt.closed || !strings.Contains(stderr.String(), tc.message) {
+				t.Fatalf("QR failure was not reported correctly: code=%d stderr=%q", code, stderr.String())
+			}
+			if strings.Count(stderr.String(), "telegram-mcp:") != 1 || strings.Contains(stderr.String(), "secret") {
+				t.Fatal("QR failures must be reported once without prompt or external secrets")
+			}
+		})
+	}
+}
 
 func TestControlPlaneHelpListsOnlyHumanCommands(t *testing.T) {
 	t.Parallel()

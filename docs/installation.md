@@ -9,7 +9,7 @@ Homebrew users on macOS or Linux can install with:
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcp install --version 1.1.0 --setup
+telegram-mcp install --version 1.2.2 --setup
 ```
 
 Homebrew supplies checksum-pinned platform binaries. The second command creates
@@ -32,9 +32,9 @@ For a managed release installation, download `install.sh` (macOS/Linux) or
 user. The script verifies a standalone control executable, which downloads and
 verifies the full archive before starting guided setup. The scripts accept an
 explicit stable version; release assets default to their packaged version.
-The source scripts default to 1.1.0. They do not require Go.
+The source scripts default to 1.2.2. They do not require Go.
 
-The equivalent control command is `telegram-mcp install --version 1.1.0 --setup`.
+The equivalent control command is `telegram-mcp install --version 1.2.2 --setup`.
 Omit `--setup` to prepare files without touching account or service state.
 Managed versions live under the OS user configuration directory at
 `Telegram MCP/install/versions/X.Y.Z`. Existing versions are checked in full and
@@ -55,6 +55,13 @@ credentials and phone/QR authentication, offers access settings, starts the
 service and waits for account readiness. Obtain your own API ID and hash at
 https://my.telegram.org before starting. Input is hidden and comes directly
 from the OS console.
+
+QR authentication uses solid terminal cell backgrounds, so font glyph spacing
+does not cut gaps into the code. Keep the entire image visible while scanning.
+If the terminal is too small, the command reports the required columns and rows
+without printing a partial QR. Enlarge the window or reduce its font size, then
+run `telegram-mcp auth qr` again. The QR and any two-step verification password
+remain in the local console.
 
 Setup preserves recorded authentication and access settings when resuming.
 It asks before stopping an existing service or enabling Full read access.

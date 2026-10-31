@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -9,11 +10,51 @@ import (
 	"rsc.io/qr"
 )
 
+func TestRenderQRCodeRequiresEnoughVisibleSpace(t *testing.T) {
+	t.Parallel()
+	const tokenURL = "tg://login?token=synthetic-qr-rendering-test"
+	code, err := qr.Encode(tokenURL, qr.M)
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := code.Size + 2*qrQuietZoneModules
+	for _, tc := range []struct {
+		name          string
+		columns, rows int
+		fits          bool
+	}{
+		{name: "exact fit with cursor space", columns: 2*size + 1, rows: size + 3, fits: true},
+		{name: "would wrap", columns: 2 * size, rows: size + 3},
+		{name: "would scroll out of view", columns: 2*size + 1, rows: size + 2},
+		{name: "unavailable dimensions"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rendered, err := renderQRCode(tokenURL, tc.columns, tc.rows)
+			if tc.fits {
+				if err != nil || rendered == "" {
+					t.Fatalf("fitting QR was not rendered: %v", err)
+				}
+				return
+			}
+			var sizeError *QRCodeSizeError
+			if rendered != "" || !errors.As(err, &sizeError) {
+				t.Fatalf("expected a sizing error without a partial QR: %v", err)
+			}
+			if sizeError.RequiredColumns != 2*size+1 || sizeError.RequiredRows != size+3 || sizeError.Columns != tc.columns || sizeError.Rows != tc.rows {
+				t.Fatalf("incorrect console dimensions: %v", err)
+			}
+			if !strings.Contains(err.Error(), "enlarge the terminal or reduce its font size") || strings.Contains(err.Error(), "synthetic-qr") {
+				t.Fatal("sizing error must guide the operator without including login material")
+			}
+		})
+	}
+}
+
 func TestRenderQRCodeDoesNotPrintTokenURL(t *testing.T) {
 	t.Parallel()
 
 	const tokenURL = "tg://login?token=secret-capability-value"
-	rendered, err := renderQRCode(tokenURL)
+	rendered, err := renderQRCode(tokenURL, 200, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +66,7 @@ func TestRenderQRCodeDoesNotPrintTokenURL(t *testing.T) {
 	}
 }
 
-func TestRenderQRCodePreservesModulesAcrossTerminalPalettes(t *testing.T) {
+func TestRenderQRCodePreservesModulesWithoutGlyphGaps(t *testing.T) {
 	t.Parallel()
 
 	const tokenURL = "tg://login?token=synthetic-qr-rendering-test"
@@ -33,9 +74,12 @@ func TestRenderQRCodePreservesModulesAcrossTerminalPalettes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered, err := renderQRCode(tokenURL)
+	rendered, err := renderQRCode(tokenURL, 200, 100)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if strings.ContainsAny(rendered, "█▀▄") {
+		t.Fatal("QR modules must use cell backgrounds, independent of glyph height and line spacing")
 	}
 	for _, tc := range []struct {
 		name             string
@@ -95,31 +139,25 @@ func TestRenderQRCodePreservesModulesAcrossTerminalPalettes(t *testing.T) {
 				glyph, width := utf8.DecodeRuneInString(remaining)
 				remaining = remaining[width:]
 				if glyph == '\n' {
-					if x != code.Size+2*qrQuietZoneModules {
+					if x != 2*(code.Size+2*qrQuietZoneModules) {
 						t.Fatal("QR row has incorrect width")
 					}
-					x, y = 0, y+2
+					x, y = 0, y+1
 					continue
 				}
-				if !strings.ContainsRune(" █▀▄", glyph) {
+				if glyph != ' ' {
 					t.Fatal("unexpected QR glyph")
 				}
 				fg, bg := foreground, background
 				if inverted {
 					fg, bg = bg, fg
 				}
-				for half := 0; half < 2; half++ {
-					index := bg
-					if glyph == '█' || half == 0 && glyph == '▀' || half == 1 && glyph == '▄' {
-						index = fg
-					}
-					if paletteDark(index) != code.Black(x-qrQuietZoneModules, y+half-qrQuietZoneModules) {
-						t.Fatalf("QR module at (%d, %d) is not visible with the intended polarity", x, y+half)
-					}
+				if paletteDark(bg) != code.Black(x/2-qrQuietZoneModules, y-qrQuietZoneModules) {
+					t.Fatalf("QR cell at (%d, %d) is not visible with the intended polarity", x, y)
 				}
 				x++
 			}
-			if y != (code.Size+2*qrQuietZoneModules+1)/2*2 {
+			if y != code.Size+2*qrQuietZoneModules {
 				t.Fatal("QR image has incorrect height")
 			}
 		})

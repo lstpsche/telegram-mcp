@@ -168,7 +168,7 @@ func (s *setupSession) run(ctx context.Context) error {
 		if method != "phone" && method != "qr" {
 			return humanHint("choose phone or qr authentication")
 		}
-		if _, err := s.control.Authenticate(ctx, tgaccount.AuthMethod(method), s.prompt); err != nil {
+		if _, err := authenticate(ctx, s.control, tgaccount.AuthMethod(method), s.prompt); err != nil {
 			return err
 		}
 	}

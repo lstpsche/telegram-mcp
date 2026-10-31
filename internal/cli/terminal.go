@@ -27,6 +27,16 @@ type Terminal struct {
 	output *os.File
 }
 
+// QRCodeSizeError contains only console dimensions, never login material.
+type QRCodeSizeError struct {
+	Columns, Rows                 int
+	RequiredColumns, RequiredRows int
+}
+
+func (e *QRCodeSizeError) Error() string {
+	return fmt.Sprintf("Telegram login QR code needs at least %d columns and %d rows (terminal: %d columns, %d rows); enlarge the terminal or reduce its font size", e.RequiredColumns, e.RequiredRows, e.Columns, e.Rows)
+}
+
 func OpenTerminal() (*Terminal, error) {
 	input, output, err := openConsole()
 	if err != nil {
@@ -88,9 +98,13 @@ func (t *Terminal) ShowQRCode(ctx context.Context, tokenURL string, expiresAt ti
 	if t == nil || t.input == nil || t.output == nil {
 		return errors.New("interactive terminal is not initialized")
 	}
-	rendered, err := renderQRCode(tokenURL)
+	columns, rows, err := term.GetSize(int(t.output.Fd()))
 	if err != nil {
-		return errors.New("render Telegram login QR code")
+		return fmt.Errorf("read terminal dimensions for Telegram login QR code: %w", err)
+	}
+	rendered, err := renderQRCode(tokenURL, columns, rows)
+	if err != nil {
+		return err
 	}
 	remaining := time.Until(expiresAt).Truncate(time.Second)
 	if remaining < 0 {
@@ -142,38 +156,33 @@ func (t *Terminal) readHidden(ctx context.Context, label string, trimSpace bool)
 	return value, nil
 }
 
-func renderQRCode(tokenURL string) (string, error) {
+func renderQRCode(tokenURL string, columns, rows int) (string, error) {
 	code, err := qr.Encode(tokenURL, qr.M)
 	if err != nil {
-		return "", err
+		return "", errors.New("encode Telegram login QR code")
 	}
 	size := code.Size + 2*qrQuietZoneModules
+	// Leave one column to avoid automatic wrapping and three rows for the
+	// instructions, expiry message and cursor after the image.
+	minimumColumns, minimumRows := 2*size+1, size+3
+	if columns < minimumColumns || rows < minimumRows {
+		return "", &QRCodeSizeError{Columns: columns, Rows: rows, RequiredColumns: minimumColumns, RequiredRows: minimumRows}
+	}
 	var output strings.Builder
-	for y := 0; y < size; y += 2 {
-		// Reset inherited attributes and use fixed extended-palette black and white
-		// instead of theme-defined ANSI colors. Each character holds two QR rows.
-		output.WriteString("\x1b[0;38;5;16;48;5;231m")
+	for y := 0; y < size; y++ {
+		output.WriteString("\x1b[0m")
 		for x := 0; x < size; x++ {
-			top := qrPixel(code, x-qrQuietZoneModules, y-qrQuietZoneModules)
-			bottom := qrPixel(code, x-qrQuietZoneModules, y+1-qrQuietZoneModules)
-			switch {
-			case top && bottom:
-				output.WriteRune('█')
-			case top:
-				output.WriteRune('▀')
-			case bottom:
-				output.WriteRune('▄')
-			default:
-				output.WriteByte(' ')
+			// Cell backgrounds fill font leading as well as the glyph area.
+			// Two columns per module keep the QR approximately square.
+			if code.Black(x-qrQuietZoneModules, y-qrQuietZoneModules) {
+				output.WriteString("\x1b[48;5;16m  ")
+			} else {
+				output.WriteString("\x1b[48;5;231m  ")
 			}
 		}
 		output.WriteString("\x1b[0m\n")
 	}
 	return output.String(), nil
-}
-
-func qrPixel(code *qr.Code, x, y int) bool {
-	return x >= 0 && y >= 0 && x < code.Size && y < code.Size && code.Black(x, y)
 }
 
 // Ask reads a bounded human response directly from the console. Input remains
