@@ -150,9 +150,9 @@ func renderQRCode(tokenURL string) (string, error) {
 	size := code.Size + 2*qrQuietZoneModules
 	var output strings.Builder
 	for y := 0; y < size; y += 2 {
-		// Black foreground on a white background keeps the code scannable on
-		// both light and dark terminal themes. Each half-block is one QR row.
-		output.WriteString("\x1b[30;47m")
+		// Reset inherited attributes and use fixed extended-palette black and white
+		// instead of theme-defined ANSI colors. Each character holds two QR rows.
+		output.WriteString("\x1b[0;38;5;16;48;5;231m")
 		for x := 0; x < size; x++ {
 			top := qrPixel(code, x-qrQuietZoneModules, y-qrQuietZoneModules)
 			bottom := qrPixel(code, x-qrQuietZoneModules, y+1-qrQuietZoneModules)
