@@ -20,6 +20,7 @@ const (
 	mediaImage mediaKind = iota
 	mediaDocument
 	mediaVoice
+	mediaTranscript
 )
 const mediaLifetime = 5 * time.Minute
 
@@ -60,7 +61,7 @@ func (s *Service) mediaDigest(source model.MediaSource, kind mediaKind) string {
 	domain := "image-source-v1"
 	if kind == mediaDocument {
 		domain = "document-source-v1"
-	} else if kind == mediaVoice {
+	} else if kind == mediaVoice || kind == mediaTranscript {
 		domain = "voice-source-v1"
 	}
 	encoded, _ := json.Marshal(source) // Fixed scalar fields cannot fail to encode.
@@ -102,6 +103,9 @@ func (s *Service) imageDescriptor(candidate model.Candidate, grant policy.Grant,
 }
 
 func mediaOperation(kind mediaKind) (operation, prefix, domain string) {
+	if kind == mediaTranscript {
+		return "transcribe_voice_note", "vt1", "voice-transcription-handle-v1"
+	}
 	if kind == mediaDocument {
 		return "open_document", "doc1", "document-handle-v1"
 	}
@@ -179,7 +183,7 @@ func mediaSource(candidate model.Candidate, kind mediaKind) *model.MediaSource {
 		return candidate.Image
 	case mediaDocument:
 		return candidate.Document
-	case mediaVoice:
+	case mediaVoice, mediaTranscript:
 		return candidate.Voice
 	}
 	return nil
@@ -194,8 +198,16 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 	if !s.Ready() {
 		return Result{}, model.TextError(model.ErrorNotReady, nil)
 	}
+	isVoice := kind == mediaVoice || kind == mediaTranscript
+	var transcribe func(context.Context, model.Candidate) (model.VoiceTranscript, error)
 	var download func(context.Context, model.Candidate) ([]byte, error)
-	if kind == mediaVoice {
+	if kind == mediaTranscript {
+		backend, ok := s.backend.(voiceTranscriptionBackend)
+		if !ok {
+			return Result{}, model.TextError(model.ErrorNotReady, nil)
+		}
+		transcribe = backend.TranscribeVoice
+	} else if kind == mediaVoice {
 		backend, ok := s.backend.(voiceBackend)
 		if !ok {
 			return Result{}, model.TextError(model.ErrorNotReady, nil)
@@ -244,7 +256,7 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 	if err != nil {
 		return Result{}, err
 	}
-	if (kind == mediaImage && !grant.Images) || (kind == mediaDocument && !grant.Documents) || (kind == mediaVoice && !grant.VoiceNotes) || (grant.Profile == policy.ProfileSelfAuthored && grant.Author != s.backend.SelfID()) || handle.Authority != (mediaAuthority{epoch, revision}) || handle.Expires > grant.Deadline(s.now().Add(mediaLifetime)).Unix() {
+	if (kind == mediaImage && !grant.Images) || (kind == mediaDocument && !grant.Documents) || (isVoice && !grant.VoiceNotes) || (grant.Profile == policy.ProfileSelfAuthored && grant.Author != s.backend.SelfID()) || handle.Authority != (mediaAuthority{epoch, revision}) || handle.Expires > grant.Deadline(s.now().Add(mediaLifetime)).Unix() {
 		return Result{}, model.TextError(model.ErrorPolicyDenied, nil)
 	}
 	check := func() error {
@@ -282,7 +294,7 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 			return model.Candidate{}, err
 		}
 		media := mediaSource(candidate, kind)
-		if media.IsDocument() != (kind == mediaDocument) || media.IsVoice() != (kind == mediaVoice) {
+		if media.IsDocument() != (kind == mediaDocument) || media.IsVoice() != isVoice {
 			return model.Candidate{}, model.TextError(model.ErrorInvalidReference, nil)
 		}
 		if err := media.Validate(); err != nil {
@@ -315,22 +327,30 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 		candidate.Message.ChannelPost = &post
 	}
 	immutableSource := *mediaSource(candidate, kind)
-	if kind == mediaVoice {
+	if isVoice {
 		candidate.Voice = &immutableSource
 	} else if kind == mediaDocument {
 		candidate.Document = &immutableSource
 	} else {
 		candidate.Image = &immutableSource
 	}
-	data, err := download(ctx, candidate)
-	downloaded = data
+	var data []byte
+	var transcript model.VoiceTranscript
+	if kind == mediaTranscript {
+		transcript, err = transcribe(ctx, candidate)
+	} else {
+		data, err = download(ctx, candidate)
+		downloaded = data
+	}
 	if err != nil {
 		return Result{}, err
 	}
 	if err := check(); err != nil {
 		return Result{}, err
 	}
-	if kind == mediaVoice {
+	if kind == mediaTranscript {
+		err = transcript.Validate()
+	} else if kind == mediaVoice {
 		err = validateVoiceData(immutableSource, data)
 	} else if kind == mediaDocument {
 		err = validateDocumentData(immutableSource, data)
@@ -348,7 +368,9 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 		return Result{}, model.TextError(model.ErrorInvalidReference, nil)
 	}
 	effect := model.ReadEffect{Kind: model.ReadEffectHistoryMarkedRead, ThroughMessageID: &handle.Message}
-	if kind == mediaVoice {
+	if kind == mediaTranscript {
+		result, err = prepare(requestID, []transcriptItem{{AlbumID: candidate.Message.AlbumID, ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Transcript: transcript}}, s.now(), false, effect, nil, nil)
+	} else if kind == mediaVoice {
 		descriptor := &model.VoiceDescriptor{Filename: immutableSource.Filename, Handle: token, MIMEType: immutableSource.MIMEType, Size: immutableSource.Size, Duration: immutableSource.Duration}
 		result, err = prepare(requestID, []voiceItem{{AlbumID: candidate.Message.AlbumID, ReplyTo: candidate.Message.ReplyTo, ChannelPost: candidate.Message.ChannelPost, Forward: candidate.Message.Forward, ID: handle.Message, Author: candidate.Message.Author, Date: candidate.Message.Date, Voice: descriptor}}, s.now(), false, effect, nil, nil)
 	} else if kind == mediaDocument {
@@ -364,7 +386,7 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 	// Text serialization already checks both metadata mirrors. Add the single
 	// native content block and bounded resource URI plus JSON-RPC framing before any read effect.
 	// PDFs retain their original size; image, voice and plain-text budgets remain.
-	if kind != mediaDocument || immutableSource.MIMEType != "application/pdf" {
+	if kind != mediaTranscript && (kind != mediaDocument || immutableSource.MIMEType != "application/pdf") {
 		contentBytes := base64.StdEncoding.EncodedLen(len(data))
 		if kind == mediaDocument && model.IsTextDocumentMIME(immutableSource.MIMEType) {
 			encoded, encodeErr := json.Marshal(string(data))
@@ -396,7 +418,7 @@ func (s *Service) openMedia(ctx context.Context, requestID, token string, kind m
 		result.Voice = &MediaContent{Data: data, MIMEType: immutableSource.MIMEType}
 	} else if kind == mediaDocument {
 		result.Document = &DocumentContent{Data: data, MIMEType: immutableSource.MIMEType, URI: "telegram-document:" + token}
-	} else {
+	} else if kind == mediaImage {
 		result.Image = &MediaContent{Data: data, MIMEType: immutableSource.MIMEType}
 	}
 	count = 1

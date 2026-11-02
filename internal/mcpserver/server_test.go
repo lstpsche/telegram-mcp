@@ -73,7 +73,7 @@ func TestConcurrentRelayClientsAndSanitizedStatus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(tools.Tools) != 12 {
+		if len(tools.Tools) != 13 {
 			t.Fatalf("unexpected tool inventory: %#v", tools.Tools)
 		}
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "status", Arguments: map[string]any{}})

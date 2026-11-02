@@ -99,7 +99,7 @@ func TestTextMediaOverStdioRelay(t *testing.T) {
 				}
 				schemas[tool.Name] = resolved
 			}
-			if len(schemas) != 12 {
+			if len(schemas) != 13 {
 				t.Fatal("unexpected tool added")
 			}
 			for _, call := range []struct {

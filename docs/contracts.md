@@ -419,3 +419,20 @@ All retain the 256 KiB and complete escaped response budgets, UTF-8/control
 validation, source rechecks, receipts and audit. Filenames are display data;
 no sniffing, parser, rendering, formula evaluation or new authority is added.
 Search text_file includes every supported text MIME. See [document access](document-access.md).
+
+## Native voice transcription
+
+Voice descriptors can include `transcription_handle`, distinct from the original
+audio `handle`. `transcribe_voice_note({"handle": transcription_handle})` requests
+Telegram speech recognition under the existing voice grant. It may consume
+account allowance and is not advertised as read-only or idempotent. Success uses
+the standard untrusted envelope and verified history receipt, with one item
+containing `id`, `author`, `date`, optional source attribution and
+`transcript: {"text": "..."}`. No audio content block is returned. Text is at
+most 16 KiB UTF-8; full structured/text mirrors share the normal response budget.
+
+Pending, unavailable and failed recognition use `transcription_pending`,
+`transcription_unavailable` and `transcription_failed`. Partial recognition is
+never presented as final. Source, policy, epoch, expiry and receipt errors retain
+the ordinary media semantics. See [voice notes](voice-access.md) for upstream
+side effects, asynchronous completion, limits and privacy behavior.

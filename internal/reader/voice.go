@@ -27,6 +27,26 @@ type voiceItem struct {
 func (s *Service) OpenVoice(ctx context.Context, requestID, token string) (Result, error) {
 	return s.openMedia(ctx, requestID, token, mediaVoice)
 }
+
+type voiceTranscriptionBackend interface {
+	TranscribeVoice(context.Context, model.Candidate) (model.VoiceTranscript, error)
+}
+
+type transcriptItem struct {
+	AlbumID     string                `json:"album_id,omitempty"`
+	ReplyTo     *model.MessageID      `json:"reply_to,omitempty"`
+	ChannelPost *model.ChannelPost    `json:"channel_post,omitempty"`
+	Forward     *model.Forward        `json:"forward,omitempty"`
+	ID          model.MessageID       `json:"id"`
+	Author      model.PeerID          `json:"author"`
+	Date        string                `json:"date"`
+	Transcript  model.VoiceTranscript `json:"transcript"`
+}
+
+func (s *Service) TranscribeVoice(ctx context.Context, requestID, token string) (Result, error) {
+	return s.openMedia(ctx, requestID, token, mediaTranscript)
+}
+
 func (s *Service) voiceDescriptor(candidate model.Candidate, grant policy.Grant, authority mediaAuthority) (*model.VoiceDescriptor, error) {
 	if candidate.Voice == nil {
 		return nil, nil
@@ -46,7 +66,12 @@ func (s *Service) voiceDescriptor(candidate model.Candidate, grant policy.Grant,
 	if err != nil {
 		return nil, err
 	}
-	return &model.VoiceDescriptor{Filename: source.Filename, Handle: token, MIMEType: source.MIMEType, Size: source.Size, Duration: source.Duration}, nil
+	h.Operation, _, _ = mediaOperation(mediaTranscript)
+	transcriptionToken, err := s.signMediaHandle(h, mediaTranscript)
+	if err != nil {
+		return nil, err
+	}
+	return &model.VoiceDescriptor{Filename: source.Filename, Handle: token, TranscriptionHandle: transcriptionToken, MIMEType: source.MIMEType, Size: source.Size, Duration: source.Duration}, nil
 }
 
 // Validate bounded Ogg framing and Opus headers, not decoded audio or transcription.

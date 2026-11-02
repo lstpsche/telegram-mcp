@@ -90,13 +90,14 @@ type DocumentDescriptor struct {
 const MaximumVoiceBytes = 1 << 20
 const MaximumVoiceDuration = 300
 
-// VoiceDescriptor describes original Ogg/Opus audio, never a remote location.
+// VoiceDescriptor provides separate capabilities for original audio and Telegram transcription.
 type VoiceDescriptor struct {
-	Filename string `json:"filename,omitempty"`
-	Handle   string `json:"handle"`
-	MIMEType string `json:"mime_type"`
-	Size     int64  `json:"size"`
-	Duration int    `json:"duration_seconds"`
+	Filename            string `json:"filename,omitempty"`
+	Handle              string `json:"handle"`
+	TranscriptionHandle string `json:"transcription_handle,omitempty"`
+	MIMEType            string `json:"mime_type"`
+	Size                int64  `json:"size"`
+	Duration            int    `json:"duration_seconds"`
 }
 
 // ValidAttachmentFilename bounds display metadata without interpreting a path.
@@ -120,4 +121,22 @@ func IsTextDocumentMIME(mime string) bool {
 	default:
 		return false
 	}
+}
+
+// MaximumVoiceTranscriptBytes bounds transient Telegram speech recognition text.
+const MaximumVoiceTranscriptBytes = 16 << 10
+
+// VoiceTranscript is untrusted Telegram-generated text, not a verbatim guarantee.
+type VoiceTranscript struct {
+	Text string `json:"text"`
+}
+
+func (t VoiceTranscript) Validate() error {
+	if len(t.Text) > MaximumVoiceTranscriptBytes {
+		return TextError(ErrorResultTooLarge, nil)
+	}
+	if !utf8.ValidString(t.Text) {
+		return TextError(ErrorTranscriptionFailed, nil)
+	}
+	return nil
 }

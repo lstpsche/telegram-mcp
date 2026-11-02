@@ -19,7 +19,7 @@ Telegram MCP is an **unofficial client using Telegram's API**, with no Telegram 
 | **View images** | Deliver supported JPEG/PNG photos and document attachments directly to the agent |
 | **Navigate** | Discover authorized chats, named scopes, and unread counts |
 | **Forum topics** | Discover and read individual topics, including topic scopes |
-| **Voice notes** | Deliver original Ogg/Opus audio to compatible clients |
+| **Voice notes** | Deliver original Ogg/Opus audio or request Telegram speech-to-text without a local model |
 | **Control access** | Choose exact, expiring grants or explicitly enable Full read access |
 
 For example, after setting up access and a scope named `project`:
@@ -44,7 +44,7 @@ On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsch
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcp install --version 1.2.2 --setup
+telegram-mcp install --version 1.3.0 --setup
 ```
 
 The second command creates a private per-user installation and starts setup.
@@ -58,14 +58,14 @@ Download and inspect the script before running it if desired.
 
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
-  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v1.2.2/install.sh
+  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v1.3.0/install.sh
 sh install.sh
 ```
 
 **Windows PowerShell, without elevation**
 
 ```powershell
-Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v1.2.2/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v1.3.0/install.ps1 -OutFile install.ps1
 .\install.ps1
 ```
 
@@ -74,7 +74,7 @@ checksums. Downloads and checksums come from GitHub Releases; they establish
 integrity, not independent publisher identity. Credentials stay in your local
 interactive console.
 
-For manual installation, download an archive from [v1.2.2](https://github.com/lstpsche/telegram-mcp/releases/tag/v1.2.2).
+For manual installation, download an archive from [v1.3.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v1.3.0).
 Archives support macOS, Linux and Windows on amd64 and arm64, and contain
 `telegram-mcp`, `telegram-mcpd`, documentation and checksums. Extract into a new
 private directory and follow the [platform instructions](docs/installation.md).
@@ -187,6 +187,11 @@ adopting an existing manual installation.
 
 ## Tools
 
+Version 1.3.0 adds [Telegram voice transcription](docs/voice-access.md#telegram-transcription).
+Use `transcribe_voice_note` with a discovered `transcription_handle` to obtain
+text without downloading audio or installing a speech model. Telegram may
+consume account transcription allowance; pending results and failures are explicit.
+
 Version 1.2.0 adds unread mentions, batch search, attachment filename search,
 rich message formatting, message refresh with edit awareness, and Markdown, CSV
 and JSON attachment delivery. See [search](docs/media-search.md),
@@ -206,6 +211,7 @@ and [document access](docs/document-access.md).
 | `catch_up` | Retrieve snippets and attachment references across a scope for an explicit time window |
 | `open_document` | Open an authorized original PDF, plain text, Markdown, CSV or JSON attachment |
 | `open_voice_note` | Deliver an authorized original voice note as native MCP audio |
+| `transcribe_voice_note` | Request untrusted Telegram speech-to-text using a separate voice capability; may consume account allowance |
 | `open_image` | Open an authorized image as native MCP image content |
 
 [Refresh previously read messages](docs/message-refresh.md) to detect changed content and inspect Telegram edit timestamps.

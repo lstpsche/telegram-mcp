@@ -116,6 +116,7 @@ func (s *Service) observationDigest(message model.Message) (string, error) {
 			return "", err
 		}
 		value.Handle = handle.Digest
+		value.TranscriptionHandle = "" // Derived capability, not observed message content.
 		message.Voice = &value
 	}
 	encoded, err := json.Marshal(message)

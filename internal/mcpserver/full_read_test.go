@@ -85,7 +85,7 @@ func TestFullReadWorkflowAndRevocationOverStdio(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(schemas) != 12 {
+	if len(schemas) != 13 {
 		t.Fatal("unexpected control tools")
 	}
 	call := func(name string, args map[string]any) (*mcp.CallToolResult, map[string]any) {

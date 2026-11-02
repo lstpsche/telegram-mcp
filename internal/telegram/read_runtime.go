@@ -24,6 +24,9 @@ const readDeadline = 15 * time.Second
 // A runtime fails closed for its remaining lifetime after checkpoint or update
 // recovery errors. Restarting constructs a fresh manager from durable metadata.
 type readRuntime struct {
+	transcriptionMu sync.Mutex
+	transcriptions  map[*transcriptionWaiter]struct{}
+
 	manager          *updates.Manager
 	storage          *readStorage
 	api              *tg.Client
@@ -431,6 +434,9 @@ func (r *readRuntime) awaitStartup(ctx context.Context) error {
 func (r *readRuntime) discardUpdates(_ context.Context, value tg.UpdatesClass) error {
 	if batch, ok := value.(*tg.Updates); ok {
 		for _, update := range batch.Updates {
+			if transcript, ok := update.(*tg.UpdateTranscribedAudio); ok {
+				r.transcriptionUpdate(transcript)
+			}
 			if update == r.startupMarker {
 				r.startupOnce.Do(func() { close(r.startupProcessed) })
 			}

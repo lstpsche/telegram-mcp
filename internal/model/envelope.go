@@ -332,27 +332,30 @@ func (e Envelope[T]) MarshalJSON() ([]byte, error) {
 type ErrorCategory string
 
 const (
-	ErrorInvalidInput        ErrorCategory = "invalid_input"
-	ErrorNotReady            ErrorCategory = "not_ready"
-	ErrorReauthRequired      ErrorCategory = "reauth_required"
-	ErrorPolicyDenied        ErrorCategory = "policy_denied"
-	ErrorConsentRequired     ErrorCategory = "consent_required"
-	ErrorUnsupportedPeer     ErrorCategory = "unsupported_peer"
-	ErrorProtectedContent    ErrorCategory = "protected_content"
-	ErrorEphemeralContent    ErrorCategory = "ephemeral_content"
-	ErrorInvalidReference    ErrorCategory = "invalid_reference"
-	ErrorCursorInvalid       ErrorCategory = "cursor_invalid"
-	ErrorCursorExpired       ErrorCategory = "cursor_expired"
-	ErrorResourceExpired     ErrorCategory = "resource_expired"
-	ErrorRateLimited         ErrorCategory = "rate_limited"
-	ErrorFreshnessDegraded   ErrorCategory = "freshness_degraded"
-	ErrorPartialResult       ErrorCategory = "partial_result"
-	ErrorTelegramUnavailable ErrorCategory = "telegram_unavailable"
-	ErrorResultTooLarge      ErrorCategory = "result_too_large"
-	ErrorMediaTooLarge       ErrorCategory = "media_too_large"
-	ErrorCancelled           ErrorCategory = "cancelled"
-	ErrorReadEffectUncertain ErrorCategory = "read_effect_uncertain"
-	ErrorInternal            ErrorCategory = "internal"
+	ErrorInvalidInput             ErrorCategory = "invalid_input"
+	ErrorNotReady                 ErrorCategory = "not_ready"
+	ErrorReauthRequired           ErrorCategory = "reauth_required"
+	ErrorPolicyDenied             ErrorCategory = "policy_denied"
+	ErrorConsentRequired          ErrorCategory = "consent_required"
+	ErrorUnsupportedPeer          ErrorCategory = "unsupported_peer"
+	ErrorProtectedContent         ErrorCategory = "protected_content"
+	ErrorEphemeralContent         ErrorCategory = "ephemeral_content"
+	ErrorInvalidReference         ErrorCategory = "invalid_reference"
+	ErrorCursorInvalid            ErrorCategory = "cursor_invalid"
+	ErrorCursorExpired            ErrorCategory = "cursor_expired"
+	ErrorResourceExpired          ErrorCategory = "resource_expired"
+	ErrorRateLimited              ErrorCategory = "rate_limited"
+	ErrorFreshnessDegraded        ErrorCategory = "freshness_degraded"
+	ErrorPartialResult            ErrorCategory = "partial_result"
+	ErrorTelegramUnavailable      ErrorCategory = "telegram_unavailable"
+	ErrorResultTooLarge           ErrorCategory = "result_too_large"
+	ErrorMediaTooLarge            ErrorCategory = "media_too_large"
+	ErrorTranscriptionPending     ErrorCategory = "transcription_pending"
+	ErrorTranscriptionUnavailable ErrorCategory = "transcription_unavailable"
+	ErrorTranscriptionFailed      ErrorCategory = "transcription_failed"
+	ErrorCancelled                ErrorCategory = "cancelled"
+	ErrorReadEffectUncertain      ErrorCategory = "read_effect_uncertain"
+	ErrorInternal                 ErrorCategory = "internal"
 )
 
 func (category ErrorCategory) message() (string, bool) {
@@ -393,6 +396,12 @@ func (category ErrorCategory) message() (string, bool) {
 		return "The result exceeds the server budget", true
 	case ErrorMediaTooLarge:
 		return "The media exceeds the server budget", true
+	case ErrorTranscriptionPending:
+		return "Telegram transcription is still pending; no transcript was released. The request may have consumed transcription allowance", true
+	case ErrorTranscriptionUnavailable:
+		return "Telegram transcription is unavailable for this account or note, or its allowance is exhausted", true
+	case ErrorTranscriptionFailed:
+		return "Telegram could not transcribe this voice note", true
 	case ErrorCancelled:
 		return "The operation was cancelled", true
 	case ErrorReadEffectUncertain:

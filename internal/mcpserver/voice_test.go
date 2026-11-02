@@ -25,6 +25,10 @@ func (f *voiceWireBackend) DownloadVoice(_ context.Context, c model.Candidate) (
 	return bytes.Clone(f.data[c.Message.ID]), nil
 }
 
+func (f *voiceWireBackend) TranscribeVoice(context.Context, model.Candidate) (model.VoiceTranscript, error) {
+	return model.VoiceTranscript{Text: "Synthetic Telegram transcript."}, nil
+}
+
 func wireVoiceData() []byte {
 	page := func(sequence uint32, flags byte, granule uint64, packet []byte) []byte {
 		b := make([]byte, 28+len(packet))
@@ -187,12 +191,51 @@ func TestVoiceOverStdioRelay(t *testing.T) {
 	if len(envelope.Items) != 1 || envelope.Items[0].Voice == nil || backend.acks.Load() != 0 || backend.downloads.Load() != 0 {
 		t.Fatal("invalid discovery")
 	}
+	transcript, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "transcribe_voice_note", Arguments: map[string]any{"handle": envelope.Items[0].Voice.TranscriptionHandle}})
+	if err != nil || transcript.IsError || len(transcript.Content) != 1 || backend.acks.Load() != 1 || backend.downloads.Load() != 0 {
+		t.Fatal("native transcript did not survive relay", err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal([]byte(transcript.Content[0].(*mcp.TextContent).Text), &value); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(value, transcript.StructuredContent) {
+		t.Fatal("transcript mirrors disagree")
+	}
+	for _, tool := range inventory.Tools {
+		if tool.Name != "transcribe_voice_note" {
+			continue
+		}
+		if tool.Annotations.ReadOnlyHint || tool.Annotations.IdempotentHint {
+			t.Fatal("transcription side effects hidden")
+		}
+		raw, err := json.Marshal(tool.OutputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema jsonschema.Schema
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := schema.Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := resolved.Validate(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	invalid, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "transcribe_voice_note", Arguments: map[string]any{"handle": envelope.Items[0].Voice.Handle}})
+	if err != nil || !invalid.IsError || backend.acks.Load() != 1 || backend.downloads.Load() != 0 {
+		t.Fatal("audio handle used as transcription authority")
+	}
+
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "open_voice_note", Arguments: map[string]any{"handle": envelope.Items[0].Voice.Handle}})
 	if err != nil || result.IsError || len(result.Content) != 2 {
 		t.Fatal("voice delivery", err, result)
 	}
 	audio, ok := result.Content[1].(*mcp.AudioContent)
-	if !ok || audio.MIMEType != "audio/ogg" || !bytes.Equal(audio.Data, data) || backend.acks.Load() != 1 || backend.downloads.Load() != 1 {
+	if !ok || audio.MIMEType != "audio/ogg" || !bytes.Equal(audio.Data, data) || backend.acks.Load() != 2 || backend.downloads.Load() != 1 {
 		t.Fatal("native audio did not survive relay")
 	}
 }

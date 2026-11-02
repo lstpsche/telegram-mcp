@@ -390,8 +390,8 @@ existing restricted grants. Native audio delivery reuses bounded downloads,
 source revalidation, policy leases and verified history receipts. The Ogg/Opus
 parser checks framing and headers within the byte bound; it is not a codec or
 a guarantee that a client will interpret audio. No playback receipt is sent.
-Audio and embedded metadata remain hostile input. No transcription provider,
-media cache, filenames or waveform persistence is introduced.
+Audio and embedded metadata remain hostile input. Original audio delivery adds
+no transcription provider, media cache, filename or waveform persistence.
 
 Private bot chats reuse the private-user discovery, identity, author, policy and
 read-receipt boundaries. Bot flags do not grant authority. Keyboard/button markup
@@ -663,3 +663,25 @@ All retain the 256 KiB and complete escaped response budgets, UTF-8/control
 validation, source rechecks, receipts and audit. Filenames are display data;
 no sniffing, parser, rendering, formula evaluation or new authority is added.
 Search text_file includes every supported text MIME. See [document access](document-access.md).
+
+## Telegram voice transcription
+
+`transcribe_voice_note` is a narrow state-affecting extension of authorized voice
+access. It can initiate Telegram server-side recognition and consume account
+allowance. It is not a raw RPC capability, arbitrary audio upload or account
+sending tool. Existing VoiceNotes grants and Full read cover the exact source;
+other media grants do not. A distinct operation-bound, signed five-minute
+capability prevents substituting original-audio handles. Policy, authorization
+epoch, read-prefix and source checks surround the operation and release.
+
+Final generated text remains hostile, is bounded before acknowledgment, and
+passes through the existing receipt/audit boundary. In-flight subscriptions are
+limited to four, each with at most four final updates of at most 16 KiB. They
+exist only for active requests and match exact peer, message and transcription
+IDs; pending text is discarded. Subscribing before the RPC handles early final
+updates. Unrelated updates cannot release text. Invalid or overflowing updates
+fail closed. Account failure or cancellation removes subscriptions. No content,
+transcription IDs or jobs are stored or logged locally. Telegram's own job and
+storage behavior are external dependencies. Timeouts and errors do not prove
+that an upstream job was cancelled or allowance refunded. No automatic polling,
+local recognizer or success-shaped error fallback is added.

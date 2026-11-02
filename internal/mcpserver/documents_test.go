@@ -179,7 +179,7 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool, textMI
 	schemas := make(map[string]*jsonschema.Resolved)
 	for _, tool := range inventory.Tools {
 
-		if tool.Name == "open_document" || tool.Name == "open_image" || tool.Name == "open_voice_note" {
+		if tool.Name == "open_document" || tool.Name == "open_image" || tool.Name == "open_voice_note" || tool.Name == "transcribe_voice_note" {
 			encoded, err := json.Marshal(tool.InputSchema)
 			if err != nil {
 				t.Fatal(err)
@@ -211,7 +211,7 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool, textMI
 			t.Fatal("document tool misrepresents its read effects")
 		}
 	}
-	if len(schemas) != 12 || schemas["open_document"] == nil {
+	if len(schemas) != 13 || schemas["open_document"] == nil {
 		t.Fatal("missing native document tool")
 	}
 	call := func(name string, args any) (*mcp.CallToolResult, map[string]any) {
