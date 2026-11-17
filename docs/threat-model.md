@@ -1,7 +1,7 @@
 # Telegram MCP threat model
 
-- Status: account runtime and authorized text/image MCP implemented; live acceptance separate
-- Date: 2026-09-05
+- Status: authorized reads and human-enabled sending; live acceptance separate
+- Date: 2026-11-17
 - Scope: local single-account macOS, Linux and Windows architecture
 
 ## Security objectives
@@ -16,6 +16,9 @@
    represented truthfully.
 5. One daemon owns one account session and update state; no relay or client can
    create a fallback Telegram connection.
+6. Only explicit human send permission permits outbound effects. Known receipts,
+   ambiguous outcomes and bounded retry guarantees remain truthful across
+   cancellation, restart and authorization changes.
 
 ## Assets
 
@@ -26,6 +29,7 @@
 - access hashes and update checkpoints;
 - Telegram message/search/media content in transient memory;
 - metadata audit integrity and operator understanding of side effects.
+- outgoing operation identity, retained acceptance facts and shared protocol waits.
 
 ## Actors and assumptions
 
@@ -62,12 +66,15 @@ human operator
 
 ### Capability expansion through MCP
 
-Threat: a client invokes authentication, raw RPCs, writes, peer enumeration, or
-policy mutation.
+Threat: a client invokes authentication, raw RPCs, unsupported writes, unrestricted
+peer enumeration or policy mutation, or treats read permission as send authority.
 
-Controls: deterministic static read-tool inventory; no control-plane MCP tools;
-strict unknown-field rejection; typed IDs; no `resolve_peer` tool; hard budgets;
-no dynamic write flag. Only status, six bounded text/metadata tools, and explicit image opening are registered.
+Controls: deterministic static inventory; no control-plane MCP tools; strict
+unknown-field rejection; typed IDs and hard budgets. The three sending tools
+require independent, default-deny account-wide send authority. Resolution accepts
+one explicit selector rather than enumerating arbitrary recipients. No MCP tool
+can enable sending, join a chat, pay, choose arbitrary author identity or invoke
+a raw Telegram method. See [sending contracts](sending.md).
 
 ### Mutable alias or confused-deputy authorization
 
@@ -167,16 +174,94 @@ already allowed by the old items; it does not widen their ACLs.
 
 ## Excluded or deferred risk
 
-Secret Chats, protected content, expiring media,
-writes, HTTP, multi-account state, local content indexing, and broad experimental
-eligibility are absent from v1. Adding any of them requires a separate threat
-and contract plan.
+Secret Chats, protected content, expiring media, writes outside the explicit
+plain-text sending and existing read/voice effects, HTTP, multi-account state,
+local content indexing and broad experimental eligibility are absent from v1.
+Adding them requires a separate threat and contract plan.
 
 Telegram's API and content-licensing terms are a release boundary, not a
 security control. Test-DC and synthetic/self-authored development does not imply
 permission for production/private data or publication. A dated release decision
 is required. Intended AI-data eligibility must be resolved before enabling
 content workflows; a configured peer grant is not itself proof of eligibility.
+
+## Outbound authority and information disclosure
+
+Account-wide send authority deliberately allows external effects beyond current
+read grants and scopes, including new conversations and bots. Hostile Telegram
+text can attempt to induce an agent to disclose data or send unwanted messages.
+The human enable command makes the scope explicit; the daemon requires that
+permission before lookup/send I/O and after normalization. Full read alone is
+insufficient. Client tool allowlists are a separate control. The daemon does not
+authenticate separate agents or provide same-user isolation.
+
+Permission changes serialize through the policy lease. Successful disablement
+prevents later effects, but cannot retract an accepted message. Logout,
+authorization-epoch changes and settings restore remove send authority without
+deleting still-valid operation identities or account-specific protocol waits.
+The human offline status command reports retained facts without granting
+authority, initializing storage or contacting Telegram.
+
+## Recipient and reply routing
+
+Mutable usernames and phone numbers are hostile lookup selectors, never send
+authority. Resolve exactly the requested entity and retain only the selected
+epoch-bound numeric/hash metadata. No contact import, join, broad discovery or
+selector fallback is introduced. Phone resolution can be denied by privacy;
+failure never proves absence of an account. Atomic account-scoped three-second
+phone reservations and persisted method waits prevent concurrent callers from
+bypassing known pacing, including after same-account reauthentication.
+
+A forged typed reply can claim a topic different from the actual message. A
+bounded exact-message preflight validates the real peer/topic and topic root.
+Send permission authorizes this routing metadata check, not a body read.
+Incidental bodies returned by metadata RPCs remain adapter-private and are
+discarded; no history receipt or message-body release is permitted. A missing
+or mismatched target fails before dispatch. Deletion after validation remains a
+remote race; a known accepted result is preserved rather than resent unthreaded.
+
+Explicit sender identity prevents a saved alternate-author default from changing
+who appears to have sent a message. The logged-in user is selected in groups and
+topics, and the destination publisher in ordinary broadcasts. Unsupported author
+selection fails. Paid messages, automatic previews, draft clearing, schedules,
+markup and arbitrary flags are excluded from the plain-text primitive.
+
+## Duplicate suppression and uncertain sends
+
+A disconnect, crash, duplicate random-ID error, malformed acknowledgment or
+unknown provider error can occur after a send effect. Persist an operation's
+epoch, exact destination/reply, domain-separated keyed payload digest and stable
+nonzero random ID before dispatch. The same operation with changed payload fails
+before network I/O. Never replace its random ID or erase earlier uncertainty.
+The SDK can reconnect and retransmit before an acknowledgment without exposing
+that history. Any attempted send error without a positive receipt therefore
+remains `uncertain`, including explicit rights, payment, rate-limit or length
+rejection. Preserve the fixed reason and retry time for diagnosis; neither
+authorizes an automatic resend. `not_sent` requires no send invocation.
+
+Preserve positive message-ID mappings before update checkpoints advance and
+before hooked synchronization can turn an accepted RPC into a local error. A
+valid message ID establishes `sent`; later failures retain that receipt. Known
+acceptance is distinct from receipt persistence and update synchronization.
+Cancellation permits at most five seconds of independent local bookkeeping,
+with no additional network grace. Persistence failure fences later sends.
+Restart reconciles facts and never dispatches stored work.
+
+UUIDv7 creation time bounds new dispatch and eligible retry to 24 hours, allowing
+60 seconds of future skew. Retention extends to seven days after creation, so a
+pruned key is already too old to send. Retained keys remain unique across epochs.
+Capacity is bounded to 100,000 operations and 100,000 protocol waits; full
+capacity rejects new work instead of evicting unexpired operation facts. Audit
+purge cannot remove these facts. This is bounded duplicate suppression, not
+indefinite exactly-once delivery. Clock rollback, metadata loss and another
+installation are outside the guarantee.
+
+The ledger contains no text, aliases, phone numbers, display names, raw responses
+or unkeyed content hashes. It cannot resume an outgoing message after restart.
+Fixed diagnostics and exact retry times preserve useful outcome information
+without exposing provider strings. Missing/pruned status is unavailable, never
+proof of `not_sent`; `sent` is server acceptance, never recipient delivery/read
+status. See [sending](sending.md) and [ADR-0003](adr/0003-message-sending.md).
 
 ## Account runtime verification boundary
 

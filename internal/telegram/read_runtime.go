@@ -30,6 +30,7 @@ type readRuntime struct {
 	manager          *updates.Manager
 	storage          *readStorage
 	api              *tg.Client
+	sending          *sendingRuntime
 	self             atomic.Int64
 	ready            atomic.Bool
 	observed         atomic.Bool
@@ -194,10 +195,21 @@ func (r *readRuntime) Handle(ctx context.Context, u tg.UpdatesClass) error {
 	if err := r.err(); err != nil {
 		return model.TextError(model.ErrorFreshnessDegraded, err)
 	}
+	if _, short := u.(*tg.UpdateShortSentMessage); short {
+		call, _ := ctx.Value(outgoingContextKey{}).(*outgoingCall)
+		if call != nil && call.peer.Kind() == model.PeerKindChannel {
+			// This pts belongs to the destination channel. The common update
+			// manager lacks that context and would treat it as common pts.
+			return nil
+		}
+	}
 	projected, err := commonUpdates(u)
 	if err != nil {
 		r.fail(err)
 		return model.TextError(model.ErrorFreshnessDegraded, err)
+	}
+	if err := r.captureMappings(ctx, updateItems(u)); err != nil {
+		return err
 	}
 	return r.manager.Handle(ctx, projected)
 }
@@ -216,7 +228,21 @@ func (m readMiddleware) Handle(next tg.Invoker) gotdtelegram.InvokeFunc {
 		if err := ctx.Err(); err != nil {
 			return readError(err)
 		}
-		err := hook.UpdateHook(r.Handle).Handle(hook.AffectedHook(r.manager).Handle(next)).Invoke(ctx, input, output)
+		capture := gotdtelegram.InvokeFunc(func(ctx context.Context, input bin.Encoder, output bin.Decoder) error {
+			attempt, _ := ctx.Value(outgoingContextKey{}).(*outgoingCall)
+			_, send := input.(*tg.MessagesSendMessageRequest)
+			if send && attempt != nil && attempt.capture != nil {
+				attempt.capture.attempted = true
+			}
+			err := next.Invoke(ctx, input, output)
+			if err == nil && send && attempt != nil && attempt.capture != nil {
+				if box, ok := output.(*tg.UpdatesBox); ok {
+					err = r.captureAcknowledgment(ctx, attempt.capture, box.Updates)
+				}
+			}
+			return err
+		})
+		err := hook.UpdateHook(r.Handle).Handle(hook.AffectedHook(r.manager).Handle(capture)).Invoke(ctx, input, output)
 		if gotdauth.IsUnauthorized(err) {
 			r.fail(err)
 			return readError(err)
@@ -283,6 +309,16 @@ func (r *readRuntime) UpdatesGetDifference(ctx context.Context, q *tg.UpdatesGet
 		if err == nil {
 			err = validateDifference(q, checkpoint.Seq, result)
 		}
+	}
+	if err == nil {
+		var items []tg.UpdateClass
+		switch value := result.(type) {
+		case *tg.UpdatesDifference:
+			items = value.OtherUpdates
+		case *tg.UpdatesDifferenceSlice:
+			items = value.OtherUpdates
+		}
+		err = r.captureMappings(bounded, items)
 	}
 	if err == nil {
 		result, err = commonDifference(result)

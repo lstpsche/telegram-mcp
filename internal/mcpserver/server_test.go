@@ -16,6 +16,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 	"github.com/lstpsche/telegram-mcp/internal/reader"
+	"github.com/lstpsche/telegram-mcp/internal/sender"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -25,6 +26,11 @@ func serveTestServer(t *testing.T) (string, context.Context) {
 
 func serveTextTestServer(t *testing.T, service *reader.Service) (string, context.Context) {
 	t.Helper()
+	return serveServicesTestServer(t, service, nil)
+}
+
+func serveServicesTestServer(t *testing.T, service *reader.Service, sending *sender.Service) (string, context.Context) {
+	t.Helper()
 	dir := runtimeTestDirectory(t)
 	socketPath := filepath.Join(dir, "server.sock")
 	socket, err := daemon.BindSocket(socketPath)
@@ -32,7 +38,7 @@ func serveTextTestServer(t *testing.T, service *reader.Service) (string, context
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	server := New(func() daemon.Snapshot { return daemon.Snapshot{State: daemon.StateReauthRequired} }, service)
+	server := New(func() daemon.Snapshot { return daemon.Snapshot{State: daemon.StateReauthRequired} }, service, sending)
 	done := make(chan error, 1)
 	go func() {
 		done <- socket.Serve(ctx, func(ctx context.Context, connection net.Conn) { Serve(ctx, server, connection) })
@@ -73,7 +79,7 @@ func TestConcurrentRelayClientsAndSanitizedStatus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(tools.Tools) != 13 {
+		if len(tools.Tools) != 16 {
 			t.Fatalf("unexpected tool inventory: %#v", tools.Tools)
 		}
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "status", Arguments: map[string]any{}})

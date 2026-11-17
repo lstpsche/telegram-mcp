@@ -15,9 +15,10 @@ telegram-mcp backup-inspect --file "$HOME/telegram-mcp-backups/metadata.json"
 
 The versioned JSON contains the environment/Test DC selector, named scope names
 and typed member IDs, and audit retention settings. It excludes API credentials
-and API IDs, sessions, authorization epochs, grants, Full read access, scope IDs,
-policy revisions, access hashes, update checkpoints, audit history and Telegram
-content. It is a settings backup, not a database or account-session backup.
+and API IDs, sessions, authorization epochs, grants, Full read access, send
+permission, scope IDs, policy revisions, access hashes, update checkpoints,
+outgoing operations, protocol waits, audit history and Telegram content. It is a
+settings backup, not a database or account-session backup.
 Keep it private: membership IDs can still reveal relationships. It is not encrypted.
 
 On Unix, files must be owned regular `0600` files in owned `0700` directories.
@@ -42,23 +43,26 @@ authenticated account and production/Test DC match as restore. It prints current
 and proposed scope selections and retention settings as JSON, without current
 scope IDs. Its consequences summarize the eventual access reset, fresh scope IDs,
 reference invalidation and audit-history preservation. It does not change scopes,
-retention, grants, Full read access, policy revisions or audit history. The daemon
-must still be stopped. Metadata is opened read-only: a missing database or an
-outdated or incompatible migration history is refused without initialization or
-migration. Maintenance lock files and SQLite coordination files may still be used.
+retention, grants, Full read access, send permission, policy revisions or audit
+history. The daemon must still be stopped. Metadata is opened read-only: a
+missing database or an outdated or incompatible migration history is refused
+without initialization or migration. Maintenance lock files and SQLite
+coordination files may still be used.
 
 Restore requires an already configured, authenticated account in the same
 production/Test DC environment. It is an explicit import into that current
 account, not proof that the backup belongs to the same Telegram user. Review the
 member IDs before importing. Every scope receives a new ID; all existing scopes,
-restricted grants and Full read access are replaced/reset atomically. Existing
-cursors and image handles are invalidated. Re-select scopes and explicitly grant
-access or enable Full read access when ready.
+restricted grants, Full read access and send permission are replaced/reset
+atomically. Existing cursors and image handles are invalidated. Re-select scopes
+and explicitly grant access, enable Full read access or explicitly enable sending
+when ready.
 
-The current session, account configuration, synchronization state and audit
-history are preserved. Backup retention settings are restored, but no historical
-audit records are deleted during restore; the next audited request or confirmed
-prune applies them. A transaction failure leaves the prior state intact. File or
+The current session, account configuration, synchronization state, retained
+outgoing operation facts, protocol waits and audit history are preserved. Backup
+retention settings are restored, but no historical audit records are deleted
+during restore; the next audited request or confirmed prune applies them. A
+transaction failure leaves the prior state intact. File or
 close errors are reported even when an operation may already have committed;
 inspect the current state before repeating a failed command.
 
@@ -90,6 +94,11 @@ the settings and index without deleting existing rows. `--apply` changes setting
 and immediately prunes in one transaction. `purge --all --confirm` removes all audit
 records, preserves retention settings, and does not disable future auditing.
 Audit maintenance works even without an authorization epoch.
+
+Outgoing operation retention is separate from the read-audit inventory. Audit
+prune or purge does not erase retained send identities or protocol waits. This
+preserves bounded duplicate suppression and required provider waits; the fixed
+windows and human offline inspection are described in [sending](sending.md).
 
 Pruning is logical deletion. SQLite reuses freed pages; the database need not
 shrink, and WAL files, filesystem snapshots and external copies may retain old

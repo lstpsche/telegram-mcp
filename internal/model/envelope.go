@@ -182,8 +182,9 @@ func (c ScopeCoverage) Validate() error {
 	return nil
 }
 
-// Envelope is the shared v1 output shape for successful MCP results.
+// Envelope is the shared v1 output shape for results carrying normalized items.
 type Envelope[T any] struct {
+	Error            *ErrorBody          `json:"error,omitempty"`
 	Searches         []SearchAssociation `json:"searches,omitempty"`
 	Contexts         []MessageContext    `json:"contexts,omitempty"`
 	SchemaVersion    string              `json:"schema_version"`
@@ -221,6 +222,11 @@ func NewEnvelope[T any](requestID string, freshness Freshness, items []T) (Envel
 }
 
 func (e Envelope[T]) Validate() error {
+	if e.Error != nil {
+		if err := e.Error.Validate(); err != nil {
+			return err
+		}
+	}
 	if len(e.Searches) > 0 {
 		if len(e.Searches) > MaximumSearchRequests || len(e.Contexts) > 0 || e.NextCursor != nil || e.Scope != nil || e.ReadEffect.Kind != NoReadEffect().Kind {
 			return errors.New("invalid batch search envelope")
@@ -356,6 +362,16 @@ const (
 	ErrorCancelled                ErrorCategory = "cancelled"
 	ErrorReadEffectUncertain      ErrorCategory = "read_effect_uncertain"
 	ErrorInternal                 ErrorCategory = "internal"
+	ErrorOperationConflict        ErrorCategory = "operation_conflict"
+	ErrorOperationExpired         ErrorCategory = "operation_expired"
+	ErrorOperationUnavailable     ErrorCategory = "operation_unavailable"
+	ErrorRecipientUnavailable     ErrorCategory = "recipient_unavailable"
+	ErrorWriteForbidden           ErrorCategory = "write_forbidden"
+	ErrorPaymentRequired          ErrorCategory = "payment_required"
+	ErrorAccountRestricted        ErrorCategory = "account_restricted"
+	ErrorSendEffectUncertain      ErrorCategory = "send_effect_uncertain"
+	ErrorStateSyncFailed          ErrorCategory = "state_sync_failed"
+	ErrorReceiptNotPersisted      ErrorCategory = "receipt_not_persisted"
 )
 
 func (category ErrorCategory) message() (string, bool) {
@@ -406,6 +422,26 @@ func (category ErrorCategory) message() (string, bool) {
 		return "The operation was cancelled", true
 	case ErrorReadEffectUncertain:
 		return "No content was released; the Telegram read effect may have occurred", true
+	case ErrorOperationConflict:
+		return "The operation ID is already bound to another send request", true
+	case ErrorOperationExpired:
+		return "The operation ID is outside its dispatch window", true
+	case ErrorOperationUnavailable:
+		return "The send operation record is unavailable", true
+	case ErrorRecipientUnavailable:
+		return "The recipient could not be resolved", true
+	case ErrorWriteForbidden:
+		return "Telegram does not permit sending to this recipient", true
+	case ErrorPaymentRequired:
+		return "Telegram requires payment for this send", true
+	case ErrorAccountRestricted:
+		return "Telegram restricted this account from sending", true
+	case ErrorSendEffectUncertain:
+		return "The send may have reached Telegram; retain the same operation ID", true
+	case ErrorStateSyncFailed:
+		return "Telegram confirmed the send but local state synchronization failed", true
+	case ErrorReceiptNotPersisted:
+		return "Telegram confirmed the send but its receipt could not be persisted", true
 	case ErrorInternal:
 		return "Telegram MCP could not complete the operation", true
 	default:
@@ -422,6 +458,7 @@ type ErrorBody struct {
 	Category          ErrorCategory `json:"category"`
 	Message           string        `json:"message"`
 	RetryAfterSeconds *uint32       `json:"retry_after_seconds,omitempty"`
+	RetryAt           string        `json:"retry_at,omitempty"`
 }
 
 type ErrorEnvelope struct {
@@ -470,16 +507,37 @@ func (e ErrorEnvelope) Validate() error {
 	if err := validateRequestID(e.RequestID); err != nil {
 		return err
 	}
-	message, valid := e.Error.Category.message()
-	if !valid || e.Error.Message != message {
+	return e.Error.Validate()
+}
+
+// NewRetryAtErrorEnvelope preserves the provider deadline without the legacy
+// reader retry-delay cap.
+func NewRetryAtErrorEnvelope(requestID string, retryAt time.Time) (ErrorEnvelope, error) {
+	if err := validateRequestID(requestID); err != nil {
+		return ErrorEnvelope{}, err
+	}
+	if retryAt.IsZero() {
+		return ErrorEnvelope{}, errors.New("retry timestamp is required")
+	}
+	message, _ := ErrorRateLimited.message()
+	return ErrorEnvelope{SchemaVersion: SchemaVersion, RequestID: requestID, Error: ErrorBody{Category: ErrorRateLimited, Message: message, RetryAt: retryAt.UTC().Format(time.RFC3339Nano)}}, nil
+}
+
+func (e ErrorBody) Validate() error {
+	message, valid := e.Category.message()
+	if !valid || e.Message != message {
 		return errors.New("invalid error body")
 	}
-	if e.Error.Category == ErrorRateLimited {
-		if e.Error.RetryAfterSeconds == nil || *e.Error.RetryAfterSeconds == 0 || *e.Error.RetryAfterSeconds > MaximumRetryAfterSeconds {
+	if e.Category == ErrorRateLimited {
+		if e.RetryAt != "" {
+			if e.RetryAfterSeconds != nil || !validSendingTime(e.RetryAt) {
+				return errors.New("rate-limited error has an invalid retry timestamp")
+			}
+		} else if e.RetryAfterSeconds == nil || *e.RetryAfterSeconds == 0 || *e.RetryAfterSeconds > MaximumRetryAfterSeconds {
 			return errors.New("rate-limited error has an invalid retry delay")
 		}
-	} else if e.Error.RetryAfterSeconds != nil {
-		return errors.New("retry delay is only valid for rate-limited errors")
+	} else if e.RetryAfterSeconds != nil || e.RetryAt != "" {
+		return errors.New("retry timing is only valid for rate-limited errors")
 	}
 	return nil
 }

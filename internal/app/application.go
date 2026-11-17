@@ -19,6 +19,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/policy"
 	"github.com/lstpsche/telegram-mcp/internal/reader"
 	"github.com/lstpsche/telegram-mcp/internal/secrets"
+	"github.com/lstpsche/telegram-mcp/internal/sender"
 	metastore "github.com/lstpsche/telegram-mcp/internal/store"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
 	"golang.org/x/sync/errgroup"
@@ -348,8 +349,18 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 		_ = lifecycle.Transition(daemon.StateFailed)
 		return err
 	}
+	operations, err := metastore.NewOutgoingRepository(database)
+	if err != nil {
+		_ = lifecycle.Transition(daemon.StateFailed)
+		return err
+	}
+	if err := operations.RecoverInterrupted(ctx, a.now()); err != nil {
+		_ = lifecycle.Transition(daemon.StateFailed)
+		return err
+	}
 	var account accountRuntime
 	var textService *reader.Service
+	var sendingService *sender.Service
 	if authorized {
 		_, account, err = a.account(ctx, repository, tgaccount.ModeRead)
 		if err != nil && !errors.Is(err, ErrConfigurationRequired) {
@@ -359,13 +370,19 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 		if account != nil {
 			backend, ok := account.(interface {
 				reader.Backend
+				sender.Backend
 				EnableReads(context.Context, *sql.DB, string) error
+				EnableSending(*metastore.OutgoingRepository) error
 			})
 			if !ok {
 				_ = lifecycle.Transition(daemon.StateFailed)
-				return errors.New("account text runtime is unavailable")
+				return errors.New("account messaging runtime is unavailable")
 			}
 			if err := backend.EnableReads(ctx, database, epochState.Epoch); err != nil {
+				_ = lifecycle.Transition(daemon.StateFailed)
+				return err
+			}
+			if err := backend.EnableSending(operations); err != nil {
 				_ = lifecycle.Transition(daemon.StateFailed)
 				return err
 			}
@@ -380,6 +397,9 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 				return keyErr
 			}
 			textService, err = reader.New(backend, policies, a.now, cursorKey)
+			if err == nil {
+				sendingService, err = sender.New(backend, policies, operations, a.now, a.random, cursorKey)
+			}
 			clear(cursorKey)
 			if err != nil {
 				_ = lifecycle.Transition(daemon.StateFailed)
@@ -396,7 +416,7 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 		_ = lifecycle.Transition(daemon.StateFailed)
 		return err
 	}
-	server := mcpserver.New(lifecycle.Snapshot, textService)
+	server := mcpserver.New(lifecycle.Snapshot, textService, sendingService)
 	if account == nil {
 		err := socket.Serve(ctx, func(ctx context.Context, conn net.Conn) { mcpserver.Serve(ctx, server, conn) })
 		if ctx.Err() != nil {

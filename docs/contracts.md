@@ -1,9 +1,87 @@
 # Version 1 contracts
 
 These transport-independent contracts define the MCP input and output boundary.
-The daemon registers a static inventory: `status`, `list_chats`, `list_messages`,
-`get_message_context`, `search_messages`, `list_unread`, `list_scopes`, `catch_up`, `open_image`, and `open_document`. Authentication and
-policy mutations are human-only.
+The daemon registers a static inventory: `status`, `list_chats`, `list_topics`,
+`list_messages`, `get_message_context`, `search_messages`, `list_unread`,
+`list_scopes`, `catch_up`, `open_image`, `open_document`, `open_voice_note`,
+`transcribe_voice_note`, `resolve_recipient`, `send_message` and
+`get_send_status`. Authentication and policy mutations are human-only.
+
+## Sending primitives
+
+Sending is disabled by default. The human-only account-wide permission is
+independent of restricted grants, Full read and scopes. It permits bounded
+recipient and exact reply-routing metadata checks; incidental message bodies
+remain inside the adapter and are discarded. It authorizes neither body
+delivery nor read acknowledgments. The daemon continues to own the only session.
+
+| Tool | Accepted fields | Result |
+| --- | --- | --- |
+| `resolve_recipient` | Exactly one of `username`, `phone` or strict `peer` | One immutable `peer`, kind, optional bounded untrusted display metadata and fresh UUIDv7 `operation_id`; no operation row or send |
+| `send_message` | Required `peer`, `text`, `operation_id`; optional `reply_to` | One bounded synchronous attempt or retained outcome for the exact operation |
+| `get_send_status` | Required `operation_id` | One retained current-epoch operation; no Telegram I/O or retry |
+
+All three require send permission. Local status and confirmed receipt replay
+require a usable local store, but not Telegram readiness. Unknown or pruned keys
+return `operation_unavailable`, never a fabricated `not_sent` operation. Human
+offline inspection can inspect retained facts without enabling send authority.
+
+Username lookup accepts one optional leading `@` and 1–32 ASCII letters, digits
+or underscores, beginning with a letter. Active assigned aliases are supported.
+Phone lookup requires an explicit `+` and 2–15 international digits,
+beginning with a nonzero digit.
+There is no contact import, country guessing, join or alternate-selector fallback.
+Lookup validates the exact returned identity; aliases are not send authority.
+Shared phone lookups are spaced by at least three seconds. A failed lookup does
+not establish that a phone number has no Telegram account.
+
+Text is non-whitespace UTF-8 with an application maximum of 4096 UTF-16
+units. Original bytes are preserved, without splitting, trimming, rich-text
+interpretation or added text. Automatic previews, payments, scheduling, custom
+author identity and draft clearing are not enabled. Groups/topics explicitly use
+the logged-in author; ordinary broadcast posts use the destination publisher.
+Native posting rights and Telegram's own text limits still apply.
+
+`reply_to` must name the same exact peer/topic and pass a bounded live routing
+header check. Syntax alone is insufficient. A missing or mismatched target fails
+before dispatch; it must not trigger an unthreaded resend. Forum destinations
+require exact topics and validated roots. Remote deletion after preflight can
+change the reply relationship; preserve valid server acceptance without claiming
+an atomic remote snapshot or issuing a corrective send.
+
+Operation IDs are canonical lowercase UUIDv7s, selected once per intended
+message. Resolution supplies a key; integrations can generate their own. Keys
+are selectors, never authority. New dispatch or permitted retry requires creation
+within the previous 24 hours, with at most 60 seconds of future skew. The request
+deadline is at most 20 seconds and never extends past the dispatch window.
+Records remain until seven days after UUID creation. Retained confirmed receipts
+can be returned after dispatch expiry; pruned expired keys cannot dispatch.
+Each of the operation and protocol-wait tables is capped at 100,000 rows;
+bounded cleanup never evicts unexpired operation facts to admit new work.
+
+Known operation states are `not_sent`, `in_flight`, `sent` and `uncertain`.
+An operation item contains `operation_id`, `peer`, `state`, and optional
+`message_id`, actual provider `sent_at`, fixed `failure_code` and `retry_at`.
+`sent` means server acceptance with a valid message ID, not recipient delivery or
+reading. Inspection time is supplied only by envelope freshness. Same-key
+payload changes return `operation_conflict` before Telegram I/O. `not_sent`
+requires that no send invocation occurred. Every attempted send error without a
+positive receipt is `uncertain`, including explicit rights, payment, rate or
+length rejection: opaque SDK reconnect retransmission can precede that error.
+The closed failure reason and retry time remain available, but cannot authorize
+resending an uncertain operation or replace a previously confirmed receipt.
+
+Dispatch is durably recorded before sending. Positive receipts are preserved
+before update synchronization. A matching random-ID assignment proves acceptance
+without an accompanying message body; incidental entities cannot veto that fact.
+Provider timestamps require a matching outgoing message. Cancellation-independent
+local bookkeeping is capped at five seconds without further network grace.
+Restart reconciles facts but never resumes a queue. Absolute protocol waits are
+shared by trusted account, environment, method and applicable containing dialog,
+surviving same-account
+reauthentication and permission toggles. No automatic outgoing wait/retry loop is
+provided. See [sending](sending.md) for caller recovery and human commands and
+[ADR-0003](adr/0003-message-sending.md) for the persistence boundary.
 
 ## Available MCP behavior
 
@@ -192,15 +270,34 @@ defines the range semantics.
 
 ## Errors
 
-Tool errors contain only a schema version, request ID, stable category, fixed
-content-free message, and—only for `rate_limited`—a bounded retry delay. Raw
+Admission and lookup errors contain only a schema version, request ID, stable
+category, fixed content-free message and—only for `rate_limited`—either the
+existing bounded `retry_after_seconds` or exact UTC `retry_at`, never both. Raw
 Telegram errors, objects, peer titles, request payloads, and content are never
 returned.
+
+A failed admitted send uses an operation envelope with a fixed error body and
+MCP `isError: true`, preserving its known operation state and any confirmed
+receipt. A post-acceptance error must not discard `state: sent`, `message_id` or
+the actual provider timestamp. Existing read errors retain their relative-delay
+shape. Status inspection of an uncertain operation is a successful metadata
+query, not a failed send.
 
 The initial stable categories are defined in `internal/model/envelope.go` and
 cover readiness, authorization, unsupported or protected content, invalid or
 expired capabilities, rate/freshness/availability failures, size budgets,
 cancellation, and a sanitized internal error.
+
+Sending also defines `operation_conflict`, `operation_expired`,
+`operation_unavailable` and `recipient_unavailable`. Outbound failure codes are
+fixed diagnostics: `write_forbidden`, `payment_required`,
+`rate_limited`, `account_restricted`, `send_effect_uncertain`,
+`state_sync_failed`, `receipt_not_persisted`, `recipient_unavailable`,
+`invalid_reference` and `message_too_long`. An attempted send error without a
+receipt has `state: uncertain` and the top-level `send_effect_uncertain` category,
+while its item retains the fixed provider reason, such as `message_too_long`.
+`invalid_input` remains a preflight/admission category when no send was invoked.
+Raw provider error text is never a failure code.
 
 ## Input and result bounds
 

@@ -254,7 +254,7 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := mcpserver.New(func() daemon.Snapshot { return daemon.Snapshot{State: daemon.StateReauthRequired} }, nil)
+	server := mcpserver.New(func() daemon.Snapshot { return daemon.Snapshot{State: daemon.StateReauthRequired} }, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	defer socket.Close()

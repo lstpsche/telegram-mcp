@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/gotd/contrib/middleware/floodwait"
@@ -60,6 +61,7 @@ type Account struct {
 	reads       *readRuntime
 	openImageDC func(context.Context, int) (gotdtelegram.CloseInvoker, error)
 	middlewares []gotdtelegram.Middleware
+	environment string
 }
 
 // NewAccount selects only the explicitly configured Telegram environment.
@@ -83,6 +85,15 @@ func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (
 	waiter := floodwait.NewSimpleWaiter().
 		WithMaxWait(maximumFloodWait).
 		WithMaxRetries(maximumFloodRetries)
+	var reads *readRuntime
+	if mode == ModeRead {
+		reads = &readRuntime{failed: make(chan struct{})}
+	}
+	environment := config.Environment
+	if environment == TestEnvironment {
+		environment += ":" + strconv.Itoa(config.TestDC)
+	}
+	control := rpcControl{runtime: reads, environment: environment}
 	options := gotdtelegram.Options{
 		DC:               dc,
 		DCList:           dcList,
@@ -94,8 +105,9 @@ func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (
 		MaxRetries:       3,
 		Middlewares: []gotdtelegram.Middleware{
 			newConcurrencyLimiter(maximumConcurrentRequests),
-			waiter,
+			outgoingWaiter{legacy: waiter},
 			ratelimit.New(rate.Limit(requestsPerSecond), requestBurst),
+			control,
 		},
 	}
 	var loggedIn qrlogin.LoggedIn
@@ -105,15 +117,13 @@ func NewAccount(config Config, storage gotdtelegram.SessionStorage, mode Mode) (
 		options.NoUpdates = false
 		options.UpdateHandler = dispatcher
 	}
-	var reads *readRuntime
 	if mode == ModeRead {
-		reads = &readRuntime{failed: make(chan struct{})}
 		options.NoUpdates = false
 		options.UpdateHandler = reads
 		options.Middlewares = append(options.Middlewares, readMiddleware{reads})
 	}
 	client := gotdtelegram.NewClient(config.APIID, string(config.APIHash), options)
-	return &Account{client: client, loggedIn: loggedIn, reads: reads,
+	return &Account{client: client, loggedIn: loggedIn, reads: reads, environment: environment,
 		openImageDC: func(ctx context.Context, dc int) (gotdtelegram.CloseInvoker, error) {
 			if dc == client.Config().ThisDC {
 				return client.Pool(1)

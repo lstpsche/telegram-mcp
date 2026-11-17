@@ -4,9 +4,9 @@
 [![Release](https://img.shields.io/github/v/release/lstpsche/telegram-mcp)](https://github.com/lstpsche/telegram-mcp/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-An [MCP](https://modelcontextprotocol.io) server that lets AI agents search your Telegram conversations, retrieve context, and catch up on what happened while you were away. Written in Go, with binaries for macOS, Linux, and Windows.
+An [MCP](https://modelcontextprotocol.io) server that lets AI agents search your Telegram conversations, retrieve context, catch up on what happened while you were away, and send messages after you explicitly enable sending. Written in Go, with binaries for macOS, Linux, and Windows.
 
-Telegram MCP is an **unofficial client using Telegram's API**, with no Telegram affiliation. It connects to one user account and gives agents read access that you control through a local CLI.
+Telegram MCP is an **unofficial client using Telegram's API**, with no Telegram affiliation. It connects to one user account. You control read and send permissions independently through a local CLI.
 
 ## What It Can Do
 
@@ -21,6 +21,7 @@ Telegram MCP is an **unofficial client using Telegram's API**, with no Telegram 
 | **Forum topics** | Discover and read individual topics, including topic scopes |
 | **Voice notes** | Deliver original Ogg/Opus audio or request Telegram speech-to-text without a local model |
 | **Control access** | Choose exact, expiring grants or explicitly enable Full read access |
+| **Send messages** | Explicitly enable account-wide sending, resolve one username, international phone number or known peer, then send one plain-text message or reply |
 
 For example, after setting up access and a scope named `project`:
 
@@ -213,6 +214,9 @@ and [document access](docs/document-access.md).
 | `open_voice_note` | Deliver an authorized original voice note as native MCP audio |
 | `transcribe_voice_note` | Request untrusted Telegram speech-to-text using a separate voice capability; may consume account allowance |
 | `open_image` | Open an authorized image as native MCP image content |
+| `resolve_recipient` | Resolve one username, international phone number or known peer and obtain a new UUIDv7 operation ID |
+| `send_message` | Send one plain-text message or reply under human-enabled send permission |
+| `get_send_status` | Inspect a retained outgoing operation without retrying it |
 
 [Refresh previously read messages](docs/message-refresh.md) to detect changed content and inspect Telegram edit timestamps.
 
@@ -254,7 +258,31 @@ Version 0.7.0 preserves [link messages and Telegram-supplied previews](docs/link
 
 Narrow searches by [sender and date](docs/search-filters.md), including across named scopes. Use [Saved Messages source and tag filters](docs/saved-messages.md) to revisit organized saved content.
 
-The MCP surface is read-first: sending, editing, deleting, account administration, authentication, and access changes are not agent tools. See [message access](docs/text-access.md) and [image access](docs/image-access.md) for exact boundaries.
+Sending is disabled by default. Explicitly enable it with:
+
+```sh
+telegram-mcp sending enable --accept-account-wide-send
+```
+
+This permits connected agents to send as your account to any supported recipient,
+including new conversations, bots and joined channels where you can post, without
+per-recipient confirmation. Read scopes do not restrict this permission. Disable it
+with `telegram-mcp sending disable`. Full read does not enable sending, and sending
+does not grant message-body access or mark conversations read.
+
+Use the operation ID returned by `resolve_recipient` once per intended message.
+After a lost response, inspect that exact operation and preserve its ID for any
+permitted retry. Do not generate a replacement ID to work around an uncertain
+result. Dispatch and retry are limited
+to 24 hours from key creation; retained status is available for seven days.
+`sent` means Telegram accepted the message, not that its recipient received or read
+it. See [sending messages](docs/sending.md) for routing, failure and retry rules.
+
+The MCP surface remains read-first. Editing, deleting, account administration,
+authentication and access changes are not agent tools. Multi-recipient workflows
+belong to the agent; the server provides no batch sender, durable outgoing queue
+or background retry. See [message access](docs/text-access.md) and
+[image access](docs/image-access.md) for read boundaries.
 
 ## How It Works
 
@@ -272,6 +300,7 @@ The local transport is a user-checked Unix socket on macOS/Linux or a SID-checke
 ## Privacy and Access
 
 - **Your access settings control reads.** Restricted grants are the default. Full read access is an explicit human choice; restricted image access requires an additional opt-in.
+- **Sending requires a separate account-wide opt-in.** It permits recipient and reply-routing metadata checks, but does not grant message-body access. A connected agent can disclose information through messages once enabled; configure your client's tool permissions for the agent's intended use.
 - **Messages stay out of local storage.** Telegram MCP does not persist message bodies, search content, or image bytes. SQLite stores operational metadata and access settings. Your MCP client or model provider may retain returned results under its own settings.
 - **Sessions are local and unencrypted.** Credentials and sessions use private files protected by your OS account. Anyone able to read those files can obtain the session; same-user processes and administrators are outside the isolation boundary. Ordinary restarts need no recurring unlock or login.
 - **Telegram content is untrusted data.** Returned text and images must not be treated as instructions or granted authority over your agent.
@@ -288,6 +317,7 @@ Read the [threat model](docs/threat-model.md) for the security boundaries. Exist
 | [Installation and diagnostics](docs/installation.md) | Platform setup, service start/stop/restart, upgrades, `doctor`, client reconnection |
 | [Authentication](docs/authentication.md) | Production and Test DC, phone/QR login, 2FA, logout and recovery |
 | [Message access](docs/text-access.md) | Restricted grants, Full read access, named scopes and read receipts |
+| [Sending messages](docs/sending.md) | Human opt-in, recipient resolution, replies, operation IDs and retained status |
 | [Incremental catch-up](docs/incremental-catch-up.md) | Resume completed scope windows using client-held checkpoints |
 | [Folder scopes](docs/folder-scopes.md) | Import Telegram folder membership into local scopes |
 | [Image access](docs/image-access.md) | Supported images, permissions and delivery limits |

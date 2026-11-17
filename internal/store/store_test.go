@@ -49,8 +49,8 @@ func TestOpenAppliesEmbeddedMigrationsAndSecurityPragmas(t *testing.T) {
 	if err := database.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 14 {
-		t.Fatalf("migration count = %d, want 14", migrationCount)
+	if migrationCount != 15 {
+		t.Fatalf("migration count = %d, want 15", migrationCount)
 	}
 	var tableCount int
 	if err := database.QueryRow(`
@@ -69,12 +69,15 @@ func TestOpenAppliesEmbeddedMigrationsAndSecurityPragmas(t *testing.T) {
             'policy_revision',
             'named_scopes',
             'named_scope_peers',
-            'full_read_access'
+            'full_read_access',
+            'full_send_access',
+            'outgoing_operations',
+            'telegram_rpc_waits'
         )
     `).Scan(&tableCount); err != nil {
 		t.Fatal(err)
 	}
-	if tableCount != 13 {
+	if tableCount != 16 {
 		t.Fatalf("expected all metadata-only tables, got %d", tableCount)
 	}
 }

@@ -101,8 +101,9 @@ type OperationError struct {
 	Cause    error
 }
 
-func (e *OperationError) Error() string { return fmt.Sprintf("text operation failed: %s", e.Category) }
-func (e *OperationError) Unwrap() error { return e.Cause }
+func (e *OperationError) Error() string                         { return fmt.Sprintf("text operation failed: %s", e.Category) }
+func (e *OperationError) Unwrap() error                         { return e.Cause }
+func (e *OperationError) operationErrorCategory() ErrorCategory { return e.Category }
 
 func TextError(category ErrorCategory, cause error) error {
 	return &OperationError{Category: category, Cause: cause}
@@ -112,9 +113,11 @@ func TextErrorCategory(err error) ErrorCategory {
 	if err == nil {
 		return ""
 	}
-	var operation *OperationError
-	if errors.As(err, &operation) && operation.Category.IsValid() {
-		return operation.Category
+	var categorized interface{ operationErrorCategory() ErrorCategory }
+	if errors.As(err, &categorized) {
+		if category := categorized.operationErrorCategory(); category.IsValid() {
+			return category
+		}
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return ErrorCancelled
