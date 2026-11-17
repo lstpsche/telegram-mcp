@@ -344,7 +344,9 @@ Deadline expiry retains every previously accepted slice; a later restart resumes
 that durable progress. A server-reported gap never authorizes replacing the
 checkpoint with the server's current state.
 Complete recovered user entities refresh existing access hashes; minimal
-entities and zero hashes cannot replace them.
+entities and zero hashes cannot replace them. Each validated user-hash batch
+commits in one authorization-checked transaction before its response reaches
+the checkpoint manager.
 
 A checkpoint or recovery failure makes the runtime unavailable for the rest of
 that process. Stop and restart the daemon after resolving the cause. Restart

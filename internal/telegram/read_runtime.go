@@ -54,9 +54,6 @@ func (r *readRuntime) fail(err error) {
 		return
 	}
 	r.mu.Lock()
-	if metadataCancellation(err) && errors.Is(err, context.DeadlineExceeded) && !r.recoveryDeadline.IsZero() && !time.Now().Before(r.recoveryDeadline) {
-		err = errors.Join(ErrUpdateRecoveryLimit, err)
-	}
 	if r.failure == nil || (gotdauth.IsUnauthorized(err) && !gotdauth.IsUnauthorized(r.failure)) {
 		r.failure = err
 	}
@@ -357,6 +354,12 @@ func (r *readRuntime) UpdatesGetDifference(ctx context.Context, q *tg.UpdatesGet
 		err = bounded.Err()
 	}
 	if err != nil {
+		if metadataCancellation(err) && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			callerDeadline, callerLimited := ctx.Deadline()
+			if !callerLimited || deadline.Before(callerDeadline) {
+				err = errors.Join(ErrUpdateRecoveryLimit, err)
+			}
+		}
 		r.fail(err)
 		return nil, r.err()
 	}

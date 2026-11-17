@@ -337,6 +337,7 @@ func TestRecoveryUserBudgetDoesNotExpandOrdinaryReads(t *testing.T) {
 func TestRecoveryRejectsUnsafeDifferencesBeforeMetadata(t *testing.T) {
 	for _, failure := range []string{"pts", "qts", "seq", "empty_seq", "date", "no_progress", "messages", "updates", "users", "chats", "hash_write"} {
 		t.Run(failure, func(t *testing.T) {
+			want := ErrUpdateStateInvalid
 			user := &tg.User{ID: 2}
 			user.SetAccessHash(22)
 			full := &tg.UpdatesDifference{Users: []tg.UserClass{user}, State: tg.UpdatesState{Pts: 12, Qts: 1, Date: 101, Seq: 1}}
@@ -353,20 +354,25 @@ func TestRecoveryRejectsUnsafeDifferencesBeforeMetadata(t *testing.T) {
 			case "date":
 				full.State.Date = 0
 			case "no_progress":
+				want = ErrUpdateRecoveryStalled
 				response = &tg.UpdatesDifferenceSlice{Users: full.Users, IntermediateState: tg.UpdatesState{Pts: 10, Date: 100, Seq: 1}}
 			case "messages":
+				want = ErrUpdateResponseLimit
 				for range 101 {
 					full.NewMessages = append(full.NewMessages, testMessage(5))
 				}
 			case "updates":
+				want = ErrUpdateResponseLimit
 				for range maximumRecoveryUpdates + 1 {
 					full.OtherUpdates = append(full.OtherUpdates, &tg.UpdatePtsChanged{})
 				}
 			case "users":
+				want = ErrUpdateResponseLimit
 				for range maximumRecoveryPeers {
 					full.Users = append(full.Users, user)
 				}
 			case "chats":
+				want = ErrUpdateResponseLimit
 				for range maximumRecoveryPeers + 1 {
 					full.Chats = append(full.Chats, &tg.ChatEmpty{ID: 3})
 				}
@@ -377,6 +383,7 @@ func TestRecoveryRejectsUnsafeDifferencesBeforeMetadata(t *testing.T) {
 				return encodeReadResponse(out, response)
 			})
 			if failure == "hash_write" {
+				want = nil
 				if _, err := db.Exec("CREATE TRIGGER reject_hash BEFORE INSERT ON telegram_peer_hashes BEGIN SELECT RAISE(FAIL, 'synthetic write failure'); END"); err != nil {
 					t.Fatal(err)
 				}
@@ -384,6 +391,9 @@ func TestRecoveryRejectsUnsafeDifferencesBeforeMetadata(t *testing.T) {
 			result, err := account.reads.UpdatesGetDifference(context.Background(), &tg.UpdatesGetDifferenceRequest{Pts: 10, Date: 100})
 			if err == nil || result != nil || account.Ready() {
 				t.Fatal("unsafe recovery accepted")
+			}
+			if want != nil && !errors.Is(err, want) {
+				t.Fatal("rejected recovery lost its diagnostic category", err)
 			}
 			if _, err := account.reads.UpdatesGetState(context.Background()); err == nil || calls != 1 {
 				t.Fatal("failed runtime performed another RPC")
@@ -551,24 +561,109 @@ func TestRecoveryDeadlineBoundsChainAndRetainsAcceptedCheckpoint(t *testing.T) {
 	}
 }
 
-func TestRecoveryDeadlineClassificationPreservesOtherFailures(t *testing.T) {
+func TestRecoveryDeadlineResumesAcceptedProgressAfterRestart(t *testing.T) {
+	account, db := newReadTestAccount(t, func(ctx context.Context, input bin.Encoder, out bin.Decoder) error {
+		query, ok := input.(*tg.UpdatesGetDifferenceRequest)
+		if !ok {
+			return errors.New("unexpected RPC")
+		}
+		if query.Pts == 10 {
+			return encodeReadResponse(out, &tg.UpdatesDifferenceSlice{IntermediateState: tg.UpdatesState{Pts: 12, Date: 101, Seq: 1}})
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	account.reads.recoveryDeadline = time.Now().Add(time.Second)
+	ready, done, _ := observeRecovery(t, account)
+	if err := <-done; !errors.Is(err, ErrUpdateRecoveryLimit) {
+		t.Fatal("recovery deadline lost its category", err)
+	}
+	select {
+	case <-ready:
+		t.Fatal("incomplete recovery became ready")
+	default:
+	}
+	var persisted int
+	if err := db.QueryRow("SELECT pts FROM telegram_update_state").Scan(&persisted); err != nil || persisted != 12 {
+		t.Fatal("deadline lost accepted progress", err)
+	}
+	restarted := restartReadAccount(t, db, func(_ context.Context, input bin.Encoder, out bin.Decoder) error {
+		switch query := input.(type) {
+		case *tg.UpdatesGetDifferenceRequest:
+			if query.Pts != 12 || query.Date != 101 {
+				t.Error("restart did not resume accepted progress")
+			}
+			return encodeReadResponse(out, &tg.UpdatesDifference{State: tg.UpdatesState{Pts: 14, Date: 102, Seq: 2}})
+		case *tg.UpdatesGetStateRequest:
+			return encodeReadResponse(out, &tg.UpdatesState{Pts: 14, Date: 102, Seq: 2})
+		}
+		return errors.New("unexpected RPC")
+	})
+	ready, done, cancel := observeRecovery(t, restarted)
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatal("restart failed to finish recovery", err)
+	}
+	cancel()
+	<-done
+}
+
+func TestRecoveryDeadlineAttribution(t *testing.T) {
 	corruption := errors.New("synthetic metadata corruption")
-	for _, outcome := range []struct {
+	for _, test := range []struct {
 		name    string
 		cause   error
 		limited bool
 	}{
-		{"deadline", context.DeadlineExceeded, true},
-		{"joined_deadline", errors.Join(context.DeadlineExceeded), true},
-		{"corruption", errors.Join(context.DeadlineExceeded, corruption), false},
-		{"cancellation", context.Canceled, false},
+		{"reservation_exceeds_budget", context.DeadlineExceeded, true},
+		{"earlier_caller_deadline", context.DeadlineExceeded, false},
+		{"expired_caller", context.DeadlineExceeded, false},
+		{"cancelled_caller", context.Canceled, false},
+		{"mixed_corruption", errors.Join(context.DeadlineExceeded, corruption), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			account, _ := newReadTestAccount(t, func(context.Context, bin.Encoder, bin.Decoder) error { return test.cause })
+			switch test.name {
+			case "earlier_caller_deadline":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, time.Second)
+				defer cancel()
+			case "expired_caller":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(ctx, time.Now().Add(-time.Second))
+				defer cancel()
+			case "cancelled_caller":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+			result, err := account.reads.UpdatesGetDifference(ctx, &tg.UpdatesGetDifferenceRequest{Pts: 10, Date: 100})
+			if result != nil || !errors.Is(err, test.cause) || errors.Is(err, ErrUpdateRecoveryLimit) != test.limited {
+				t.Fatal("recovery deadline changed the failure cause", err)
+			}
+		})
+	}
+}
+
+func TestRecoveryFailureLatchPreservesUnrelatedDeadlines(t *testing.T) {
+	corruption := errors.New("synthetic metadata corruption")
+	for _, outcome := range []struct {
+		name  string
+		cause error
+	}{
+		{"deadline", context.DeadlineExceeded},
+		{"joined_deadline", errors.Join(context.DeadlineExceeded)},
+		{"corruption", errors.Join(context.DeadlineExceeded, corruption)},
+		{"cancellation", context.Canceled},
 	} {
 		t.Run(outcome.name, func(t *testing.T) {
 			account, _ := newReadTestAccount(t, func(context.Context, bin.Encoder, bin.Decoder) error { return errors.New("unexpected RPC") })
 			account.reads.recoveryDeadline = time.Now().Add(-time.Second)
 			account.reads.fail(outcome.cause)
 			err := account.reads.err()
-			if errors.Is(err, ErrUpdateRecoveryLimit) != outcome.limited || !errors.Is(err, outcome.cause) {
+			if errors.Is(err, ErrUpdateRecoveryLimit) || !errors.Is(err, outcome.cause) {
 				t.Fatal("recovery deadline changed the failure cause", err)
 			}
 		})
