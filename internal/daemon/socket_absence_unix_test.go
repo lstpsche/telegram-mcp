@@ -101,13 +101,13 @@ func staleUnixSocket(t *testing.T, path string) {
 }
 
 func TestDialSocketRefusalRequiresUnchangedIdentity(t *testing.T) {
-	for _, replace := range []string{"file", "socket", "removed", "unsafe directory", "inconclusive", "joined unsafe", "joined cancellation"} {
+	for _, replace := range []string{"file", "socket", "unsafe directory", "inconclusive", "joined unsafe", "joined cancellation"} {
 		t.Run(replace, func(t *testing.T) {
 			path := filepath.Join(shortTempDir(t), socketFilename)
 			staleUnixSocket(t, path)
 			dial := func(context.Context, string, string) (net.Conn, error) {
 				switch replace {
-				case "file", "socket", "removed":
+				case "file", "socket":
 					if err := os.Rename(path, path+".old"); err != nil {
 						t.Fatal(err)
 					}
@@ -138,6 +138,46 @@ func TestDialSocketRefusalRequiresUnchangedIdentity(t *testing.T) {
 	}
 }
 
+func TestDialSocketDisappearanceRequiresFreshSafeAbsence(t *testing.T) {
+	for _, cause := range []error{unix.ENOENT, unix.ECONNREFUSED} {
+		for _, replacement := range []string{"absent", "existing", "file", "socket", "unsafe directory", "joined unsafe", "joined cancellation"} {
+			t.Run(cause.Error()+"/"+replacement, func(t *testing.T) {
+				path := filepath.Join(shortTempDir(t), socketFilename)
+				staleUnixSocket(t, path)
+				dial := func(context.Context, string, string) (net.Conn, error) {
+					if replacement != "existing" {
+						if err := os.Rename(path, path+".original"); err != nil {
+							t.Fatal(err)
+						}
+					}
+					switch replacement {
+					case "file":
+						if err := os.WriteFile(path, nil, 0600); err != nil {
+							t.Fatal(err)
+						}
+					case "socket":
+						staleUnixSocket(t, path)
+					case "unsafe directory":
+						if err := os.Chmod(filepath.Dir(path), 0755); err != nil {
+							t.Fatal(err)
+						}
+					case "joined unsafe":
+						return nil, errors.Join(ErrUnsafeSocket, cause)
+					case "joined cancellation":
+						return nil, errors.Join(context.Canceled, cause)
+					}
+					return nil, cause
+				}
+				conn, err := dialSocket(context.Background(), path, dial)
+				wantUnavailable := replacement == "absent" || replacement == "existing" && cause == unix.ECONNREFUSED
+				if conn != nil || err == nil || errors.Is(err, ErrDaemonUnavailable) != wantUnavailable {
+					t.Fatalf("connection=%v error=%v unavailable=%v want=%v", conn, err, errors.Is(err, ErrDaemonUnavailable), wantUnavailable)
+				}
+			})
+		}
+	}
+}
+
 func TestDialSocketTimeoutDoesNotAuthorizeStartup(t *testing.T) {
 	path := filepath.Join(shortTempDir(t), socketFilename)
 	staleUnixSocket(t, path)
@@ -151,5 +191,38 @@ func TestDialSocketTimeoutDoesNotAuthorizeStartup(t *testing.T) {
 	state, err := probeSocket(path, func(string, string, time.Duration) (net.Conn, error) { return dial(context.Background(), "", "") })
 	if state != SocketLive || err != nil {
 		t.Fatalf("probe timeout = %q, %v", state, err)
+	}
+}
+
+func TestDialSocketConnectedIdentityReplacementRemainsFatal(t *testing.T) {
+	path := filepath.Join(shortTempDir(t), socketFilename)
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener.SetUnlinkOnClose(false)
+	defer listener.Close()
+	if err := os.Chmod(path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var connected net.Conn
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		var err error
+		connected, err = (&net.Dialer{}).DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.Rename(path, path+".original"); err != nil {
+			t.Fatal(err)
+		}
+		staleUnixSocket(t, path)
+		return connected, nil
+	}
+	connection, err := dialSocket(context.Background(), path, dial)
+	if connection != nil || !errors.Is(err, ErrUnsafeSocket) || errors.Is(err, ErrDaemonUnavailable) {
+		t.Fatalf("replaced connected socket was not rejected: connection=%v error=%v", connection, err)
+	}
+	if _, err := connected.Write([]byte("closed")); err == nil {
+		t.Fatal("rejected connection was retained")
 	}
 }

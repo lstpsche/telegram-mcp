@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 )
@@ -202,5 +203,44 @@ func TestTaskMutationHonorsCancellation(t *testing.T) {
 	}
 	if len(runner.calls) != 0 {
 		t.Fatal("cancelled operation contacted scheduler")
+	}
+}
+
+func TestTaskStartupUsesOneValidatedQueryBeforeFinalWake(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		results     []error
+		disposition StartDisposition
+		want        error
+		calls       int
+	}{
+		{"ready", []error{testExit(taskReady), nil}, StartLaunched, nil, 2},
+		{"active", []error{nil}, StartJoining, nil, 1},
+		{"disabled", []error{testExit(taskDisabled)}, "", ErrDisabled, 1},
+		{"modified", []error{testExit(taskInvalid)}, "", ErrInvalidInstallation, 1},
+		{"missing", []error{testExit(taskMissing)}, "", ErrServiceAbsent, 1},
+		{"changed before wake", []error{testExit(taskReady), testExit(taskInvalid)}, "", ErrInvalidInstallation, 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m, runner, _ := taskScriptFixture(t)
+			runner.results = test.results
+			var disposition StartDisposition
+			err := m.WithSession(context.Background(), func(s *Session) error {
+				var err error
+				disposition, err = s.RequestStart(context.Background(), time.Now())
+				return err
+			})
+			if disposition != test.disposition || !errors.Is(err, test.want) || len(runner.calls) != test.calls {
+				t.Fatalf("disposition=%s error=%v calls=%d", disposition, err, len(runner.calls))
+			}
+			for _, script := range runner.calls {
+				if !strings.Contains(script, "$definition.Actions.Count -ne 1") || !strings.Contains(script, "if (-not $task.Enabled)") {
+					t.Fatal("startup query or final wake omitted task validation")
+				}
+				if strings.Contains(script, ".Enabled=") || strings.Contains(script, "RegisterTask(") {
+					t.Fatal("automatic startup changed installation or permission")
+				}
+			}
+		})
 	}
 }

@@ -329,7 +329,7 @@ func TestCanceledOperationsAndConcurrentLock(t *testing.T) {
 		t.Fatalf("cancellation created state: %v", err)
 	}
 	install(t, m, bin)
-	lock, err := m.lock()
+	lock, err := daemon.AcquireAccountLock(filepath.Join(m.stateDir(), "service.lock"))
 	must(t, err)
 	timeout, stop := context.WithTimeout(context.Background(), 80*time.Millisecond)
 	defer stop()

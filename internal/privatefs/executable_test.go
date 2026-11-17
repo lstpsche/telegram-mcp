@@ -21,14 +21,18 @@ func TestExecutableReplacementRequiresTheInspectedPrivateFile(t *testing.T) {
 	if err := WriteExecutable(path, []byte("old")); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.Lstat(path)
+	before, err := InspectExecutable(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ReplaceExecutable(path, []byte("new"), before); err != nil {
+	replacementTarget, err := InspectExecutable(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := os.Lstat(path)
+	if err := ReplaceExecutable(path, []byte("new"), replacementTarget); err != nil {
+		t.Fatal(err)
+	}
+	after, err := InspectExecutable(path)
 	if err != nil || os.SameFile(before, after) {
 		t.Fatal("replacement did not publish a new file", err)
 	}

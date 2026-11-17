@@ -147,6 +147,11 @@ concurrent connections and the MCP boundary limits input frame size and rate,
 incomplete frame duration, and blocked writes. Idle sessions remain connected
 between requests; the input deadline starts when the first frame byte arrives.
 
+New Unix listeners are secured under a private temporary name before atomic,
+non-replacing publication at the endpoint. A socket disappearing during a dial
+is absence only after a fresh safe-path check. Changed existing socket identity,
+unsafe paths and inconclusive errors remain fatal to that relay invocation.
+
 Automatic startup requires a canonical private installation and enabled OS
 registration. The relay can submit one OS start request only after a positively
 classified absent endpoint or an identity-rechecked refused Unix socket. It

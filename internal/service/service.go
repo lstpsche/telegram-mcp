@@ -12,8 +12,6 @@ import (
 	"runtime"
 	"strconv"
 	"time"
-
-	"github.com/lstpsche/telegram-mcp/internal/daemon"
 )
 
 type Manager struct {
@@ -52,14 +50,6 @@ func (m *Manager) target() string { return m.domain() + "/" + Label }
 
 func (m *Manager) plistPath() string {
 	return filepath.Join(m.home, "Library", "LaunchAgents", Label+".plist")
-}
-
-func (m *Manager) lock() (*daemon.AccountLock, error) {
-	dir := m.stateDir()
-	if err := ensureDirectory(dir, m.uid, true); err != nil {
-		return nil, err
-	}
-	return daemon.AcquireAccountLock(filepath.Join(dir, "service.lock"))
 }
 
 func (m *Manager) install(ctx context.Context, binDir string, enabled bool) (config Config, err error) {
@@ -198,7 +188,3 @@ func (m *Manager) stateDir() string {
 	return filepath.Join(m.home, "Library", "Application Support", "Telegram MCP")
 }
 func (m *Manager) accountPath() string { return filepath.Join(m.stateDir(), "account.lock") }
-
-// A loaded launchd registration need not have a running process. Account-lock
-// ownership is checked separately; a non-killing kickstart joins any early start.
-func (m *Manager) startActive(context.Context) (bool, error) { return false, nil }

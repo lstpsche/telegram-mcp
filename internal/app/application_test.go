@@ -270,6 +270,50 @@ func TestDaemonOwnsLockSocketAndStopsOnCancellation(t *testing.T) {
 	}
 }
 
+func TestDaemonWaitsForTransientOwnershipBeforeReadingSecrets(t *testing.T) {
+	t.Parallel()
+	application, secretStore := newTestApplication(t)
+	if err := application.Configure(context.Background(), tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {
+		t.Fatal(err)
+	}
+	recordDaemonAuthorization(t, application, 2)
+	application.factory = func(tgaccount.Config, *tgaccount.SessionStorage, tgaccount.Mode) (accountRuntime, error) {
+		return &fakeRuntime{observeStatus: tgaccount.AuthorizationStatus{Authorized: true}}, nil
+	}
+	probe, err := daemon.AcquireAccountLock(application.paths.Lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer probe.Release()
+	baseline := secretStore.readCount()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- application.RunDaemon(ctx) }()
+	waitForLifecycle(t, application, daemon.StateStarting)
+	select {
+	case err := <-done:
+		t.Fatal("daemon failed during a transient ownership probe", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if secretStore.readCount() != baseline {
+		t.Fatal("daemon read secrets before acquiring ownership")
+	}
+	if err := probe.Release(); err != nil {
+		t.Fatal(err)
+	}
+	waitForLifecycle(t, application, daemon.StateReady)
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("daemon did not stop after cancellation")
+	}
+}
+
 func TestDaemonRequiresRecordedEpochBeforeOpeningTextRuntime(t *testing.T) {
 	application, secrets := newTestApplication(t)
 	if err := application.Configure(context.Background(), tgaccount.TestEnvironment, 2, staticConfiguration(12345)); err != nil {

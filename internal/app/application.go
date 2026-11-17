@@ -328,7 +328,11 @@ func (a *Application) RunDaemon(ctx context.Context) (runError error) {
 		}
 	}()
 
-	lock, err = daemon.AcquireAccountLock(a.paths.Lock)
+	// A service-start probe can briefly own the lock while this process starts.
+	// Wait only for that transient contention, before accessing account state.
+	ownership, cancelOwnership := context.WithTimeout(ctx, time.Second)
+	lock, err = daemon.AcquireAccountLockContext(ownership, a.paths.Lock)
+	cancelOwnership()
 	if err != nil {
 		_ = lifecycle.Transition(daemon.StateFailed)
 		return err

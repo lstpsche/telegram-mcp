@@ -44,11 +44,11 @@ type offlineLease func(context.Context, func(context.Context) error) error
 type offlineLeaseKey struct{}
 
 func defaultOfflineLease(ctx context.Context, run func(context.Context) error) error {
-	manager, err := service.Default()
+	paths, err := daemon.DefaultPaths()
 	if err != nil {
 		return err
 	}
-	return manager.WithSession(ctx, func(_ *service.Session) error { return run(ctx) })
+	return service.WithLifecycleLock(ctx, paths.StateDir, func() error { return run(ctx) })
 }
 
 // The public CLI entry supplies coordination. Direct handler composition can

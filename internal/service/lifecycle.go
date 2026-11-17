@@ -24,33 +24,31 @@ type Session struct {
 	active  atomic.Bool
 }
 
-// WithSession waits for the existing lifecycle lock. Its acquisition deadline
-// does not limit the callback's interactive work; callers bound each operation.
-func (m *Manager) WithSession(ctx context.Context, action func(*Session) error) (result error) {
+// WithLifecycleLock coordinates startup and offline account operations without
+// requiring an installed service or access to an OS service manager. Its
+// acquisition deadline does not limit the callback's interactive work.
+func WithLifecycleLock(ctx context.Context, stateDir string, action func() error) (result error) {
 	acquire, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
-	for {
-		if err := acquire.Err(); err != nil {
-			return errors.Join(daemon.ErrAccountLocked, err)
-		}
-		lock, err := m.lock()
-		if err == nil {
-			defer func() { result = errors.Join(result, lock.Release()) }()
-			if err := acquire.Err(); err != nil {
-				return err
-			}
-			session := &Session{manager: m}
-			session.active.Store(true)
-			defer session.active.Store(false)
-			return action(session)
-		}
-		if !errors.Is(err, daemon.ErrAccountLocked) {
-			return err
-		}
-		if err := waitLifecycle(acquire); err != nil {
-			return errors.Join(daemon.ErrAccountLocked, err)
-		}
+	lock, err := daemon.AcquireAccountLockContext(acquire, filepath.Join(stateDir, "service.lock"))
+	if err != nil {
+		return err
 	}
+	defer func() { result = errors.Join(result, lock.Release()) }()
+	if err := acquire.Err(); err != nil {
+		return err
+	}
+	return action()
+}
+
+// WithSession keeps lifecycle operations inside one shared lock acquisition.
+func (m *Manager) WithSession(ctx context.Context, action func(*Session) error) error {
+	return WithLifecycleLock(ctx, m.stateDir(), func() error {
+		session := &Session{manager: m}
+		session.active.Store(true)
+		defer session.active.Store(false)
+		return action(session)
+	})
 }
 
 func waitLifecycle(ctx context.Context) error {
@@ -193,25 +191,18 @@ func (s *Session) RequestStart(ctx context.Context, now time.Time) (StartDisposi
 	if config == nil {
 		return "", ErrNotInstalled
 	}
-	enabled, err := s.manager.enabled(ctx)
+	active, err := s.manager.startupState(ctx)
 	if err != nil {
 		return "", err
 	}
-	if !enabled {
-		return "", ErrDisabled
+	if active {
+		return StartJoining, nil
 	}
 	busy, err := s.manager.accountBusy()
 	if err != nil {
 		return "", err
 	}
 	if busy {
-		return StartJoining, nil
-	}
-	active, err := s.manager.startActive(ctx)
-	if err != nil {
-		return "", err
-	}
-	if active {
 		return StartJoining, nil
 	}
 	if err := ctx.Err(); err != nil {

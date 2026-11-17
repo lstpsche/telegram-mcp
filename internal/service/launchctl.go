@@ -50,7 +50,11 @@ func parseDisabledServices(data []byte) (bool, error) {
 	if len(data) > maxQueryBytes {
 		return false, ErrServiceUnavailable
 	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	output := strings.TrimSpace(string(data))
+	if output == "disabled services = (no disabled services)" {
+		return false, nil
+	}
+	lines := strings.Split(output, "\n")
 	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "disabled services = {" || strings.TrimSpace(lines[len(lines)-1]) != "}" {
 		return false, ErrServiceUnavailable
 	}
@@ -84,6 +88,19 @@ func (m *Manager) setEnabled(ctx context.Context, enabled bool) error {
 		return errors.Join(ErrServiceUnavailable, err)
 	}
 	return nil
+}
+
+// A loaded launchd registration need not have a running process. Account-lock
+// ownership is checked separately; a non-killing kickstart joins any early start.
+func (m *Manager) startupState(ctx context.Context) (bool, error) {
+	enabled, err := m.enabled(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !enabled {
+		return false, ErrDisabled
+	}
+	return false, nil
 }
 
 func (m *Manager) wake(ctx context.Context) error {

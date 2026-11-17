@@ -328,6 +328,23 @@ func (m *Manager) setEnabled(ctx context.Context, enabled bool) error {
 	return m.checkedTask(ctx, "\n    $task.Enabled="+setting)
 }
 
+// One validated query classifies both permission and activity. A later wake
+// revalidates the task before submitting the actual demand start.
+func (m *Manager) startupState(ctx context.Context) (bool, error) {
+	err := m.checkedTask(ctx, `
+    if (-not $task.Enabled) { exit 6 }
+    switch ($task.State) {
+        4 { exit 0 }
+        2 { exit 0 }
+        3 { exit 3 }
+        default { exit 5 }
+    }`)
+	if ctx.Err() == nil && exited(err, taskReady) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (m *Manager) wake(ctx context.Context) error {
 	return m.checkedTask(ctx, `
     if (-not $task.Enabled) { exit 6 }

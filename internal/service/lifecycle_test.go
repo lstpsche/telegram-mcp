@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -116,11 +117,29 @@ func TestCancelledSessionDoesNotCreateState(t *testing.T) {
 	m := lifecycleFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := m.WithSession(ctx, func(*Session) error { t.Fatal("called"); return nil }); !errors.Is(err, context.Canceled) {
+	if err := m.WithSession(ctx, func(*Session) error { t.Fatal("called"); return nil }); !errors.Is(err, context.Canceled) || errors.Is(err, daemon.ErrAccountLocked) {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(m.stateDir()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("cancelled acquisition created state", err)
+	}
+}
+
+func TestLifecycleLockNeedsNoServiceManagerAndReleasesAfterFailure(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "account state")
+	cause := errors.New("synthetic offline account failure")
+	err := WithLifecycleLock(context.Background(), state, func() error {
+		lock, err := daemon.AcquireAccountLock(filepath.Join(state, "service.lock"))
+		if lock != nil || !errors.Is(err, daemon.ErrAccountLocked) {
+			t.Fatal("offline operation did not own the shared lifecycle lock", err)
+		}
+		return cause
+	})
+	if !errors.Is(err, cause) {
+		t.Fatal("callback failure was lost", err)
+	}
+	if err := WithLifecycleLock(context.Background(), state, func() error { return nil }); err != nil {
+		t.Fatal("offline callback retained lifecycle ownership", err)
 	}
 }
 

@@ -128,7 +128,9 @@ func (m *Manager) registrationExists(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	if state.load == "not-found" {
-		if !systemdAbsent(state) {
+		// Explicit installation may reload a canonical saved record after an
+		// interrupted registration. There must be no loaded unit or activity.
+		if !systemdUnloaded(state) || (state.needsReload != "no" && state.needsReload != "yes") {
 			return false, ErrInvalidInstallation
 		}
 		return false, nil
@@ -185,18 +187,80 @@ func (m *Manager) validateSystemdState(state systemdUnitState) error {
 	if systemdAbsent(state) {
 		return ErrServiceAbsent
 	}
-	if state.load != "loaded" || state.fragment != m.unitPath() || state.dropIns != "" || state.needsReload != "no" {
+	if state.load != "loaded" || state.fragment != m.unitPath() || state.needsReload != "no" {
 		return ErrInvalidInstallation
 	}
 	if state.unitFile != "enabled" && state.unitFile != "disabled" {
 		return ErrInvalidInstallation
 	}
+	return validateSystemdDropIns(state.dropIns)
+}
+
+// Vendor-wide stop-timeout policy may apply even to a canonical user unit.
+// Accept only the supported timeout directive from protected vendor files;
+// execution, environment, restart and authority overrides remain forbidden.
+func validateSystemdDropIns(paths string) error {
+	if strings.ContainsAny(paths, "\r\n") {
+		return ErrInvalidInstallation
+	}
+	seen := map[string]bool{}
+	total := 0
+	for _, path := range strings.Fields(paths) {
+		if !vendorDropInPath(path) || seen[path] {
+			return ErrInvalidInstallation
+		}
+		seen[path] = true
+		data, err := readVendorDropIn(path)
+		if err != nil {
+			return errors.Join(ErrInvalidInstallation, err)
+		}
+		total += len(data)
+		if total > maxInstallationBytes || !stopTimeoutDropIn(data) {
+			return ErrInvalidInstallation
+		}
+	}
 	return nil
 }
 
+func vendorDropInPath(path string) bool {
+	if validatePath(path) != nil || !strings.HasSuffix(path, ".conf") {
+		return false
+	}
+	switch filepath.Dir(path) {
+	case "/usr/lib/systemd/user/service.d", "/usr/local/lib/systemd/user/service.d", "/lib/systemd/user/service.d":
+		return true
+	default:
+		return false
+	}
+}
+
+func stopTimeoutDropIn(data []byte) bool {
+	service, configured := false, false
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.Trim(line, " \t\r")
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if line == "[Service]" && !service {
+			service = true
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !service || configured || !found || strings.Trim(key, " \t") != "TimeoutStopFailureMode" || strings.Trim(value, " \t") != "abort" {
+			return false
+		}
+		configured = true
+	}
+	return configured
+}
+
 func systemdAbsent(state systemdUnitState) bool {
+	return systemdUnloaded(state) && state.needsReload == "no"
+}
+
+func systemdUnloaded(state systemdUnitState) bool {
 	return state.load == "not-found" && state.unitFile == "" && state.active == "inactive" &&
-		state.fragment == "" && state.dropIns == "" && state.needsReload == "no"
+		state.fragment == "" && state.dropIns == ""
 }
 
 func (m *Manager) enabled(ctx context.Context) (bool, error) {
@@ -207,10 +271,39 @@ func (m *Manager) enabled(ctx context.Context) (bool, error) {
 	if state.load == "masked" || state.unitFile == "masked" || state.unitFile == "masked-runtime" {
 		return false, nil
 	}
+	// Human setup and upgrade may repair this unloaded record explicitly.
+	// Automatic startup uses startupState and keeps reload requirements fatal.
+	if systemdUnloaded(state) && state.needsReload == "yes" {
+		return false, ErrServiceAbsent
+	}
 	if err := m.validateSystemdState(state); err != nil {
 		return false, err
 	}
 	return state.unitFile == "enabled", nil
+}
+
+func (m *Manager) startupState(ctx context.Context) (bool, error) {
+	state, err := m.systemdState(ctx)
+	if err != nil {
+		return false, err
+	}
+	if state.load == "masked" || state.unitFile == "masked" || state.unitFile == "masked-runtime" {
+		return false, ErrMasked
+	}
+	if err := m.validateSystemdState(state); err != nil {
+		return false, err
+	}
+	if state.unitFile != "enabled" {
+		return false, ErrDisabled
+	}
+	switch state.active {
+	case "active", "activating", "deactivating", "reloading", "refreshing":
+		return true, nil
+	case "inactive", "failed":
+		return false, nil
+	default:
+		return false, ErrServiceUnavailable
+	}
 }
 
 func (m *Manager) setEnabled(ctx context.Context, enabled bool) error {
@@ -224,7 +317,7 @@ func (m *Manager) setEnabled(ctx context.Context, enabled bool) error {
 	if state.load == "masked" || state.unitFile == "masked" || state.unitFile == "masked-runtime" {
 		// A runtime mask does not establish what will happen at the next login.
 		// Do not claim a persistent change or remove an operator's mask.
-		return ErrDisabled
+		return ErrMasked
 	}
 	if err := m.validateSystemdState(state); err != nil {
 		return err
@@ -255,7 +348,7 @@ func (m *Manager) wake(ctx context.Context) error {
 		return err
 	}
 	if state.load == "masked" || state.unitFile == "masked" || state.unitFile == "masked-runtime" {
-		return ErrDisabled
+		return ErrMasked
 	}
 	if err := m.validateSystemdState(state); err != nil {
 		return err

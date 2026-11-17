@@ -116,16 +116,11 @@ func isManagedEntry(executable, root string) (bool, error) {
 	if runtime.GOOS != "windows" || !strings.EqualFold(executable, expected) {
 		return false, nil
 	}
-	for _, path := range []string{executable, expected} {
-		if err := privatefs.CheckExecutable(path); err != nil {
-			return false, err
-		}
-	}
-	physical, err := os.Lstat(executable)
+	physical, err := privatefs.InspectExecutable(executable)
 	if err != nil {
 		return false, err
 	}
-	target, err := os.Lstat(expected)
+	target, err := privatefs.InspectExecutable(expected)
 	if err != nil {
 		return false, err
 	}

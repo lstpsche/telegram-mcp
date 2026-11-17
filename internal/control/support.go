@@ -167,7 +167,7 @@ func writeSupportJSON(stdout, stderr io.Writer, value any) int {
 }
 
 func writeSupportError(writer io.Writer, err error) {
-	if writeHumanHint(writer, err) || writeEntryError(writer, err) {
+	if writeHumanHint(writer, err) || writeEntryError(writer, err) || writeServiceMaskError(writer, err) {
 		return
 	}
 	switch {
@@ -194,6 +194,14 @@ func writeSupportError(writer io.Writer, err error) {
 	default:
 		fmt.Fprintln(writer, "telegram-mcp: local support check failed; check filesystem permissions, the user login session, and foreground daemon diagnostics")
 	}
+}
+
+func writeServiceMaskError(writer io.Writer, err error) bool {
+	if !errors.Is(err, service.ErrMasked) {
+		return false
+	}
+	fmt.Fprintln(writer, "telegram-mcp: the OS service is masked; inspect it with the OS service manager and explicitly remove the mask before retrying. Telegram MCP does not remove masks.")
+	return true
 }
 
 func writeEntryError(writer io.Writer, err error) bool {

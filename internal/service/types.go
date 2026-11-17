@@ -1,6 +1,9 @@
 package service
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 const Label = "dev.telegram-mcp.gateway"
 
@@ -10,6 +13,7 @@ var (
 	ErrServiceLoaded      = errors.New("service is already registered")
 	ErrServiceAbsent      = errors.New("service is not registered")
 	ErrDisabled           = errors.New("service startup is disabled")
+	ErrMasked             = fmt.Errorf("service startup is masked: %w", ErrDisabled)
 	ErrServiceUnavailable = errors.New("user service manager is unavailable")
 	ErrStartupState       = errors.New("service startup coordination is invalid")
 	ErrSessionClosed      = errors.New("service lifecycle session is closed")

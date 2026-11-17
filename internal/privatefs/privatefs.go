@@ -126,6 +126,7 @@ func WriteExecutable(path string, data []byte) error { return writeFile(path, da
 
 // ReplaceExecutable atomically replaces a validated executable only if it still
 // names the file inspected by the caller. It is intended for human entry migration.
+// Capture the expected identity with InspectExecutable before intervening work.
 func ReplaceExecutable(path string, data []byte, expected os.FileInfo) error {
 	if expected == nil {
 		return errors.New("executable replacement requires an inspected file")
@@ -135,17 +136,28 @@ func ReplaceExecutable(path string, data []byte, expected os.FileInfo) error {
 
 // CheckExecutable verifies a private executable without reading its contents.
 func CheckExecutable(path string) error {
+	_, err := InspectExecutable(path)
+	return err
+}
+
+// InspectExecutable verifies a private executable and snapshots its physical identity.
+func InspectExecutable(path string) (os.FileInfo, error) {
 	if err := validPath(path); err != nil {
-		return err
+		return nil, err
 	}
 	if err := CheckDirectory(filepath.Dir(path)); err != nil {
-		return err
+		return nil, err
 	}
 	file, err := openExecutable(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return file.Close()
+	// Windows path-based stats defer file identity until a later comparison.
+	info, err := file.Stat()
+	if err := errors.Join(err, file.Close()); err != nil {
+		return nil, err
+	}
+	return info, nil
 }
 
 func writeFile(path string, data []byte, replace, executable bool, expected os.FileInfo) (result error) {
@@ -189,10 +201,7 @@ func writeFile(path string, data []byte, replace, executable bool, expected os.F
 		return err
 	}
 	if expected != nil {
-		if err := CheckExecutable(path); err != nil {
-			return err
-		}
-		current, err := os.Lstat(path)
+		current, err := InspectExecutable(path)
 		if err != nil {
 			return err
 		}

@@ -336,7 +336,7 @@ func writeStatus(writer io.Writer, status app.Status) {
 }
 
 func writeControlError(writer io.Writer, err error) {
-	if writeHumanHint(writer, err) || writeEntryError(writer, err) {
+	if writeHumanHint(writer, err) || writeEntryError(writer, err) || writeServiceMaskError(writer, err) {
 		return
 	}
 	switch {

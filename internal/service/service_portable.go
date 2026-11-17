@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
-	"github.com/lstpsche/telegram-mcp/internal/privatefs"
 )
 
 // Manager controls a per-user service without administrative privileges.
@@ -53,13 +52,6 @@ func Default() (*Manager, error) {
 	manager.storageDir = paths.StateDir
 	manager.cacheRoot = filepath.Dir(paths.RuntimeDir)
 	return manager, nil
-}
-
-func (m *Manager) lock() (*daemon.AccountLock, error) {
-	if err := privatefs.EnsureDirectory(m.stateDir()); err != nil {
-		return nil, err
-	}
-	return daemon.AcquireAccountLock(filepath.Join(m.stateDir(), "service.lock"))
 }
 
 func (m *Manager) read(ctx context.Context) (*Config, error) {
@@ -186,6 +178,5 @@ func exited(err error, code int) bool {
 	return errors.As(err, &status) && status.ExitCode() == code
 }
 
-func (m *Manager) requireRecord(ctx context.Context) error       { _, err := m.require(ctx); return err }
-func (m *Manager) accountPath() string                           { return m.accountLock }
-func (m *Manager) startActive(ctx context.Context) (bool, error) { return m.running(ctx) }
+func (m *Manager) requireRecord(ctx context.Context) error { _, err := m.require(ctx); return err }
+func (m *Manager) accountPath() string                     { return m.accountLock }

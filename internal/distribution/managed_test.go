@@ -60,7 +60,7 @@ func TestEntryProbeRequiresPhysicalIdentityAndStrictProtocol(t *testing.T) {
 	}
 	t.Run("changed executable", func(t *testing.T) {
 		err := checkEntry(context.Background(), stable, func(_ context.Context, path string) ([]byte, error) {
-			info, err := os.Lstat(path)
+			info, err := privatefs.InspectExecutable(path)
 			if err != nil {
 				return nil, err
 			}
@@ -90,14 +90,14 @@ func TestManagedEntryMigrationVerifiesSourceAndRetainsCompatibleEntry(t *testing
 	if err := ensureEntry(context.Background(), root, directory, probe); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.Lstat(stable)
+	before, err := privatefs.InspectExecutable(stable)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := ensureEntry(context.Background(), root, directory, probe); err != nil {
 		t.Fatal(err)
 	}
-	after, err := os.Lstat(stable)
+	after, err := privatefs.InspectExecutable(stable)
 	if err != nil || !os.SameFile(before, after) {
 		t.Fatal("replaced compatible stable entry", err)
 	}
@@ -111,7 +111,7 @@ func TestManagedEntryMigrationDoesNotReplaceOnInvalidSourceOrCancellation(t *tes
 	for _, mode := range []string{"old source", "malformed response", "cancelled"} {
 		t.Run(mode, func(t *testing.T) {
 			root, directory, stable := entryFixture(t)
-			before, err := os.Lstat(stable)
+			before, err := privatefs.InspectExecutable(stable)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -129,11 +129,47 @@ func TestManagedEntryMigrationDoesNotReplaceOnInvalidSourceOrCancellation(t *tes
 			if err := ensureEntry(ctx, root, directory, probe); err == nil {
 				t.Fatal("accepted invalid migration")
 			}
-			after, err := os.Lstat(stable)
+			after, err := privatefs.InspectExecutable(stable)
 			if err != nil || !os.SameFile(before, after) {
 				t.Fatal("failed migration replaced entry", err)
 			}
 		})
+	}
+}
+
+func TestManagedEntryMigrationDoesNotOverwriteAReplacedStableEntry(t *testing.T) {
+	root, directory, stable := entryFixture(t)
+	var replacement os.FileInfo
+	probe := func(_ context.Context, path string) ([]byte, error) {
+		if path == stable {
+			return nil, ErrEntryMigrationRequired
+		}
+		info, err := privatefs.InspectExecutable(stable)
+		if err != nil {
+			return nil, err
+		}
+		if err := privatefs.ReplaceExecutable(stable, []byte("replacement entry"), info); err != nil {
+			return nil, err
+		}
+		replacement, err = privatefs.InspectExecutable(stable)
+		if err != nil {
+			return nil, err
+		}
+		return entryJSON(path), nil
+	}
+	if err := ensureEntry(context.Background(), root, directory, probe); !errors.Is(err, ErrEntryMigrationRequired) {
+		t.Fatal("accepted changed migration target", err)
+	}
+	if replacement == nil {
+		t.Fatal("source probe did not replace the stable entry")
+	}
+	after, err := privatefs.InspectExecutable(stable)
+	if err != nil || !os.SameFile(replacement, after) {
+		t.Fatal("migration replaced the changed entry", err)
+	}
+	data, err := privatefs.ReadExecutable(stable, 64)
+	if err != nil || string(data) != "replacement entry" {
+		t.Fatal("migration overwrote the changed entry", err)
 	}
 }
 
@@ -168,7 +204,7 @@ func TestStableEntriesSurviveVersionChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(i.Root, Binary("telegram-mcp"))
-	before, err := os.Stat(path)
+	before, err := privatefs.InspectExecutable(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +218,7 @@ func TestStableEntriesSurviveVersionChange(t *testing.T) {
 	if err := prepareEntries(i.Root, next); err != nil {
 		t.Fatal(err)
 	}
-	after, err := os.Stat(path)
+	after, err := privatefs.InspectExecutable(path)
 	if err != nil || !os.SameFile(before, after) {
 		t.Fatal("stable relay replaced")
 	}

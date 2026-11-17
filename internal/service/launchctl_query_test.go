@@ -18,6 +18,8 @@ func TestDisabledServiceQueryRequiresKnownGrammar(t *testing.T) {
 		data     string
 		disabled bool
 	}{
+		{"disabled services = (no disabled services)", false},
+		{"\n\tdisabled services = (no disabled services)\n", false},
 		{"disabled services = {\n}", false},
 		{"disabled services = {\n \"other.service\" => disabled\n}", false},
 		{"disabled services = {\n \"" + Label + "\" => disabled\n}", true},
@@ -28,7 +30,18 @@ func TestDisabledServiceQueryRequiresKnownGrammar(t *testing.T) {
 			t.Fatal(got, err)
 		}
 	}
-	for _, data := range []string{"", "unknown = {\n}", "disabled services = {\n \"service\" => unknown\n}", "disabled services = {\n \"service\" => disabled\n \"service\" => enabled\n}", "disabled services = {\n}\ntrailing", strings.Repeat("x", maxQueryBytes+1)} {
+	for _, data := range []string{
+		"",
+		"unknown = {\n}",
+		"disabled services = (unknown)",
+		"disabled services = (no disabled services) trailing",
+		"disabled services = (no disabled services)\ntrailing",
+		"disabled services = {\n \"service\" => unknown\n}",
+		"disabled services = {\n \"service\" => disabled\n \"service\" => enabled\n}",
+		"disabled services = {\n}\ntrailing",
+		"disabled services = {\n}\nlogin item associations = {\n}",
+		strings.Repeat("x", maxQueryBytes+1),
+	} {
 		if _, err := parseDisabledServices([]byte(data)); !errors.Is(err, ErrServiceUnavailable) {
 			t.Fatal("unsupported state accepted", err)
 		}

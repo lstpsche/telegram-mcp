@@ -72,6 +72,9 @@ func (r *syntheticRunner) Run(ctx context.Context, program string, args ...strin
 			if strings.Contains(joined, "if (-not $task.Enabled)") && !r.enabled {
 				return testExit(6)
 			}
+			if strings.Contains(joined, "switch ($task.State)") && !r.active {
+				return testExit(3)
+			}
 			return nil
 		default:
 			if r.active {

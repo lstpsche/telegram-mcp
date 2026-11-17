@@ -76,9 +76,6 @@ func prepareEntries(root, directory string) error {
 // CheckEntry verifies the stable program's own capability. A legacy program
 // forwarding the probe to a selected child cannot satisfy physical identity.
 func CheckEntry(ctx context.Context, executable string) error {
-	if err := privatefs.CheckExecutable(executable); err != nil {
-		return errors.Join(ErrEntryInvalid, err)
-	}
 	return checkEntry(ctx, executable, probeEntry)
 }
 
@@ -88,7 +85,7 @@ func checkEntry(ctx context.Context, executable string, probe entryProbe) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	before, err := os.Lstat(executable)
+	before, err := privatefs.InspectExecutable(executable)
 	if err != nil {
 		return errors.Join(ErrEntryInvalid, err)
 	}
@@ -111,14 +108,11 @@ func checkEntry(ctx context.Context, executable string, probe entryProbe) error 
 	if !filepath.IsAbs(info.Executable) || filepath.Clean(info.Executable) != info.Executable {
 		return ErrEntryInvalid
 	}
-	if err := privatefs.CheckExecutable(info.Executable); err != nil {
-		return errors.Join(ErrEntryInvalid, err)
-	}
-	after, err := os.Lstat(executable)
+	after, err := privatefs.InspectExecutable(executable)
 	if err != nil || !os.SameFile(before, after) {
 		return errors.Join(ErrEntryInvalid, err)
 	}
-	reported, err := os.Lstat(info.Executable)
+	reported, err := privatefs.InspectExecutable(info.Executable)
 	if err != nil {
 		return errors.Join(ErrEntryInvalid, err)
 	}
@@ -180,12 +174,9 @@ func EnsureEntry(ctx context.Context, directory string) error {
 
 func ensureEntry(ctx context.Context, root, directory string, probe entryProbe) error {
 	stable := filepath.Join(root, Binary("telegram-mcp"))
-	if err := privatefs.CheckExecutable(stable); err != nil {
-		return errors.Join(ErrEntryInvalid, err)
-	}
-	before, err := os.Lstat(stable)
+	before, err := privatefs.InspectExecutable(stable)
 	if err != nil {
-		return err
+		return errors.Join(ErrEntryInvalid, err)
 	}
 	err = checkEntry(ctx, stable, probe)
 	if err == nil {
@@ -198,9 +189,6 @@ func ensureEntry(ctx context.Context, root, directory string, probe entryProbe) 
 		return err
 	}
 	source := filepath.Join(directory, Binary("telegram-mcp"))
-	if err := privatefs.CheckExecutable(source); err != nil {
-		return errors.Join(ErrEntryInvalid, err)
-	}
 	if err := checkEntry(ctx, source, probe); err != nil {
 		return errors.Join(ErrEntryInvalid, err)
 	}
@@ -213,9 +201,6 @@ func ensureEntry(ctx context.Context, root, directory string, probe entryProbe) 
 	}
 	if err := privatefs.ReplaceExecutable(stable, data, before); err != nil {
 		return errors.Join(ErrEntryMigrationRequired, err)
-	}
-	if err := privatefs.CheckExecutable(stable); err != nil {
-		return errors.Join(ErrEntryInvalid, err)
 	}
 	return checkEntry(ctx, stable, probe)
 }

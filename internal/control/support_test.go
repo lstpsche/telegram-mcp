@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -129,6 +130,18 @@ func TestSupportErrorsNeverEmitPartialReportsOrRawCauses(t *testing.T) {
 	})
 	if code != 1 || out.Len() != 0 || strings.Contains(errout.String(), hostile.Error()) {
 		t.Fatalf("code=%d out=%q err=%q", code, out.String(), errout.String())
+	}
+}
+
+func TestMaskedServiceHintExplainsTheExternalResumeRequirement(t *testing.T) {
+	t.Parallel()
+	for _, write := range []func(io.Writer, error){writeSupportError, writeControlError} {
+		var output bytes.Buffer
+		write(&output, errors.Join(service.ErrMasked, errors.New("private OS details")))
+		message := output.String()
+		if !strings.Contains(message, "explicitly remove the mask") || strings.Contains(message, "run service start") || strings.Contains(message, "private OS details") || strings.Count(message, "\n") != 1 {
+			t.Fatalf("invalid masked-service hint: %q", message)
+		}
 	}
 }
 

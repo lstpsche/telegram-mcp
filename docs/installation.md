@@ -144,6 +144,14 @@ or configure its own supervisor; the service command reports that failure. The
 relay can connect to an already running foreground daemon, but it never creates
 a replacement process when the OS service manager is unavailable.
 
+Linux accepts root-owned vendor-wide `service.d` drop-ins that only configure
+the supported stop-timeout policy. User, unit-specific and execution-changing
+drop-ins remain invalid; they cannot change the verified service command.
+Telegram MCP never removes an external service mask. Inspect and explicitly
+remove that mask through the OS service manager before retrying a failed
+operation; `service start` cannot override it. A mask that replaces the canonical
+unit file also changes the installation record and fails its validation.
+
 The generated service configuration is the installation record and must retain
 its canonical contents and private permissions. Existing or altered records are
 never overwritten. If Linux or Windows registration fails after writing the
@@ -198,7 +206,9 @@ as a durable pause.
 
 Offline authentication, discovery and metadata maintenance take the same
 lifecycle lock as relay startup, then the account lock. They still require a
-stopped daemon. Setup and `access setup` temporarily quiesce the service under
+stopped daemon. Their coordination uses the configured private state directory
+and does not require eligibility for per-user service registration. Setup and
+`access setup` temporarily quiesce the service under
 that lock; `access setup` restores the prior enablement and running state after
 success, and a previously disabled service remains disabled. Failed guides may
 retain a disabled service and completed account changes; inspect `doctor`
@@ -211,6 +221,10 @@ repair a rejected session or an unrecoverable Telegram update gap. Launchd and
 systemd allow 20 seconds for termination before their timeout enforcement.
 Individual human lifecycle operations have a 30-second deadline; interactive
 guides retain their lock while the human completes the prompts.
+
+Before opening account state, a starting daemon waits up to one second for
+transient account-lock contention, such as a simultaneous startup probe. A
+persistently held lock or cancellation stops startup without reading secrets.
 
 Windows Task Scheduler stop can terminate the process without a graceful Go
 shutdown. The command waits for the task to stop and the account lock to become
@@ -265,6 +279,11 @@ registration is missing, its former enablement cannot be established. Upgrade
 then installs the replacement disabled; use `service start` to resume it after
 inspection. This also applies when a canonical local record remains but the OS
 registration is missing. Fresh guided setup explicitly starts the service.
+On Linux, explicit setup, upgrade or identical service installation can reload
+a canonical saved unit when the OS proves that no unit is loaded or active,
+even if a previous registration attempt left a pending daemon reload. It
+revalidates the loaded unit afterward. Automatic startup does not perform that
+repair, and an unknown prior enablement remains disabled during upgrade.
 No rollback or content-readiness claim is made on failure. Existing manual
 installations can be explicitly adopted through this command; update client
 paths once to the stable relay. Subsequent managed upgrades need only client
