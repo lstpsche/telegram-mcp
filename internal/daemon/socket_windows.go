@@ -68,7 +68,14 @@ func BindSocket(path string) (*Socket, error) {
 	return &Socket{listener: listener}, nil
 }
 func DialSocket(ctx context.Context, path string) (net.Conn, error) {
-	if err := privatefs.CheckDirectory(filepath.Dir(path)); err != nil {
+	return dialPipeSocket(ctx, path, winio.DialPipeContext)
+}
+
+func dialPipeSocket(ctx context.Context, path string, dial func(context.Context, string) (net.Conn, error)) (net.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := inspectDialDirectory(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	name, err := pipeName(path)
@@ -77,8 +84,14 @@ func DialSocket(ctx context.Context, path string) (net.Conn, error) {
 	}
 	dialContext, cancel := context.WithTimeout(ctx, socketProbeTimeout)
 	defer cancel()
-	conn, err := winio.DialPipeContext(dialContext, name)
+	conn, err := dial(dialContext, name)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if definiteDialFailure(err, windows.ERROR_FILE_NOT_FOUND, windows.ERROR_PATH_NOT_FOUND) {
+			return nil, absentEndpoint(path, err)
+		}
 		return nil, err
 	}
 	if err = verifyPipeServer(conn); err != nil {
@@ -102,7 +115,7 @@ func ProbeSocket(path string) (SocketState, error) {
 	if err == nil {
 		return SocketLive, conn.Close()
 	}
-	if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
+	if errors.Is(err, ErrDaemonUnavailable) {
 		return SocketAbsent, nil
 	}
 	return "", err

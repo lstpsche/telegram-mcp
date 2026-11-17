@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,10 +26,11 @@ func (e exitStatus) Error() string { return "synthetic process status" }
 func (e exitStatus) ExitCode() int { return int(e) }
 
 type fakeRunner struct {
-	mu     sync.Mutex
-	loaded bool
-	calls  [][]string
-	fail   func(string, []string) error
+	mu       sync.Mutex
+	loaded   bool
+	disabled bool
+	calls    [][]string
+	fail     func(string, []string) error
 }
 
 func (r *fakeRunner) Run(ctx context.Context, program string, args ...string) error {
@@ -48,14 +50,40 @@ func (r *fakeRunner) Run(ctx context.Context, program string, args ...string) er
 		if strings.Count(args[1], "/") == 2 && !r.loaded {
 			return exitStatus(113)
 		}
-	case "bootstrap":
+	case "bootstrap", "kickstart":
 		r.loaded = true
+	case "enable":
+		r.disabled = false
+	case "disable":
+		r.disabled = true
 	case "bootout":
 		r.loaded = false
 	default:
 		return errors.New("unexpected command")
 	}
 	return nil
+}
+
+func (r *fakeRunner) Query(ctx context.Context, program string, args ...string) ([]byte, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.calls = append(r.calls, append([]string{program}, args...))
+	if len(args) != 2 || args[0] != "print-disabled" {
+		return nil, errors.New("unexpected query")
+	}
+	if r.fail != nil {
+		if err := r.fail(program, args); err != nil {
+			return nil, err
+		}
+	}
+	value := "enabled"
+	if r.disabled {
+		value = "disabled"
+	}
+	return []byte(fmt.Sprintf("disabled services = {\n\t%q => %s\n}\n", Label, value)), nil
 }
 
 func fixture(t *testing.T) (*Manager, *fakeRunner, string) {
@@ -120,7 +148,7 @@ func TestLifecyclePreservesStateAndUsesExactLaunchdTargets(t *testing.T) {
 	if err := m.Uninstall(context.Background()); !errors.Is(err, ErrServiceLoaded) {
 		t.Fatalf("uninstall live: %v", err)
 	}
-	if err := m.Start(context.Background()); !errors.Is(err, ErrServiceLoaded) {
+	if err := m.Start(context.Background()); err != nil {
 		t.Fatalf("duplicate start: %v", err)
 	}
 	if err := m.Restart(context.Background()); err != nil {
@@ -129,7 +157,7 @@ func TestLifecyclePreservesStateAndUsesExactLaunchdTargets(t *testing.T) {
 	if err := m.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Stop(context.Background()); !errors.Is(err, ErrServiceAbsent) {
+	if err := m.Stop(context.Background()); err != nil {
 		t.Fatalf("duplicate stop: %v", err)
 	}
 	if err := m.Uninstall(context.Background()); err != nil {
@@ -303,7 +331,9 @@ func TestCanceledOperationsAndConcurrentLock(t *testing.T) {
 	install(t, m, bin)
 	lock, err := m.lock()
 	must(t, err)
-	if err := m.Start(context.Background()); !errors.Is(err, daemon.ErrAccountLocked) {
+	timeout, stop := context.WithTimeout(context.Background(), 80*time.Millisecond)
+	defer stop()
+	if err := m.Start(timeout); !errors.Is(err, daemon.ErrAccountLocked) {
 		t.Fatalf("parallel mutation: %v", err)
 	}
 	must(t, lock.Release())

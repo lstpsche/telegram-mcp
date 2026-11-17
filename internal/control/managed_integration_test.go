@@ -65,19 +65,19 @@ func TestStableControlDispatchUsesRegisteredVersion(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	runner := &workflowRunner{}
+	runner := &workflowRunner{home: home}
 	manager, err := service.New(home, os.Geteuid(), runner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	installed, err := manager.Install(context.Background(), directory)
+	_, err = manager.Install(context.Background(), directory)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Simulate interruption after writing the registration but before enabling it.
 	runner.registered = false
-	local := support{service: manager, inspect: func(context.Context) (diagnostics.Report, error) { return diagnostics.Report{MCP: true}, nil }}
-	if err := activateRelease(context.Background(), local, &installed, directory); err != nil {
+	local := support{service: managedService{manager}, inspect: func(context.Context) (diagnostics.Report, error) { return diagnostics.Report{MCP: true}, nil }}
+	if _, err := activateUpgrade(context.Background(), local, directory); err != nil {
 		t.Fatal(err)
 	}
 	command := exec.Command(stable, "--version")

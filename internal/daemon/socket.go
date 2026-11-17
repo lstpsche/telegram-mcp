@@ -110,28 +110,45 @@ func bindSocket(path string, dial socketDialer) (*Socket, error) {
 // DialSocket validates the directory, socket node, and server UID. It never
 // creates state or starts a daemon on behalf of a client.
 func DialSocket(ctx context.Context, path string) (net.Conn, error) {
-	if err := inspectPrivateDirectory(filepath.Dir(path)); err != nil {
+	return dialSocket(ctx, path, (&net.Dialer{Timeout: socketProbeTimeout}).DialContext)
+}
+
+func dialSocket(ctx context.Context, path string, dial func(context.Context, string, string) (net.Conn, error)) (net.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := inspectDialDirectory(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	identity, err := inspectSocket(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, absentEndpoint(path, err)
+		}
 		return nil, err
 	}
-	connection, err := (&net.Dialer{Timeout: socketProbeTimeout}).DialContext(ctx, "unix", path)
+	connection, err := dial(ctx, "unix", path)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if definiteDialFailure(err, unix.ECONNREFUSED) {
+			current, inspectError := inspectSocket(path)
+			if inspectError != nil || current != identity {
+				return nil, errors.Join(ErrUnsafeSocket, inspectError)
+			}
+			return nil, absentEndpoint(path, err)
+		}
 		return nil, err
 	}
-	socket := connection.(*net.UnixConn)
 	current, err := inspectSocket(path)
 	if err != nil || current != identity {
-		_ = socket.Close()
-		return nil, ErrUnsafeSocket
+		return nil, errors.Join(ErrUnsafeSocket, err, connection.Close())
 	}
-	if err := VerifyPeer(socket); err != nil {
-		_ = socket.Close()
-		return nil, err
+	if err := VerifyPeer(connection); err != nil {
+		return nil, errors.Join(ErrUnsafeSocket, err, connection.Close())
 	}
-	return socket, nil
+	return connection, nil
 }
 
 // Close closes the listener and removes only the socket node originally bound.
@@ -163,15 +180,19 @@ func ProbeSocket(path string) (SocketState, error) {
 }
 
 func probeSocket(path string, dial socketDialer) (SocketState, error) {
-	if err := inspectPrivateDirectory(filepath.Dir(path)); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+	if err := inspectDialDirectory(filepath.Dir(path)); err != nil {
+		if errors.Is(err, ErrDaemonUnavailable) {
 			return SocketAbsent, nil
 		}
 		return "", err
 	}
-	if _, err := inspectSocket(path); err != nil {
+	identity, err := inspectSocket(path)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return SocketAbsent, nil
+			err = absentEndpoint(path, err)
+			if errors.Is(err, ErrDaemonUnavailable) {
+				return SocketAbsent, nil
+			}
 		}
 		return "", err
 	}
@@ -183,7 +204,14 @@ func probeSocket(path string, dial socketDialer) (SocketState, error) {
 	if networkError, ok := err.(net.Error); ok && networkError.Timeout() {
 		return SocketLive, nil
 	}
-	if errors.Is(err, unix.ECONNREFUSED) {
+	if definiteDialFailure(err, unix.ECONNREFUSED) {
+		current, inspectError := inspectSocket(path)
+		if inspectError != nil || current != identity {
+			return "", errors.Join(ErrUnsafeSocket, inspectError)
+		}
+		if err := inspectDialDirectory(filepath.Dir(path)); err != nil {
+			return "", err
+		}
 		return SocketStale, nil
 	}
 	return "", ErrSocketInUse

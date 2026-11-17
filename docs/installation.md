@@ -21,6 +21,8 @@ Telegram MCP's service manager own the runtime.
 
 After `brew upgrade lstpsche/tap/telegram-mcp`, run the managed `upgrade --version`
 command shown in `brew info lstpsche/tap/telegram-mcp`, then reconnect clients.
+For a fixed managed entry from 1.4.0 or earlier, use the new formula's control
+program directly for the first migration, as described below.
 Homebrew upgrade/cleanup/uninstall does not mutate private credentials, grants or
 service registration. If removing the runtime, stop and uninstall its service
 using its private control program; removing the formula alone leaves it running.
@@ -64,7 +66,8 @@ run `telegram-mcp auth qr` again. The QR and any two-step verification password
 remain in the local console.
 
 Setup preserves recorded authentication and access settings when resuming.
-It asks before stopping an existing service or enabling Full read access.
+It asks before stopping an existing service, resuming a disabled service or
+enabling Full read access.
 If interrupted, completed changes remain; inspect `status` and `doctor`, then
 run setup again. A running foreground daemon must be stopped separately.
 The guide can print standard MCP JSON or, after showing the proposed command,
@@ -120,7 +123,8 @@ must retain an owner-only DACL; Unix `chmod` does not establish that protection.
 Windows installation paths cannot contain `%`, which Task Scheduler expands as
 an environment-variable marker.
 
-The service starts at user login, using the following OS facility:
+An enabled service starts at user login. The relay can also request startup
+when an agent connects, using the same OS facility:
 
 | Platform | Registration | Requirement |
 | --- | --- | --- |
@@ -136,7 +140,9 @@ no Windows password. Its generated XML is retained in Telegram MCP's user
 configuration directory. Windows service registration requires the local user's
 permission to create scheduled tasks; organizational policy may prohibit it.
 A Linux system without a systemd user manager can run the daemon in the foreground
-or configure its own supervisor; the service command reports that failure.
+or configure its own supervisor; the service command reports that failure. The
+relay can connect to an already running foreground daemon, but it never creates
+a replacement process when the OS service manager is unavailable.
 
 The generated service configuration is the installation record and must retain
 its canonical contents and private permissions. Existing or altered records are
@@ -146,55 +152,123 @@ verified record only when the OS confirms no enabled registration exists.
 A different binary directory requires explicit uninstall first. External failures
 can leave partial registration; a failed command does not claim rollback.
 
-`service start` submits a launch request. A successful return does not establish
-MCP readiness; run `doctor` after startup. An unconfigured daemon can answer MCP
+`service start` enables the installed service and submits a launch request.
+A successful return does not establish MCP readiness; run `doctor` after
+startup. An unconfigured daemon can answer MCP
 `status` with `reauth_required` and `message_reads: false` without credentials.
 Configure and authenticate through the human commands while the daemon is stopped.
 Legacy Keychain installations require the explicit [migration](keychain.md).
 
 `agent-config` prints standard MCP JSON containing the exact installed relay
 path. Copy it into the client's configuration or use that path with the client's
-stdio setup command. It does not edit client settings. The relay stays byte-only
-and never launches the daemon, reconnects or replays a request. When the daemon
-restarts, reconnect the client after `doctor` reports a responding daemon.
+stdio setup command. It does not edit client settings or start the service. A
+managed installation must have a compatible stable entry before its path can
+be advertised for automatic startup.
+
+The relay first tries the existing private endpoint. If it is proven absent or
+a verified stale Unix socket refuses the connection, it checks the canonical
+installation and asks the OS manager to start the enabled service. It never
+enables a disabled service, repairs registration, chooses a different version,
+downloads binaries or prompts for credentials. Unsafe paths, peer identities,
+permissions and inconclusive connections fail closed. Only the daemon can
+remove a verified stale socket.
+
+Startup has one eight-second deadline, including delegation, lock waiting and
+OS commands. Simultaneous relays coordinate through the lifecycle lock and a
+private `service-start.json` file containing only a schema version and the last
+launch-attempt time. Attempts within 30 seconds are joined, including after a
+process fails quickly. Each relay can submit at most one start request; it does
+not retry at the end of that window. A fixed structured reason is written to
+stderr on failure; stdout remains reserved for MCP frames. Cancelling a relay
+does not stop a service already submitted to the OS.
+
+The successful connection is handed directly to the byte relay. It does not
+parse or buffer MCP requests while waiting, and it never reconnects or replays
+a request after a disconnect. After replacing or restarting a daemon, reconnect
+the client. A responsive transport does not establish account readiness or
+permission to read or send; use MCP `status` for those checks.
 
 Lifecycle commands are `service start`, `service stop`, `service restart` and
-`service uninstall`. Stop affects the current login session; the retained
-registration starts the daemon at the next login. Restart stops before starting.
-No backend repeatedly retries failed account authentication. Launchd and systemd
-allow 20 seconds for termination before their timeout enforcement. All lifecycle
-operations have a 30-second deadline.
+`service uninstall`. Stop disables startup persistently before stopping the
+process. It remains stopped after agent reconnects, a new login, reboot and
+managed upgrade until explicit `service start` or `service restart`. Stopping an
+already inactive installed service succeeds. Restart stops before enabling and
+starting. Failed disablement or termination is reported as a failed stop, never
+as a durable pause.
+
+Offline authentication, discovery and metadata maintenance take the same
+lifecycle lock as relay startup, then the account lock. They still require a
+stopped daemon. Setup and `access setup` temporarily quiesce the service under
+that lock; `access setup` restores the prior enablement and running state after
+success, and a previously disabled service remains disabled. Failed guides may
+retain a disabled service and completed account changes; inspect `doctor`
+before explicitly resuming. Local policy changes retain their existing policy
+lease, and retained `sending status` inspection does not take a lifecycle or
+account lock.
+
+No backend repeatedly retries failed account authentication. Startup cannot
+repair a rejected session or an unrecoverable Telegram update gap. Launchd and
+systemd allow 20 seconds for termination before their timeout enforcement.
+Individual human lifecycle operations have a 30-second deadline; interactive
+guides retain their lock while the human completes the prompts.
 
 Windows Task Scheduler stop can terminate the process without a graceful Go
 shutdown. The command waits for the task to stop and the account lock to become
 available. Atomic credential publication and SQLite transactions protect committed
 storage; this does not promise completion of an in-flight MCP request. An existing
-relay may fail and must be reconnected. Uninstall also refuses a held account lock
-on Linux and Windows. Do not start maintenance while another daemon is running.
+relay may fail and must be reconnected. Stop and uninstall wait for the account
+lock to become available on every platform. Do not start maintenance while
+another daemon is running.
 
 Uninstall requires the service to be stopped. It removes only the validated
 registration and its generated local file. It retains executables, metadata,
 credentials, sessions and runtime files. Stop and uninstall remain possible when
-an old executable has been removed or has unsafe permissions. Missing or already
-running states are explicit errors.
+an old executable has been removed or has unsafe permissions. Missing or
+modified registrations remain explicit errors.
 
 Managed installations publish a stable regular `telegram-mcp` entry directly
 under `Telegram MCP/install`. Use it for human subcommands and, without arguments,
 for MCP stdio. It delegates to the version selected by the
 validated service registration; no version-pointer file or symlink is used.
-Without arguments the stable entry only transfers bytes to the existing account
-endpoint. It is not overwritten during upgrades. `agent-config` selects this stable relay path.
+Without arguments, delegation happens before stdio adaptation; the selected
+relay performs any required service startup and forwards bytes to its connection.
+A compatible stable entry is not overwritten during later upgrades.
+`agent-config` selects this stable relay path.
+
+Managed entry programs created by 1.4.0 and earlier forwarded only human
+arguments to the selected release. They need one explicit migration before
+their existing MCP path can start a daemon automatically. Run the desired new
+release's checksum-verified standalone installer/control program, or invoke its
+new versioned `telegram-mcp` directly with `setup` or `upgrade --version X.Y.Z`.
+An old stable entry's upgrade code cannot perform this migration. Updating the
+Homebrew formula or downloading a version directory alone is insufficient.
+
+Migration verifies and replaces only the stable entry before changing service
+registration. It retains the stable path, versioned executables and account
+state. On Windows, close clients using the old entry and run the new program
+directly; an old parent control program waiting for setup can also keep the file
+in use. An in-use or unsafe replacement fails before service activation and
+retains the downloaded version for a later explicit retry. No replacement is
+scheduled at reboot. Existing matching client registrations remain valid.
 
 Run `telegram-mcp upgrade --version X.Y.Z` through the stable control program.
 The command verifies a complete release and both program version identities
-before stopping the old service. It installs and starts the new registration,
-waits for a responding MCP server, and retains old binaries and account data.
+before stopping the old service. It preserves OS enablement: an enabled service
+is installed, started and checked for a responding MCP server; a disabled
+replacement is installed disabled and skips the runtime wait. Both retain old
+binaries and account data. An upgrade of a disabled service reports that it
+remains stopped and does not claim a responsive daemon.
 Managed downgrades are refused because metadata migrations are forward-only.
 After a failed activation, inspect `doctor`; rerunning the same upgrade can
-continue from an absent or already-selected registration. No rollback or
-content-readiness claim is made on failure. Existing manual installations can
-be explicitly adopted through this command; update client paths once to the
-stable relay. Subsequent managed upgrades need only client reconnection.
+continue from an absent or already-selected registration. If the previous
+registration is missing, its former enablement cannot be established. Upgrade
+then installs the replacement disabled; use `service start` to resume it after
+inspection. This also applies when a canonical local record remains but the OS
+registration is missing. Fresh guided setup explicitly starts the service.
+No rollback or content-readiness claim is made on failure. Existing manual
+installations can be explicitly adopted through this command; update client
+paths once to the stable relay. Subsequent managed upgrades need only client
+reconnection.
 
 For a manual upgrade, prepare a fresh binary directory, stop and uninstall the old
 registration, then install and start the new directory. Update the MCP client's
@@ -208,7 +282,8 @@ Telegram data. File presence does not prove that a lock is held. Output contains
 fixed file names/states, transport state, account readiness booleans and a fixed
 next-action hint, without paths, account identifiers, grants, content or remote
 error text. `secrets: "not_checked"` and `metadata: "filesystem_only"` make those
-limits explicit.
+limits explicit. It never starts or resumes a service. Human `status`, help,
+version and `agent-config` likewise do not trigger automatic startup.
 
 An absent or refused Unix socket produces `absent` or `stale` with null account
 and readiness fields. Windows named pipes have no stale filesystem node. Unsafe
@@ -229,11 +304,15 @@ Authentication uses the OS console and remains interactive only during setup or
 explicit account reauthentication.
 
 Automated service checks use temporary files, fake OS process runners and a local
-synthetic MCP server. Native service-manager acceptance is separate: using fresh
-unconfigured state, install/start, run `doctor`, connect the relay and call
-`status`, restart with a connected relay, reconnect, then stop/uninstall. Verify
-that only the expected registration is removed and retained metadata and binaries
-remain. Do not run that fresh-state exercise against an existing account.
+synthetic MCP server. Native service-manager acceptance is separate: in a
+disposable user/session with fresh unconfigured state, verify automatic startup
+through the configured relay, simultaneous clients, MCP initialization and
+`status`, explicit stop/resume, a paused upgrade and client reconnection after
+daemon replacement. Verify enabled startup and disabled persistence through a
+new login/reboot, then remove only the expected test registration. Also verify
+legacy-entry migration and the full cold-start client timeout. Fake-runner
+success or archive checksums do not establish those native outcomes. Do not run
+the exercise against an existing account.
 
 On Windows, use an ordinary, non-elevated user shell. Do not run setup or the
 daemon with Run as administrator: elevated tokens can assign group ownership

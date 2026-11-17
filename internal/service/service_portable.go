@@ -55,21 +55,11 @@ func Default() (*Manager, error) {
 	return manager, nil
 }
 
-func (m *Manager) mutate(ctx context.Context, action func(context.Context) error) (err error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+func (m *Manager) lock() (*daemon.AccountLock, error) {
 	if err := privatefs.EnsureDirectory(m.stateDir()); err != nil {
-		return err
+		return nil, err
 	}
-	lock, err := daemon.AcquireAccountLock(filepath.Join(m.stateDir(), "service.lock"))
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, lock.Release()) }()
-	return action(ctx)
+	return daemon.AcquireAccountLock(filepath.Join(m.stateDir(), "service.lock"))
 }
 
 func (m *Manager) read(ctx context.Context) (*Config, error) {
@@ -104,36 +94,31 @@ func (m *Manager) Inspect(ctx context.Context) (*Config, error) {
 	return &verified, nil
 }
 
-func (m *Manager) Install(ctx context.Context, dir string) (config Config, err error) {
-	err = m.mutate(ctx, func(ctx context.Context) error {
-		if _, err := os.Lstat(m.recordPath()); err == nil {
-			existing, err := m.Inspect(ctx)
-			if err != nil {
-				return err
-			}
-			if existing == nil || existing.BinDir != dir {
-				return ErrAlreadyInstalled
-			}
-			registered, err := m.registrationExists(ctx)
-			if err != nil {
-				return err
-			}
-			if registered {
-				return ErrAlreadyInstalled
-			}
-			config = *existing
-			return m.activateRegistration(ctx)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		var err error
-		config, err = m.inspectBinaries(ctx, dir)
+func (m *Manager) install(ctx context.Context, dir string, enabled bool) (Config, error) {
+	if _, err := os.Lstat(m.recordPath()); err == nil {
+		existing, err := m.Inspect(ctx)
 		if err != nil {
-			return err
+			return Config{}, err
 		}
-		return m.installRegistration(ctx, config)
-	})
-	return config, err
+		if existing == nil || existing.BinDir != dir {
+			return Config{}, ErrAlreadyInstalled
+		}
+		registered, err := m.registrationExists(ctx)
+		if err != nil {
+			return Config{}, err
+		}
+		if registered {
+			return Config{}, ErrAlreadyInstalled
+		}
+		return *existing, m.activateRegistrationState(ctx, enabled)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Config{}, err
+	}
+	config, err := m.inspectBinaries(ctx, dir)
+	if err != nil {
+		return Config{}, err
+	}
+	return config, m.installRegistrationState(ctx, config, enabled)
 }
 
 func (m *Manager) require(ctx context.Context) (*Config, error) {
@@ -145,24 +130,6 @@ func (m *Manager) require(ctx context.Context) (*Config, error) {
 		return nil, ErrNotInstalled
 	}
 	return config, nil
-}
-
-func (m *Manager) start(ctx context.Context) error {
-	config, err := m.Inspect(ctx)
-	if err != nil {
-		return err
-	}
-	if config == nil {
-		return ErrNotInstalled
-	}
-	running, err := m.running(ctx)
-	if err != nil {
-		return err
-	}
-	if running {
-		return ErrServiceLoaded
-	}
-	return m.startRegistration(ctx)
 }
 
 func (m *Manager) stop(ctx context.Context) error {
@@ -185,7 +152,7 @@ func (m *Manager) stop(ctx context.Context) error {
 			return err
 		}
 		if !running {
-			return m.waitAccountRelease(ctx)
+			return nil
 		}
 		timer := time.NewTimer(50 * time.Millisecond)
 		select {
@@ -197,36 +164,21 @@ func (m *Manager) stop(ctx context.Context) error {
 	}
 }
 
-func (m *Manager) Start(ctx context.Context) error { return m.mutate(ctx, m.start) }
-
-func (m *Manager) Stop(ctx context.Context) error { return m.mutate(ctx, m.stop) }
-
-func (m *Manager) Restart(ctx context.Context) error {
-	return m.mutate(ctx, func(ctx context.Context) error {
-		if err := m.stop(ctx); err != nil {
-			return err
-		}
-		return m.start(ctx)
-	})
-}
-
-func (m *Manager) Uninstall(ctx context.Context) error {
-	return m.mutate(ctx, func(ctx context.Context) error {
-		if _, err := m.require(ctx); err != nil {
-			return err
-		}
-		running, err := m.running(ctx)
-		if err != nil {
-			return err
-		}
-		if running {
-			return ErrServiceLoaded
-		}
-		if err := m.waitAccountRelease(ctx); err != nil {
-			return err
-		}
-		return m.removeRegistration(ctx)
-	})
+func (m *Manager) uninstall(ctx context.Context) error {
+	if _, err := m.require(ctx); err != nil {
+		return err
+	}
+	running, err := m.running(ctx)
+	if err != nil {
+		return err
+	}
+	if running {
+		return ErrServiceLoaded
+	}
+	if err := m.waitAccountRelease(ctx); err != nil {
+		return err
+	}
+	return m.removeRegistration(ctx)
 }
 
 func exited(err error, code int) bool {
@@ -234,27 +186,6 @@ func exited(err error, code int) bool {
 	return errors.As(err, &status) && status.ExitCode() == code
 }
 
-// Task Scheduler can return before the daemon process has actually exited.
-func (m *Manager) waitAccountRelease(ctx context.Context) error {
-	if _, err := os.Lstat(m.accountLock); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	for {
-		lock, err := daemon.AcquireAccountLock(m.accountLock)
-		if err == nil {
-			return lock.Release()
-		}
-		if !errors.Is(err, daemon.ErrAccountLocked) {
-			return err
-		}
-		timer := time.NewTimer(50 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-	}
-}
+func (m *Manager) requireRecord(ctx context.Context) error       { _, err := m.require(ctx); return err }
+func (m *Manager) accountPath() string                           { return m.accountLock }
+func (m *Manager) startActive(ctx context.Context) (bool, error) { return m.running(ctx) }

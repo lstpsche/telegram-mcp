@@ -39,7 +39,7 @@ func defaultSupport() (support, error) {
 	if err != nil {
 		return support{}, err
 	}
-	return support{service: manager, inspect: func(ctx context.Context) (diagnostics.Report, error) {
+	return support{service: managedService{manager}, inspect: func(ctx context.Context) (diagnostics.Report, error) {
 		return diagnostics.Inspect(ctx, paths)
 	}}, nil
 }
@@ -73,7 +73,7 @@ func runSupportCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 			fmt.Fprintln(stderr, "telegram-mcp: install the service before generating agent configuration")
 			return 1
 		}
-		relay, err := distribution.Relay(installed.BinDir, installed.Relay)
+		relay, err := distribution.VerifiedRelay(ctx, installed.BinDir, installed.Relay)
 		if err != nil {
 			writeSupportError(stderr, err)
 			return 1
@@ -134,10 +134,10 @@ func runServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		message = "Service installation recorded. Run service start to launch it."
 	case "start":
 		err = manager.Start(ctx)
-		message = "Service launch submitted. Run doctor to check MCP readiness."
+		message = "Service startup enabled and launch submitted. Run doctor to check MCP readiness."
 	case "stop":
 		err = manager.Stop(ctx)
-		message = "Service stopped for this login session. It will start at the next user login."
+		message = "Service stopped and automatic startup disabled. Run service start to resume it."
 	case "restart":
 		err = manager.Restart(ctx)
 		message = "Service restart submitted. Run doctor to check MCP readiness."
@@ -167,7 +167,7 @@ func writeSupportJSON(stdout, stderr io.Writer, value any) int {
 }
 
 func writeSupportError(writer io.Writer, err error) {
-	if writeHumanHint(writer, err) {
+	if writeHumanHint(writer, err) || writeEntryError(writer, err) {
 		return
 	}
 	switch {
@@ -175,6 +175,12 @@ func writeSupportError(writer io.Writer, err error) {
 		fmt.Fprintln(writer, "telegram-mcp: support operation cancelled; inspect the current service state before retrying")
 	case errors.Is(err, daemon.ErrAccountLocked):
 		fmt.Fprintln(writer, "telegram-mcp: another service operation is running; retry after it finishes")
+	case errors.Is(err, service.ErrDisabled):
+		fmt.Fprintln(writer, "telegram-mcp: service startup is disabled; run service start to resume it")
+	case errors.Is(err, service.ErrServiceUnavailable):
+		fmt.Fprintln(writer, "telegram-mcp: user service manager is unavailable; check the user login session and OS service manager")
+	case errors.Is(err, service.ErrStartupState):
+		fmt.Fprintln(writer, "telegram-mcp: service startup coordination failed validation; inspect local startup state before resuming")
 	case errors.Is(err, service.ErrNotInstalled):
 		fmt.Fprintln(writer, "telegram-mcp: service is not installed; use service install --bin-dir ABSOLUTE_DIRECTORY")
 	case errors.Is(err, service.ErrAlreadyInstalled):
@@ -188,4 +194,16 @@ func writeSupportError(writer io.Writer, err error) {
 	default:
 		fmt.Fprintln(writer, "telegram-mcp: local support check failed; check filesystem permissions, the user login session, and foreground daemon diagnostics")
 	}
+}
+
+func writeEntryError(writer io.Writer, err error) bool {
+	switch {
+	case errors.Is(err, distribution.ErrEntryMigrationRequired):
+		fmt.Fprintln(writer, "telegram-mcp: close MCP clients and run setup or upgrade directly with the new versioned or standalone control program to migrate the managed entry")
+	case errors.Is(err, distribution.ErrEntryInvalid):
+		fmt.Fprintln(writer, "telegram-mcp: managed entry validation failed; run setup or upgrade directly with the new verified control program")
+	default:
+		return false
+	}
+	return true
 }

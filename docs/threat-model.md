@@ -62,6 +62,11 @@ human operator
   -> daemon-controlled privileged operations
 ```
 
+Before forwarding MCP bytes, the relay can request startup of the existing,
+verified, enabled per-user OS service. This bounded startup operation grants no
+authentication, policy or account-administration capability. The relay neither
+creates a Telegram client nor changes which release the service record selects.
+
 ## Threats and required controls
 
 ### Capability expansion through MCP
@@ -131,16 +136,44 @@ files never trigger an automatic storage fallback.
 ### Local socket and process attacks
 
 Threat: a second daemon races account state, a symlink/socket is replaced, or a
-relay silently spawns a new Telegram client.
+relay starts an unverified process or resumes a service the human stopped.
 
 Controls: account lock before secret prompting or access; private runtime
 directory/socket; `lstat` and owner/type validation; length-checked path;
 same-user stale socket cleanup only after positive `ECONNREFUSED`; fail-closed
-handling of inconclusive dial errors; no relay fallback; cancellation-aware
+handling of inconclusive dial errors; no direct process fallback; cancellation-aware
 accept loop. Both socket endpoints check peer credentials; the listener bounds
 concurrent connections and the MCP boundary limits input frame size and rate,
 incomplete frame duration, and blocked writes. Idle sessions remain connected
 between requests; the input deadline starts when the first frame byte arrives.
+
+Automatic startup requires a canonical private installation and enabled OS
+registration. The relay can submit one OS start request only after a positively
+classified absent endpoint or an identity-rechecked refused Unix socket. It
+cannot enable, unmask, register, repair, download or select a service. Missing
+user sessions/managers, unsafe paths or peer identities, busy pipes, timeouts and
+other inconclusive failures do not authorize a competing process. The relay
+never removes socket paths. A held account lock or active start is joined
+without launching another runtime, and no account lock is retained while
+waiting for startup.
+
+The existing lifecycle lock serializes startup with human stop, activation and
+offline account operations. OS disablement is the persistent pause authority;
+agent reconnect, login, reboot and managed upgrade cannot undo it. Explicit
+human start/restart resumes it. Failure to disable or terminate remains an error.
+Private `service-start.json` stores only a strict schema version and launch time
+to coalesce attempts for 30 seconds, with no identifiers, process information,
+message data or retry work. Unsafe or malformed coordination state fails closed.
+All pre-transport work shares one eight-second deadline and emits only closed
+structured failure reasons. Cancelling a relay does not cancel a shared service
+already submitted to the OS.
+
+The relay consumes no MCP bytes before connection, passes the verified
+connection directly to the byte bridge, and never reconnects or replays after
+loss. A running transport does not prove Telegram account readiness. Startup
+cannot trigger credential reset, checkpoint recovery, permission changes or an
+outgoing-message retry. Passive diagnostics and retained human send-status
+inspection do not acquire startup authority.
 
 ### Stale or incomplete state represented as live
 
@@ -171,6 +204,15 @@ metadata; hashes detect corruption but do not establish publisher authenticity.
 Signing is optional and is not a prerequisite for credential access. Install from
 a trusted source. Legacy macOS Keychain migration separately requires an identity
 already allowed by the old items; it does not widen their ACLs.
+
+The managed stable entry dispatches to the version selected by the canonical
+service record. Older entries require a human-run migration from a newly
+verified release before their existing MCP path supports automatic startup.
+Capability verification checks the physically running executable, so a legacy
+entry forwarding a probe to its selected child is insufficient. Replacement
+uses private atomic publication before registration changes and preserves
+immutable version directories. An in-use Windows entry fails explicitly; there
+is no delayed replacement, alternate-version fallback or client-setting rewrite.
 
 ## Excluded or deferred risk
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -154,6 +155,7 @@ type fakeService struct {
 	installed      *service.Config
 	err            error
 	action, binDir string
+	disabled       bool
 }
 
 func (f *fakeService) Inspect(context.Context) (*service.Config, error) { return f.installed, f.err }
@@ -220,7 +222,7 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 			}
 		}
 	}
-	runner := &workflowRunner{}
+	runner := &workflowRunner{home: home}
 	manager, err := service.New(home, os.Geteuid(), runner)
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +232,7 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	factory := func() (support, error) {
-		return support{service: manager, inspect: func(ctx context.Context) (diagnostics.Report, error) { return diagnostics.Inspect(ctx, paths) }}, nil
+		return support{service: managedService{manager}, inspect: func(ctx context.Context) (diagnostics.Report, error) { return diagnostics.Inspect(ctx, paths) }}, nil
 	}
 	invoke := func(want int, args ...string) []byte {
 		t.Helper()
@@ -304,7 +306,10 @@ func TestLocalSupportWorkflowWithSyntheticMCP(t *testing.T) {
 	}
 }
 
-type workflowRunner struct{ loaded, registered bool }
+type workflowRunner struct {
+	loaded, registered, disabled bool
+	home                         string
+}
 type workflowExit int
 
 func (e workflowExit) Error() string { return "synthetic process status" }
@@ -317,6 +322,15 @@ func (r *workflowRunner) Run(ctx context.Context, program string, args ...string
 	if filepath.Base(program) == "powershell.exe" {
 		if strings.Contains(joined, "$folder.RegisterTask(") {
 			r.registered = true
+			r.disabled = strings.Contains(joined, "InnerText='false'")
+			return nil
+		}
+		if strings.Contains(joined, "$task.Enabled=$true") {
+			r.disabled = false
+			return nil
+		}
+		if strings.Contains(joined, "$task.Enabled=$false") {
+			r.disabled = true
 			return nil
 		}
 		if strings.Contains(joined, ".Run($null)") {
@@ -334,8 +348,17 @@ func (r *workflowRunner) Run(ctx context.Context, program string, args ...string
 		if !r.registered {
 			return workflowExit(4)
 		}
+		if strings.Contains(joined, "$definition=$task.Definition") {
+			if strings.Contains(joined, "if (-not $task.Enabled)") && r.disabled {
+				return workflowExit(6)
+			}
+			return nil
+		}
 		if r.loaded {
 			return nil
+		}
+		if r.disabled {
+			return workflowExit(6)
 		}
 		return workflowExit(3)
 	}
@@ -353,12 +376,14 @@ func (r *workflowRunner) Run(ctx context.Context, program string, args ...string
 			return workflowExit(3)
 		case strings.Contains(joined, " enable "):
 			r.registered = true
+			r.disabled = false
 		case strings.Contains(joined, " start "):
 			r.loaded = true
 		case strings.Contains(joined, " stop "):
 			r.loaded = false
 		case strings.Contains(joined, " disable "):
 			r.registered = false
+			r.disabled = true
 		case strings.Contains(joined, "daemon-reload"):
 		default:
 			return errors.New("unexpected synthetic action")
@@ -373,12 +398,55 @@ func (r *workflowRunner) Run(ctx context.Context, program string, args ...string
 		if strings.Count(args[1], "/") == 2 && !r.loaded {
 			return workflowExit(113)
 		}
-	case "bootstrap":
+	case "bootstrap", "kickstart":
 		r.loaded = true
 	case "bootout":
 		r.loaded = false
+	case "enable":
+		r.disabled = false
+	case "disable":
+		r.disabled = true
 	default:
 		return errors.New("unexpected synthetic action")
 	}
 	return nil
+}
+
+func (f *fakeService) withControlSession(_ context.Context, run func(lifecycleService) error) error {
+	return run(f)
+}
+func (f *fakeService) Enabled(context.Context) (bool, error) { return !f.disabled, f.err }
+func (f *fakeService) SetEnabled(_ context.Context, enabled bool) error {
+	f.disabled = !enabled
+	return f.err
+}
+func (f *fakeService) Quiesce(ctx context.Context) error { f.disabled = true; return f.Stop(ctx) }
+func (f *fakeService) InstallWithState(ctx context.Context, dir string, enabled bool) (service.Config, error) {
+	f.disabled = !enabled
+	return f.Install(ctx, dir)
+}
+
+func (r *workflowRunner) Query(ctx context.Context, program string, args ...string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if program == "/bin/launchctl" && len(args) == 2 && args[0] == "print-disabled" {
+		state := "enabled"
+		if r.disabled {
+			state = "disabled"
+		}
+		return []byte(fmt.Sprintf("disabled services = {\n\t%q => %s\n}\n", service.Label, state)), nil
+	}
+	if program == "/usr/bin/systemctl" {
+		active := "inactive"
+		if r.loaded {
+			active = "active"
+		}
+		enabled := "enabled"
+		if r.disabled || !r.registered {
+			enabled = "disabled"
+		}
+		return []byte(fmt.Sprintf("LoadState=loaded\nUnitFileState=%s\nActiveState=%s\nFragmentPath=%s\nDropInPaths=\nNeedDaemonReload=no\n", enabled, active, filepath.Join(r.home, ".config", "systemd", "user", service.Label+".service"))), nil
+	}
+	return nil, errors.New("unexpected synthetic query")
 }

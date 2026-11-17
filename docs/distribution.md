@@ -48,6 +48,15 @@ does not verify native filesystem permissions, local transport, background
 startup or OS download controls. Run synthetic tests and the commands' `--version`
 on each supported OS before qualifying a release for that OS.
 
+Automatic relay startup requires native checks through the packaged stable
+entry and its selected relay, including the full client handshake within its
+startup timeout. Qualify concurrent startup, persistent stop/resume, a paused
+upgrade and enabled/disabled behavior after a new login or reboot. Windows
+Task Scheduler registration/removal in hosted CI does not qualify execution in
+an interactive desktop session. Use a disposable standard-user session with
+synthetic state for those checks; report native execution separately from
+cross-compilation and archive integrity.
+
 Extract the matching archive into a new private directory, verify its checksums,
 and follow [installation](installation.md) and [authentication](authentication.md).
 Ordinary setup and upgrades use private local files and need no application-level
@@ -71,3 +80,11 @@ Releases also include standalone `telegram-mcp-VERSION-OS-ARCH` programs
 covering the archives, control programs, scripts and `release.json`. Bootstrap
 scripts verify the selected control program before execution; the Go installer
 then verifies the complete archive and its payload before publishing files.
+
+Managed entries from 1.4.0 and earlier require an explicit migration performed
+by the new release's verified installer/control program. The legacy upgrade
+code cannot implement that migration itself. The stable path is retained and
+new compatible entries normally remain unchanged on later upgrades. Windows
+may reject replacement while a client or old parent control is using the entry;
+that failure must precede service activation. See [installation](installation.md)
+for using the new program directly and preserving a stopped service.

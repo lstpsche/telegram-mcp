@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/policy"
+	"github.com/lstpsche/telegram-mcp/internal/service"
 	tgaccount "github.com/lstpsche/telegram-mcp/internal/telegram"
 )
 
@@ -39,8 +41,8 @@ func (s *setupSession) runAccessSetup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	restart := report.MCP || status.Daemon == daemon.SocketLive
-	if restart {
+	confirmed := false
+	if report.MCP || status.Daemon == daemon.SocketLive {
 		installed, err := s.local.service.Inspect(ctx)
 		if err != nil {
 			return err
@@ -51,8 +53,60 @@ func (s *setupSession) runAccessSetup(ctx context.Context) error {
 		if err := s.confirm(ctx, "Stop the service while choosing conversation metadata? Connected clients will need to reconnect."); err != nil {
 			return err
 		}
-		if err := s.local.service.Stop(ctx); err != nil {
+		confirmed = true
+	}
+	return s.local.withSession(ctx, func(manager lifecycleService) error {
+		scoped := *s
+		scoped.local = s.local.inSession(manager)
+		return scoped.runAccessLocked(ctx, manager, confirmed)
+	})
+}
+
+func (s *setupSession) runAccessLocked(ctx context.Context, manager lifecycleService, confirmed bool) error {
+	status, err := s.control.Status(ctx)
+	if err != nil {
+		return err
+	}
+	if !status.Configured || !status.Authorized {
+		return tgaccount.ErrReauthenticationRequired
+	}
+	report, err := s.local.inspect(ctx)
+	if err != nil {
+		return err
+	}
+	installed, err := manager.Inspect(ctx)
+	if err != nil {
+		return err
+	}
+	restart := report.MCP || status.Daemon == daemon.SocketLive
+	if restart {
+		if installed == nil {
+			return humanHint("stop the foreground daemon before access setup")
+		}
+		if !confirmed {
+			if err := s.confirm(ctx, "Stop the service while choosing conversation metadata? Connected clients will need to reconnect."); err != nil {
+				return err
+			}
+		}
+	}
+	enabled := false
+	absent := false
+	if installed != nil {
+		enabled, err = manager.Enabled(ctx)
+		absent = errors.Is(err, service.ErrServiceAbsent)
+		if err != nil && !absent {
 			return err
+		}
+		if absent {
+			if restart {
+				return humanHint("stop the foreground daemon before access setup")
+			}
+			enabled = false
+		}
+		if !absent {
+			if err := manager.Quiesce(ctx); err != nil {
+				return err
+			}
 		}
 	}
 	access, ok := s.control.(accessController)
@@ -74,8 +128,13 @@ func (s *setupSession) runAccessSetup(ctx context.Context) error {
 	if err := s.guideGrant(ctx, time.Now().UTC()); err != nil {
 		return err
 	}
-	if restart {
-		if err := s.local.service.Start(ctx); err != nil {
+	if installed != nil && !absent {
+		if err := manager.SetEnabled(ctx, enabled); err != nil {
+			return err
+		}
+	}
+	if enabled && restart {
+		if err := manager.Start(ctx); err != nil {
 			return err
 		}
 		if _, err := waitForReady(ctx, s.local.inspect); err != nil {

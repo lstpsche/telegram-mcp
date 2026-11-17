@@ -56,13 +56,21 @@ func runTextCommand(ctx context.Context, args []string, stdout, stderr io.Writer
 	switch args[0] {
 	case "saved-message":
 		var message model.MessageID
-		message, err = textControl.SavedMessage(ctx)
+		err = withOfflineLease(ctx, func(ctx context.Context) error {
+			var discoveryError error
+			message, discoveryError = textControl.SavedMessage(ctx)
+			return discoveryError
+		})
 		if err == nil {
 			err = writeTextJSON(stdout, message)
 		}
 	case "peers":
 		var peers []model.Chat
-		peers, err = textControl.Peers(ctx)
+		err = withOfflineLease(ctx, func(ctx context.Context) error {
+			var discoveryError error
+			peers, discoveryError = textControl.Peers(ctx)
+			return discoveryError
+		})
 		if err == nil {
 			if peers == nil {
 				peers = []model.Chat{}

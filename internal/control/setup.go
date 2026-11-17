@@ -92,21 +92,43 @@ func (s *setupSession) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if installed != nil {
-		root, err := distribution.DefaultRoot()
-		if err != nil {
+	if err := checkManagedSwitch(installed, s.binDir); err != nil {
+		return err
+	}
+	report, err := s.local.inspect(ctx)
+	if err != nil {
+		return err
+	}
+	status, err := s.control.Status(ctx)
+	if err != nil {
+		return err
+	}
+	confirmed := false
+	if report.MCP || status.Daemon == daemon.SocketLive {
+		if installed == nil {
+			return humanHint("stop the foreground daemon before setup")
+		}
+		if err := s.confirm(ctx, "Setup needs to stop the service temporarily. Connected agents will need to reconnect."); err != nil {
 			return err
 		}
-		previous, next := distribution.ManagedVersion(root, installed.BinDir), distribution.ManagedVersion(root, s.binDir)
-		if previous != "" && next != "" {
-			order, err := distribution.CompareVersions(next, previous)
-			if err != nil {
-				return err
-			}
-			if order < 0 {
-				return humanHint("managed downgrades are not supported")
-			}
-		}
+		confirmed = true
+	}
+	return prepareSetupEntry(ctx, s.binDir, func() error {
+		return s.local.withSession(ctx, func(manager lifecycleService) error {
+			scoped := *s
+			scoped.local = s.local.inSession(manager)
+			return scoped.runLocked(ctx, manager, confirmed)
+		})
+	})
+}
+
+func (s *setupSession) runLocked(ctx context.Context, manager lifecycleService, confirmed bool) error {
+	installed, err := manager.Inspect(ctx)
+	if err != nil {
+		return err
+	}
+	if err := checkManagedSwitch(installed, s.binDir); err != nil {
+		return err
 	}
 	report, err := s.local.inspect(ctx)
 	if err != nil {
@@ -120,11 +142,37 @@ func (s *setupSession) run(ctx context.Context) error {
 		if installed == nil {
 			return humanHint("stop the foreground daemon before setup")
 		}
-		if err := s.confirm(ctx, "Setup needs to stop the service temporarily. Connected agents will need to reconnect."); err != nil {
+		if !confirmed {
+			if err := s.confirm(ctx, "Setup needs to stop the service temporarily. Connected agents will need to reconnect."); err != nil {
+				return err
+			}
+		}
+	}
+	if installed != nil {
+		enabled, err := manager.Enabled(ctx)
+		absent := errors.Is(err, service.ErrServiceAbsent)
+		if err != nil && !absent {
 			return err
 		}
-		if err := s.local.service.Stop(ctx); err != nil {
-			return err
+		if absent {
+			if report.MCP || status.Daemon == daemon.SocketLive {
+				return humanHint("stop the foreground daemon before setup")
+			}
+			enabled = false
+		}
+		if !enabled {
+			question := "The service is disabled. Enable startup and start it to finish setup?"
+			if absent {
+				question = "The service is not registered. Register it, enable startup and start it to finish setup?"
+			}
+			if err := s.confirm(ctx, question); err != nil {
+				return err
+			}
+		}
+		if !absent {
+			if err := manager.Quiesce(ctx); err != nil {
+				return err
+			}
 		}
 	}
 	if !status.Configured {
@@ -183,7 +231,7 @@ func (s *setupSession) run(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := activateRelease(ctx, s.local, installed, s.binDir); err != nil {
+	if err := activateStoppedRelease(ctx, s.local, manager, installed, s.binDir, true); err != nil {
 		return err
 	}
 	installed, err = s.local.service.Inspect(ctx)
@@ -196,7 +244,7 @@ func (s *setupSession) run(ctx context.Context) error {
 	if _, err := waitForReady(ctx, s.local.inspect); err != nil {
 		return err
 	}
-	relay, err := distribution.Relay(installed.BinDir, installed.Relay)
+	relay, err := distribution.VerifiedRelay(ctx, installed.BinDir, installed.Relay)
 	if err != nil {
 		return err
 	}

@@ -70,6 +70,11 @@ func inspect(ctx context.Context, paths daemon.Paths) (Report, error) {
 		if ctx.Err() != nil {
 			return Report{}, ctx.Err()
 		}
+		// Missing filesystem causes can also accompany a failed identity
+		// recheck. Only the transport's positive classification is absence.
+		if !errors.Is(err, daemon.ErrDaemonUnavailable) || errors.Is(err, daemon.ErrUnsafeSocket) {
+			return Report{}, err
+		}
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			report.Socket = daemon.SocketAbsent

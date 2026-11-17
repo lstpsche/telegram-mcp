@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,6 +26,8 @@ func (e testExit) ExitCode() int { return int(e) }
 type syntheticRunner struct {
 	calls              [][]string
 	active, registered bool
+	enabled            bool
+	unitPath           string
 	fail               bool
 }
 
@@ -40,28 +43,47 @@ func (r *syntheticRunner) Run(ctx context.Context, program string, args ...strin
 	if filepath.Base(program) == "powershell.exe" {
 		if strings.Contains(joined, "$folder.RegisterTask(") {
 			r.registered = true
-			return nil
-		}
-		if strings.Contains(joined, ".Run($null)") {
-			r.active = true
-			return nil
-		}
-		if strings.Contains(joined, ".Stop(0)") {
-			r.active = false
-			return nil
-		}
-		if strings.Contains(joined, "$folder.DeleteTask(") {
-			r.registered = false
+			r.enabled = !strings.Contains(joined, ".InnerText='false'")
 			return nil
 		}
 		if !r.registered {
 			return testExit(4)
 		}
-		if r.active {
+		switch {
+		case strings.Contains(joined, "$task.Enabled=$true"):
+			r.enabled = true
 			return nil
+		case strings.Contains(joined, "$task.Enabled=$false"):
+			r.enabled = false
+			return nil
+		case strings.Contains(joined, ".Run($null)"):
+			if !r.enabled {
+				return testExit(6)
+			}
+			r.active = true
+			return nil
+		case strings.Contains(joined, ".Stop(0)"):
+			r.active = false
+			return nil
+		case strings.Contains(joined, "$folder.DeleteTask("):
+			r.registered = false
+			return nil
+		case strings.Contains(joined, "function Resolve-Sid"):
+			if strings.Contains(joined, "if (-not $task.Enabled)") && !r.enabled {
+				return testExit(6)
+			}
+			return nil
+		default:
+			if r.active {
+				return nil
+			}
+			if !r.enabled {
+				return testExit(6)
+			}
+			return testExit(3)
 		}
-		return testExit(3)
 	}
+
 	switch {
 	case strings.Contains(joined, "is-enabled"):
 		if r.registered {
@@ -74,15 +96,39 @@ func (r *syntheticRunner) Run(ctx context.Context, program string, args ...strin
 		}
 		return testExit(3)
 	case strings.Contains(joined, " enable "):
-		r.registered = true
+		r.enabled = true
 	case strings.Contains(joined, " start "):
 		r.active = true
 	case strings.Contains(joined, " stop "):
 		r.active = false
 	case strings.Contains(joined, " disable "):
-		r.registered = false
+		r.enabled = false
+	case strings.Contains(joined, "daemon-reload"):
+		_, err := os.Stat(r.unitPath)
+		r.registered = err == nil
 	}
 	return nil
+}
+
+func (r *syntheticRunner) Query(ctx context.Context, program string, args ...string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.calls = append(r.calls, append([]string{program}, args...))
+	if r.fail {
+		return nil, testExit(5)
+	}
+	load, unitFile, active, fragment := "loaded", "disabled", "inactive", r.unitPath
+	if !r.registered {
+		load, unitFile, fragment = "not-found", "", ""
+	}
+	if r.enabled && r.registered {
+		unitFile = "enabled"
+	}
+	if r.active {
+		active = "active"
+	}
+	return []byte(fmt.Sprintf("LoadState=%s\nUnitFileState=%s\nActiveState=%s\nFragmentPath=%s\nDropInPaths=\nNeedDaemonReload=no\n", load, unitFile, active, fragment)), nil
 }
 
 func portableFixture(t *testing.T) (*Manager, *syntheticRunner, string) {
@@ -103,6 +149,7 @@ func portableFixture(t *testing.T) (*Manager, *syntheticRunner, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	runner.unitPath = filepath.Join(filepath.Dir(m.stateDir()), "systemd", "user", Label+".service")
 	name := "version % $ & binaries"
 	if runtime.GOOS == "windows" {
 		name = "version $ & binaries"

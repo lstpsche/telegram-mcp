@@ -33,7 +33,12 @@ func runFoldersCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		fmt.Fprintln(stderr, "telegram-mcp: folder discovery is unavailable")
 		return 1
 	}
-	folders, err := discovery.Folders(ctx, id)
+	var folders []model.Folder
+	err := withOfflineLease(ctx, func(ctx context.Context) error {
+		var discoveryError error
+		folders, discoveryError = discovery.Folders(ctx, id)
+		return discoveryError
+	})
 	if err == nil {
 		err = writeTextJSON(stdout, folders)
 	}

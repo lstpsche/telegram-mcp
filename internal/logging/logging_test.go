@@ -87,3 +87,17 @@ func TestLoggerRejectsHostileMetadataOnValidEvent(t *testing.T) {
 		t.Fatalf("invalid metadata count = %d, log = %s", got, line)
 	}
 }
+
+func TestStartupReasonIsClosed(t *testing.T) {
+	var output bytes.Buffer
+	logger := New(&output, nil)
+	logger.Error(context.Background(), EventOperationFailed,
+		StartupReasonField(StartupDisabled),
+		StartupReasonField(StartupReason("private text\nsecret")))
+	line := output.String()
+	if !strings.Contains(line, "\"startup_reason\":\"disabled\"") ||
+		!strings.Contains(line, "\"startup_reason\":\"invalid\"") ||
+		strings.Contains(line, "secret") || strings.Contains(line, "private text") {
+		t.Fatal(line)
+	}
+}

@@ -73,6 +73,33 @@ type Field struct {
 	attribute slog.Attr
 }
 
+// StartupReason is a closed, content-free relay failure classification.
+type StartupReason string
+
+const (
+	StartupNotInstalled        StartupReason = "not_installed"
+	StartupDisabled            StartupReason = "disabled"
+	StartupUnsafeEndpoint      StartupReason = "unsafe_endpoint"
+	StartupInvalidInstallation StartupReason = "invalid_installation"
+	StartupServiceUnavailable  StartupReason = "service_unavailable"
+	StartupStateInvalid        StartupReason = "startup_state_invalid"
+	StartupFailed              StartupReason = "startup_failed"
+	StartupTimeout             StartupReason = "startup_timeout"
+	StartupMaintenanceBusy     StartupReason = "maintenance_busy"
+	StartupCancelled           StartupReason = "cancelled"
+)
+
+func StartupReasonField(reason StartupReason) Field {
+	switch reason {
+	case StartupNotInstalled, StartupDisabled, StartupUnsafeEndpoint,
+		StartupInvalidInstallation, StartupServiceUnavailable, StartupStateInvalid,
+		StartupFailed, StartupTimeout, StartupMaintenanceBusy, StartupCancelled:
+		return Field{attribute: slog.String("startup_reason", string(reason))}
+	default:
+		return Field{attribute: slog.String("startup_reason", "invalid")}
+	}
+}
+
 func ComponentField(component Component) Field {
 	value := "invalid"
 	if component.valid() {

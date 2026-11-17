@@ -30,6 +30,7 @@ func (f *upgradeService) Uninstall(context.Context) error {
 	if f.fail == "uninstall" {
 		return errors.New("uninstall failed")
 	}
+	f.installed = nil
 	return nil
 }
 func (f *upgradeService) Install(_ context.Context, dir string) (service.Config, error) {
@@ -37,7 +38,8 @@ func (f *upgradeService) Install(_ context.Context, dir string) (service.Config,
 	if f.fail == "install" {
 		return service.Config{}, errors.New("install failed")
 	}
-	return service.Config{BinDir: dir}, nil
+	f.installed = &service.Config{BinDir: dir}
+	return *f.installed, nil
 }
 func (f *upgradeService) Start(context.Context) error {
 	f.actions = append(f.actions, "start")
@@ -51,12 +53,13 @@ func TestUpgradeActivationStopsAtEachFailedBoundary(t *testing.T) {
 	all := []string{"stop", "uninstall", "install", "start"}
 	for n, failed := range append(append([]string{}, all...), "") {
 		manager := &upgradeService{fail: failed}
+		manager.installed = &service.Config{BinDir: "old"}
 		probed := false
 		local := support{service: manager, inspect: func(context.Context) (diagnostics.Report, error) {
 			probed = true
 			return diagnostics.Report{MCP: true}, nil
 		}}
-		err := activateRelease(context.Background(), local, &service.Config{BinDir: "old"}, "new")
+		_, err := activateUpgrade(context.Background(), local, "new")
 		want := all
 		if failed != "" {
 			want = all[:n+1]
@@ -74,8 +77,9 @@ func TestUpgradeActivationStopsAtEachFailedBoundary(t *testing.T) {
 }
 func TestUpgradeSameVersionDoesNotUninstall(t *testing.T) {
 	manager := &upgradeService{}
+	manager.installed = &service.Config{BinDir: "same"}
 	local := support{service: manager, inspect: func(context.Context) (diagnostics.Report, error) { return diagnostics.Report{MCP: true}, nil }}
-	if err := activateRelease(context.Background(), local, &service.Config{BinDir: "same"}, "same"); err != nil {
+	if _, err := activateUpgrade(context.Background(), local, "same"); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(manager.actions, []string{"install", "start"}) {
@@ -112,4 +116,13 @@ func TestManagedVersionComparison(t *testing.T) {
 	if _, err := distribution.CompareVersions("0.02.0", "0.2.0"); err == nil {
 		t.Fatal("accepted noncanonical version")
 	}
+}
+
+func (f *upgradeService) withControlSession(_ context.Context, run func(lifecycleService) error) error {
+	return run(f)
+}
+func (f *upgradeService) Quiesce(ctx context.Context) error { f.disabled = true; return f.Stop(ctx) }
+func (f *upgradeService) InstallWithState(ctx context.Context, dir string, enabled bool) (service.Config, error) {
+	f.disabled = !enabled
+	return f.Install(ctx, dir)
 }

@@ -118,11 +118,20 @@ func readBounded(f *os.File, max int64) ([]byte, error) {
 
 // WriteFile publishes a complete, synced file. replace=false never overwrites.
 func WriteFile(path string, data []byte, replace bool) error {
-	return writeFile(path, data, replace, false)
+	return writeFile(path, data, replace, false, nil)
 }
 
 // WriteExecutable publishes an owner-only executable without replacing a file.
-func WriteExecutable(path string, data []byte) error { return writeFile(path, data, false, true) }
+func WriteExecutable(path string, data []byte) error { return writeFile(path, data, false, true, nil) }
+
+// ReplaceExecutable atomically replaces a validated executable only if it still
+// names the file inspected by the caller. It is intended for human entry migration.
+func ReplaceExecutable(path string, data []byte, expected os.FileInfo) error {
+	if expected == nil {
+		return errors.New("executable replacement requires an inspected file")
+	}
+	return writeFile(path, data, true, true, expected)
+}
 
 // CheckExecutable verifies a private executable without reading its contents.
 func CheckExecutable(path string) error {
@@ -139,7 +148,7 @@ func CheckExecutable(path string) error {
 	return file.Close()
 }
 
-func writeFile(path string, data []byte, replace, executable bool) (result error) {
+func writeFile(path string, data []byte, replace, executable bool, expected os.FileInfo) (result error) {
 	if err := validPath(path); err != nil {
 		return err
 	}
@@ -147,7 +156,11 @@ func writeFile(path string, data []byte, replace, executable bool) (result error
 		return err
 	}
 	if replace {
-		if err := CheckFile(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		check := CheckFile
+		if executable {
+			check = CheckExecutable
+		}
+		if err := check(path); err != nil && (expected != nil || !errors.Is(err, os.ErrNotExist)) {
 			return err
 		}
 	}
@@ -174,6 +187,18 @@ func writeFile(path string, data []byte, replace, executable bool) (result error
 	}
 	if err = errors.Join(writeError, f.Close()); err != nil {
 		return err
+	}
+	if expected != nil {
+		if err := CheckExecutable(path); err != nil {
+			return err
+		}
+		current, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		if !os.SameFile(expected, current) {
+			return errors.New("executable changed before replacement")
+		}
 	}
 	if err = publish(name, path, replace); err != nil {
 		return err

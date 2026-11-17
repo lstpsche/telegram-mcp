@@ -92,6 +92,61 @@ func TestNativeScheduledTask(t *testing.T) {
     if ($encoded -cne '`+base64.StdEncoding.EncodeToString([]byte(config.Daemon))+`') { exit 6 }`); err != nil {
 		t.Fatal(err)
 	}
+
+	t.Run("enablement_and_definition", func(t *testing.T) {
+		enabled, err := m.enabled(ctx)
+		if err != nil || !enabled {
+			t.Fatalf("installed task is not eligible: enabled=%v error=%v", enabled, err)
+		}
+		if err := m.setEnabled(ctx, false); err != nil {
+			t.Fatal(err)
+		}
+		enabled, err = m.enabled(ctx)
+		if err != nil || enabled {
+			t.Fatalf("disabled task is eligible: enabled=%v error=%v", enabled, err)
+		}
+		if err := m.wake(ctx); !errors.Is(err, ErrDisabled) {
+			t.Fatal("automatic wake bypassed disabled state", err)
+		}
+		if err := m.setEnabled(ctx, true); err != nil {
+			t.Fatal(err)
+		}
+		for _, mutation := range []struct {
+			name, script string
+		}{
+			{"action_arguments", "$definition.Actions.Item(1).Arguments='unexpected'"},
+			{"demand_start", "$definition.Settings.AllowDemandStart=$false"},
+			{"restart_on_failure", "$definition.Settings.RestartInterval='PT1M'; $definition.Settings.RestartCount=1"},
+		} {
+			t.Run(mutation.name, func(t *testing.T) {
+				if err := m.runTaskScript(ctx, `$task=$folder.GetTask($name)
+    $definition=$task.Definition
+    `+mutation.script+`
+    $null=$folder.RegisterTaskDefinition($name,$definition,4,$null,$null,3,$null)`); err != nil {
+					t.Fatal(err)
+				}
+				// The canonical private record restores only this synthetic task.
+				defer func() {
+					data, err := privatefs.ReadFile(m.taskPath(), maxInstallationBytes)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					if err := m.runTaskScript(ctx, `$xml=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('`+base64.StdEncoding.EncodeToString(data)+`'))
+    $null=$folder.RegisterTask($name,$xml,4,$null,$null,3,$null)`); err != nil {
+						t.Error(err)
+					}
+				}()
+				if _, err := m.enabled(ctx); !errors.Is(err, ErrInvalidInstallation) {
+					t.Fatal("modified scheduler definition accepted", err)
+				}
+				if err := m.wake(ctx); !errors.Is(err, ErrInvalidInstallation) {
+					t.Fatal("automatic wake accepted modified task", err)
+				}
+			})
+		}
+	})
+
 	t.Run("interactive_lifecycle", func(t *testing.T) {
 		if mode != "1" {
 			t.Skip("requires an interactive desktop login; CI verifies registration and removal")
@@ -141,6 +196,21 @@ func TestNativeScheduledTask(t *testing.T) {
 	if err := m.Uninstall(ctx); err != nil {
 		t.Fatal(err)
 	}
+
+	if err := m.WithSession(ctx, func(s *Session) error {
+		_, err := s.InstallWithState(ctx, bin, false)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := m.enabled(ctx)
+	if err != nil || enabled {
+		t.Fatalf("paused replacement registered enabled: enabled=%v error=%v", enabled, err)
+	}
+	if err := m.Uninstall(ctx); err != nil {
+		t.Fatal(err)
+	}
+
 	state, err = m.taskState(ctx)
 	if err != nil || state != 4 {
 		t.Fatalf("task remains after uninstall: state=%d error=%v", state, err)

@@ -105,7 +105,8 @@ The guide handles:
    images and read-receipt permission shown before confirmation. Signing in alone
    grants no content access. Scopes do not restrict Full read authority.
 3. **Service startup.** Register startup at user login and wait for a responding,
-   account-ready daemon. Completed steps remain if setup is interrupted.
+   account-ready daemon. The relay can also start the enabled service when an
+   agent connects. Completed steps remain if setup is interrupted.
 4. **Client connection.** Print standard MCP JSON or register a new server using
    the installed Codex CLI after confirmation. Existing client entries are
    preserved. Reconnect your client and ask it to check Telegram status.
@@ -159,7 +160,12 @@ For clients using `mcpServers` JSON configuration, such as Cursor or Claude Desk
 
 On Windows, use the absolute path to `telegram-mcp.exe`; JSON paths need escaped backslashes. `telegram-mcp agent-config` prints the correct configuration for your installation.
 
-The client connects through standard **MCP stdio**. Start the daemon separately: the relay does not launch it automatically. After restarting or upgrading the daemon, reconnect your MCP client.
+The client connects through standard **MCP stdio**. The relay connects to the
+existing daemon or starts its installed, enabled OS service before forwarding
+bytes. Use `telegram-mcp service stop` to keep it stopped, including after a new
+login or upgrade; `service start` or `service restart` resumes it. After a daemon
+disconnect or replacement, reconnect your MCP client. The relay never reconnects
+or replays a request automatically.
 
 ## Updates
 
@@ -180,11 +186,19 @@ under your OS user configuration directory in `Telegram MCP/install`:
 | Windows | `%APPDATA%\Telegram MCP\install\telegram-mcp.exe` |
 
 Invoke that control program with `upgrade --version X.Y.Z`. It verifies the new
-release before switching the service, preserves account data and old binaries,
-and checks the new service responds. Reconnect your MCP client afterward; its
-managed relay path stays the same. Downgrades are not supported. See
-[installation and recovery](docs/installation.md) for interrupted upgrades and
-adopting an existing manual installation.
+release before switching the service and preserves account data, old binaries
+and whether the service is enabled. An enabled service is started and checked;
+a disabled service stays disabled. Reconnect your MCP client afterward; its
+managed relay path stays the same. If a previous registration is missing, upgrade
+installs disabled because its prior enablement is unknown; use `service start`
+to resume it. Downgrades are not supported.
+
+Managed entry programs from 1.4.0 and earlier need a one-time migration for
+automatic startup. Run the new release's verified installer or control program
+directly: the old upgrade command cannot update its own startup behavior.
+On Windows, close clients using the old entry before migration. See
+[installation and recovery](docs/installation.md) for migration, interrupted
+upgrades and adopting an existing manual installation.
 
 ## Tools
 
@@ -295,10 +309,10 @@ AI client → telegram-mcp → private local transport → telegram-mcpd → Tel
 
 | Executable | Role |
 | --- | --- |
-| `telegram-mcp` | Human CLI with subcommands; byte-only MCP stdio relay with no arguments |
+| `telegram-mcp` | Human CLI with subcommands; starts an enabled service if needed, then relays MCP stdio bytes |
 | `telegram-mcpd` | Background daemon that owns the session and enforces access policy |
 
-The local transport is a user-checked Unix socket on macOS/Linux or a SID-checked named pipe on Windows. A single daemon owns the account session. Background startup uses launchd, systemd's user manager, or a Windows per-user logon task. There is no HTTP listener.
+The local transport is a user-checked Unix socket on macOS/Linux or a SID-checked named pipe on Windows. A single daemon owns the account session. Background startup uses launchd, systemd's user manager, or a Windows per-user logon task. The relay only requests startup of a verified enabled installation; it does not install a service or log in to Telegram. There is no HTTP listener.
 
 ## Privacy and Access
 
