@@ -108,7 +108,7 @@ func TestMixedUpdatesPreserveCommonSequenceAcrossRecoveryAndRestart(t *testing.T
 
 func TestChannelRecoveryStillCountsAgainstResponseBudget(t *testing.T) {
 	response := &tg.UpdatesDifference{State: tg.UpdatesState{Pts: 12, Date: 101, Seq: 1}}
-	for range 101 {
+	for range maximumRecoveryUpdates + 1 {
 		response.OtherUpdates = append(response.OtherUpdates, &tg.UpdateChannelTooLong{ChannelID: 7})
 	}
 	account, _ := newReadTestAccount(t, func(_ context.Context, _ bin.Encoder, out bin.Decoder) error {

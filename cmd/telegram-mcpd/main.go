@@ -13,6 +13,7 @@ import (
 	"github.com/lstpsche/telegram-mcp/internal/buildinfo"
 	"github.com/lstpsche/telegram-mcp/internal/daemon"
 	"github.com/lstpsche/telegram-mcp/internal/keychaincheck"
+	"github.com/lstpsche/telegram-mcp/internal/model"
 	"github.com/lstpsche/telegram-mcp/internal/secrets/keychain"
 	telegramruntime "github.com/lstpsche/telegram-mcp/internal/telegram"
 )
@@ -55,7 +56,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer, ne
 		writeDaemonError(stderr, err)
 		return 1
 	}
-	fmt.Fprintln(stderr, "telegram-mcpd: starting owner-only Telegram Test-DC runtime")
+	fmt.Fprintln(stderr, "telegram-mcpd: starting owner-only Telegram runtime")
 	if err := application.RunDaemon(ctx); err != nil {
 		writeDaemonError(stderr, err)
 		return 1
@@ -71,7 +72,7 @@ func defaultDaemon() (daemonApplication, error) {
 func writeDaemonError(writer io.Writer, err error) {
 	switch {
 	case errors.Is(err, app.ErrConfigurationRequired):
-		fmt.Fprintln(writer, "telegram-mcpd: Test-DC configuration is required; run telegram-mcp configure")
+		fmt.Fprintln(writer, "telegram-mcpd: Telegram account configuration is required; run telegram-mcp configure")
 	case errors.Is(err, daemon.ErrAccountLocked):
 		fmt.Fprintln(writer, "telegram-mcpd: another account runtime already owns the lock")
 	case errors.Is(err, daemon.ErrUnsafeSocket), errors.Is(err, daemon.ErrSocketInUse):
@@ -82,6 +83,18 @@ func writeDaemonError(writer io.Writer, err error) {
 		fmt.Fprintln(writer, "telegram-mcpd: Telegram authorization expired; reauthenticate before restarting")
 	case errors.Is(err, telegramruntime.ErrTelegramUnavailable):
 		fmt.Fprintln(writer, "telegram-mcpd: Telegram connection is unavailable")
+	case errors.Is(err, telegramruntime.ErrUpdateGap):
+		fmt.Fprintln(writer, "telegram-mcpd: Telegram synchronization requires gap recovery; the last accepted checkpoint was retained")
+	case errors.Is(err, telegramruntime.ErrUpdateRecoveryLimit):
+		fmt.Fprintln(writer, "telegram-mcpd: Telegram synchronization recovery exceeded its time budget; accepted progress was retained")
+	case errors.Is(err, telegramruntime.ErrUpdateRecoveryStalled):
+		fmt.Fprintln(writer, "telegram-mcpd: Telegram synchronization recovery made no progress; the last accepted checkpoint was retained")
+	case errors.Is(err, telegramruntime.ErrUpdateResponseLimit):
+		fmt.Fprintln(writer, "telegram-mcpd: Telegram synchronization response exceeded its size limit; the last accepted checkpoint was retained")
+	case errors.Is(err, telegramruntime.ErrUpdateStateInvalid):
+		fmt.Fprintln(writer, "telegram-mcpd: Telegram synchronization rejected invalid state; the last accepted checkpoint was retained")
+	case model.TextErrorCategory(err) == model.ErrorFreshnessDegraded:
+		fmt.Fprintln(writer, "telegram-mcpd: Telegram synchronization failed; the last accepted checkpoint was retained")
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		fmt.Fprintln(writer, "telegram-mcpd: shutdown cancelled")
 	default:

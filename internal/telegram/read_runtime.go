@@ -19,7 +19,12 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const readDeadline = 15 * time.Second
+const (
+	readDeadline            = 15 * time.Second
+	maximumRecoveryMessages = 100
+	maximumRecoveryUpdates  = 1000
+	maximumRecoveryPeers    = 2000
+)
 
 // A runtime fails closed for its remaining lifetime after checkpoint or update
 // recovery errors. Restarting constructs a fresh manager from durable metadata.
@@ -36,7 +41,7 @@ type readRuntime struct {
 	observed         atomic.Bool
 	mu               sync.Mutex
 	failure          error
-	recoveryCalls    int
+	recoveryDeadline time.Time
 	startupMarker    *tg.UpdatePrivacy
 	startupProcessed chan struct{}
 	startupOnce      sync.Once
@@ -77,8 +82,8 @@ func (a *Account) EnableReads(ctx context.Context, database *sql.DB, epoch strin
 		Handler: gotdtelegram.UpdateHandlerFunc(r.discardUpdates),
 		Storage: r.storage, AccessHasher: r.storage, UserAccessHasher: r.storage,
 		Logger: readUpdateLog{r}, MaxChannelDifferenceConcurrency: 1,
-		OnTooLong:                func() { r.fail(errors.New("Telegram common update gap is unrecoverable")) },
-		OnChannelTooLong:         func(int64) { r.fail(errors.New("Telegram channel update gap is unrecoverable")) },
+		OnTooLong:                func() { r.fail(ErrUpdateGap) },
+		OnChannelTooLong:         func(int64) { r.fail(ErrUpdateGap) },
 		OnChannelInaccessible:    func(int64) { r.fail(errors.New("Telegram channel access was lost")) },
 		OnLoadUserStateFailed:    func() { r.fail(errors.New("Telegram update checkpoint is missing")) },
 		OnLoadChannelStateFailed: func(int64) { r.fail(errors.New("Telegram channel checkpoint is incomplete")) },
@@ -161,6 +166,10 @@ func (r *readRuntime) observe(ctx context.Context, callback func(context.Context
 		bounded, cancel := context.WithTimeout(runCtx, readDeadline)
 		defer cancel()
 		if err := r.awaitStartup(bounded); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) && runCtx.Err() == nil {
+				err = errors.Join(ErrUpdateRecoveryLimit, err)
+				r.fail(err)
+			}
 			return model.TextError(model.ErrorFreshnessDegraded, err)
 		}
 		r.ready.Store(true)
@@ -272,7 +281,7 @@ func (r *readRuntime) UpdatesGetState(ctx context.Context) (*tg.UpdatesState, er
 	defer cancel()
 	result, err := r.api.UpdatesGetState(bounded)
 	if err == nil && !validRemoteState(result) {
-		err = errors.New("Telegram update state is invalid")
+		err = ErrUpdateStateInvalid
 	}
 	if err != nil {
 		r.fail(err)
@@ -284,21 +293,29 @@ func (r *readRuntime) UpdatesGetDifference(ctx context.Context, q *tg.UpdatesGet
 		return nil, err
 	}
 	r.mu.Lock()
-	r.recoveryCalls++
-	calls := r.recoveryCalls
+	if r.recoveryDeadline.IsZero() {
+		r.recoveryDeadline = time.Now().Add(readDeadline)
+	}
+	deadline := r.recoveryDeadline
 	r.mu.Unlock()
-	if calls > 8 {
-		err := errors.New("Telegram update recovery exceeds the RPC budget")
+	if !time.Now().Before(deadline) {
+		err := ErrUpdateRecoveryLimit
 		r.fail(err)
 		return nil, err
 	}
-	bounded, cancel := context.WithTimeout(ctx, readDeadline)
+	bounded, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	copy := *q
 	copy.SetPtsLimit(100)
-	copy.SetPtsTotalLimit(800)
+	// pts_total_limit rejects the entire backlog rather than bounding one page.
+	// Bound each response and the elapsed chain without discarding saved state.
+	copy.Flags.Unset(0)
+	copy.PtsTotalLimit = 0
 	copy.SetQtsLimit(100)
 	result, err := r.api.UpdatesGetDifference(bounded, &copy)
+	if err == nil {
+		err = bounded.Err()
+	}
 	if err == nil {
 		var checkpoint updates.State
 		var found bool
@@ -328,19 +345,28 @@ func (r *readRuntime) UpdatesGetDifference(ctx context.Context, q *tg.UpdatesGet
 		// must also replace an older hash before the checkpoint can advance.
 		switch value := result.(type) {
 		case *tg.UpdatesDifference:
-			err = r.saveUsers(bounded, value.Users)
+			err = r.persistUsers(bounded, value.Users)
 		case *tg.UpdatesDifferenceSlice:
-			err = r.saveUsers(bounded, value.Users)
+			err = r.persistUsers(bounded, value.Users)
 		}
 	}
+	if err == nil {
+		err = bounded.Err()
+	}
 	if err != nil {
+		if metadataCancellation(err) && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			callerDeadline, callerLimited := ctx.Deadline()
+			if !callerLimited || deadline.Before(callerDeadline) {
+				err = errors.Join(ErrUpdateRecoveryLimit, err)
+			}
+		}
 		r.fail(err)
-		return nil, err
+		return nil, r.err()
 	}
 	switch result.(type) {
 	case *tg.UpdatesDifference, *tg.UpdatesDifferenceEmpty:
 		r.mu.Lock()
-		r.recoveryCalls = 0
+		r.recoveryDeadline = time.Time{}
 		r.mu.Unlock()
 	}
 	return result, nil
@@ -495,8 +521,8 @@ func validateDifference(request *tg.UpdatesGetDifferenceRequest, seq int, result
 	case *tg.UpdatesDifferenceSlice:
 		state = &value.IntermediateState
 		messages, other, users, chats = len(value.NewMessages)+len(value.NewEncryptedMessages), len(value.OtherUpdates), len(value.Users), len(value.Chats)
-		if state.Pts == request.Pts && state.Qts == request.Qts && state.Date <= request.Date {
-			return errors.New("Telegram update difference made no progress")
+		if state.Pts == request.Pts && state.Qts == request.Qts && state.Seq <= seq && state.Date <= request.Date {
+			return ErrUpdateRecoveryStalled
 		}
 	case *tg.UpdatesDifferenceEmpty:
 		if value.Date > 0 && value.Seq >= seq {
@@ -505,13 +531,15 @@ func validateDifference(request *tg.UpdatesGetDifferenceRequest, seq int, result
 	case *tg.UpdatesDifferenceTooLong:
 		// gotd saves this pts before invoking OnTooLong. Never let an
 		// unrecovered gap become the starting checkpoint of the next process.
-		return errors.New("Telegram common update gap is unrecoverable")
+		return ErrUpdateGap
 	}
 	if !validRemoteState(state) || state.Pts < request.Pts || state.Qts < request.Qts || state.Seq < seq {
-		return errors.New("Telegram update difference state is invalid")
+		return ErrUpdateStateInvalid
 	}
-	if messages > 100 || other > 100 || users > 200 || chats > 200 {
-		return errors.New("Telegram update difference exceeds the item budget")
+	// PTS limits do not bound unrelated sequence/channel events or the peers
+	// accompanying them. Validate the raw response before discarding channels.
+	if messages > maximumRecoveryMessages || other > maximumRecoveryUpdates || users > maximumRecoveryPeers || chats > maximumRecoveryPeers {
+		return ErrUpdateResponseLimit
 	}
 	return nil
 }

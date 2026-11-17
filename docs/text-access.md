@@ -329,18 +329,29 @@ checkpoint to catch up with a live state observation. Status reports whether
 startup completed and the runtime remains healthy; it does not promise an
 instant response while a later gap is being recovered.
 
-Recovery allows at most eight application difference RPCs per completed chain,
-with a 15-second deadline per RPC. Each response allows at most 100 new and
-encrypted messages combined, 100 other updates, 200 users and 200 chats.
-Unrecoverable gaps, invalid states, regressing sequences, non-progressing slices
+Recovery paginates from the last accepted checkpoint. Difference requests and
+adapter metadata processing share one 15-second deadline across the chain.
+It does not impose a total PTS cutoff: [that Telegram request option](https://core.telegram.org/method/updates.getDifference)
+rejects a larger backlog instead of dividing it into smaller responses.
+Each response allows at most 100 new and encrypted messages combined, 1,000
+other updates, 2,000 users and 2,000 chats. These are application resource
+budgets, independent of the requested PTS limit, and apply before channel
+projection. Other updates can contain incidental content; it remains private to
+the adapter and is discarded. Ordinary read-response limits are unchanged.
+Server-reported gaps, invalid states, regressing sequences, non-progressing slices
 and oversized responses stop the runtime before their metadata is accepted.
+Deadline expiry retains every previously accepted slice; a later restart resumes
+that durable progress. A server-reported gap never authorizes replacing the
+checkpoint with the server's current state.
 Complete recovered user entities refresh existing access hashes; minimal
-entities and zero hashes cannot replace them. Incidental content is discarded.
+entities and zero hashes cannot replace them. Each validated user-hash batch
+commits in one authorization-checked transaction before its response reaches
+the checkpoint manager.
 
 A checkpoint or recovery failure makes the runtime unavailable for the rest of
 that process. Stop and restart the daemon after resolving the cause. Restart
 resumes the last accepted durable checkpoint with the same authorization; it
-does not skip an unrecoverable gap or replace a corrupt checkpoint with current
+does not skip a server-reported gap or replace a corrupt checkpoint with current
 remote state. Subsequent metadata writes after a latched failure are rejected.
 Logout or authorization rotation clears checkpoints, hashes, grants, Full read access and scopes.
 Unexpired search cursors survive an ordinary restart only while the signing

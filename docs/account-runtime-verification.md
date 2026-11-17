@@ -120,8 +120,9 @@ Synthetic recovery tests run the pinned updates manager against encoded RPC
 fixtures and SQLite metadata. They cover sliced startup and restart from the
 last accepted checkpoint; post-start gap completion, failure and cancellation;
 unrecoverable, malformed, non-progressing and oversized differences; failed
-hash/checkpoint writes; rejection of later writes after failure; bounded
-recovery calls; and complete versus minimal or zero hash refresh across
+hash/checkpoint writes; rejection of later writes after failure; recovery beyond
+eight slices and 800 PTS; whole-chain deadline expiry with durable restart
+progress; and complete versus minimal or zero hash refresh across
 restart. Corrupt checkpoints fail without replacement RPCs. Mixed channel/common
 fixtures exercise the actual updates manager during recovery, live delivery,
 and restart: common checkpoints and outer sequence advance without channel RPCs

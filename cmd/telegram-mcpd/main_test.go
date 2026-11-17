@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/lstpsche/telegram-mcp/internal/app"
+	"github.com/lstpsche/telegram-mcp/internal/model"
 	telegramruntime "github.com/lstpsche/telegram-mcp/internal/telegram"
 )
 
@@ -93,6 +96,72 @@ func TestDaemonReportsReauthenticationRequirement(t *testing.T) {
 	)
 	if code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "reauthenticate") {
 		t.Fatalf("code = %d, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestDaemonReportsSynchronizationFailuresWithoutPrivateCauses(t *testing.T) {
+	t.Parallel()
+
+	const privateDetail = "private Telegram response and credential bytes"
+	for _, test := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "gap",
+			err:  telegramruntime.ErrUpdateGap,
+			want: "Telegram synchronization requires gap recovery; the last accepted checkpoint was retained",
+		},
+		{
+			name: "recovery deadline",
+			err:  errors.Join(telegramruntime.ErrUpdateRecoveryLimit, context.DeadlineExceeded),
+			want: "Telegram synchronization recovery exceeded its time budget; accepted progress was retained",
+		},
+		{
+			name: "stalled recovery",
+			err:  telegramruntime.ErrUpdateRecoveryStalled,
+			want: "Telegram synchronization recovery made no progress; the last accepted checkpoint was retained",
+		},
+		{
+			name: "response size",
+			err:  telegramruntime.ErrUpdateResponseLimit,
+			want: "Telegram synchronization response exceeded its size limit; the last accepted checkpoint was retained",
+		},
+		{
+			name: "invalid state",
+			err:  telegramruntime.ErrUpdateStateInvalid,
+			want: "Telegram synchronization rejected invalid state; the last accepted checkpoint was retained",
+		},
+		{
+			name: "uncategorized synchronization cause",
+			err:  errors.New(privateDetail),
+			want: "Telegram synchronization failed; the last accepted checkpoint was retained",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			cause := fmt.Errorf("%s: %w", privateDetail, test.err)
+			err := model.TextError(model.ErrorFreshnessDegraded, cause)
+			var stdout, stderr bytes.Buffer
+			code := runContext(context.Background(), nil, &stdout, &stderr,
+				func() (daemonApplication, error) { return failingDaemon{err: err}, nil })
+			want := "telegram-mcpd: starting owner-only Telegram runtime\ntelegram-mcpd: " + test.want + "\n"
+			if code != 1 || stdout.Len() != 0 || stderr.String() != want {
+				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestDaemonDoesNotAssumeTestEnvironment(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+	code := runContext(context.Background(), nil, &stdout, &stderr,
+		func() (daemonApplication, error) { return nil, app.ErrConfigurationRequired })
+	if code != 1 || stdout.Len() != 0 || stderr.String() != "telegram-mcpd: Telegram account configuration is required; run telegram-mcp configure\n" {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 

@@ -185,6 +185,12 @@ func (r *readRuntime) saveUsers(ctx context.Context, users []tg.UserClass) error
 	if len(users) > 200 {
 		return model.TextError(model.ErrorResultTooLarge, nil)
 	}
+	return r.persistUsers(ctx, users)
+}
+
+// persistUsers receives a batch already checked against its operation's bounds.
+func (r *readRuntime) persistUsers(ctx context.Context, users []tg.UserClass) error {
+	hashes := make([]userAccessHash, 0, len(users))
 	for _, value := range users {
 		user, ok := value.(*tg.User)
 		if !ok || user.Min || user.ID <= 0 {
@@ -194,9 +200,10 @@ func (r *readRuntime) saveUsers(ctx context.Context, users []tg.UserClass) error
 		if !ok || hash == 0 {
 			continue
 		}
-		if err := r.storage.SetUserAccessHash(ctx, r.self.Load(), user.ID, hash); err != nil {
-			return model.TextError(model.ErrorFreshnessDegraded, err)
-		}
+		hashes = append(hashes, userAccessHash{peer: user.ID, hash: hash})
+	}
+	if err := r.storage.setUserAccessHashes(ctx, r.self.Load(), hashes); err != nil {
+		return model.TextError(model.ErrorFreshnessDegraded, err)
 	}
 	return nil
 }

@@ -17,6 +17,8 @@ type readStorage struct {
 	runtime *readRuntime
 }
 
+type userAccessHash struct{ peer, hash int64 }
+
 func (s *readStorage) capture(err error) error {
 	if err != nil {
 		s.runtime.fail(err)
@@ -190,6 +192,71 @@ func (s *readStorage) getHash(ctx context.Context, user, peer int64, kind string
 func (s *readStorage) SetUserAccessHash(ctx context.Context, user, peer, hash int64) error {
 	return s.setHash(ctx, user, peer, hash, "user")
 }
+
+// A validated response's hashes must be durable before its checkpoint is accepted.
+// One transaction also prevents authorization rotation between the epoch lookup
+// and any hash write, without an autocommit and separate lookup for each user.
+func (s *readStorage) setUserAccessHashes(ctx context.Context, user int64, hashes []userAccessHash) (resultError error) {
+	if len(hashes) == 0 {
+		return nil
+	}
+	defer func() { resultError = s.captureMetadata(resultError) }()
+	if err := s.runtime.err(); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			resultError = errors.Join(resultError, err)
+		}
+	}()
+	if err := s.runtime.err(); err != nil {
+		return err
+	}
+	var epoch string
+	if err := tx.QueryRowContext(ctx, `SELECT epoch FROM authorization_state WHERE singleton = 1`).Scan(&epoch); err != nil {
+		return err
+	}
+	if epoch != s.epoch {
+		return errors.New("Telegram metadata authorization changed")
+	}
+	statement, err := tx.PrepareContext(ctx, `INSERT INTO telegram_peer_hashes(epoch,user_id,kind,peer_id,access_hash) VALUES (?,?,'user',?,?) ON CONFLICT(epoch,user_id,kind,peer_id) DO UPDATE SET access_hash=excluded.access_hash`)
+	if err != nil {
+		return err
+	}
+	defer func() { resultError = errors.Join(resultError, statement.Close()) }()
+	for _, value := range hashes {
+		if err := s.runtime.err(); err != nil {
+			return err
+		}
+		result, err := statement.ExecContext(ctx, s.epoch, user, value.peer, value.hash)
+		if err != nil {
+			return err
+		}
+		if n, err := result.RowsAffected(); err != nil {
+			return err
+		} else if n != 1 {
+			return errors.New("Telegram metadata write was not accepted")
+		}
+	}
+	if err := s.runtime.err(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	err = tx.Commit()
+	// database/sql can finish its cancellation rollback before Commit observes it.
+	// This transaction has no other premature commit/rollback owner.
+	if err == sql.ErrTxDone && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
+}
+
 func (s *readStorage) GetUserAccessHash(ctx context.Context, user, peer int64) (int64, bool, error) {
 	return s.getHash(ctx, user, peer, "user")
 }
