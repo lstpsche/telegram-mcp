@@ -23,6 +23,7 @@ type RestorePreview struct {
 type RestoreConsequences struct {
 	ScopeIDsRegenerated          int    `json:"scope_ids_regenerated"`
 	AccessModeAfterRestore       string `json:"access_mode_after_restore"`
+	SendingEnabledAfterRestore   bool   `json:"sending_enabled_after_restore"`
 	RestrictedGrantsAfterRestore int    `json:"restricted_grants_after_restore"`
 	IssuedReferencesInvalidated  bool   `json:"issued_references_invalidated"`
 	AuditHistoryPreserved        bool   `json:"audit_history_preserved"`
@@ -147,6 +148,7 @@ func (a *Application) PreviewRestore(ctx context.Context, path string) (preview 
 			Consequences: RestoreConsequences{
 				ScopeIDsRegenerated:          len(backup.Scopes),
 				AccessModeAfterRestore:       "restricted",
+				SendingEnabledAfterRestore:   false,
 				RestrictedGrantsAfterRestore: 0,
 				IssuedReferencesInvalidated:  true,
 				AuditHistoryPreserved:        true,

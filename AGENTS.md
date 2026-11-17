@@ -10,10 +10,15 @@
 - Preserve the daemon -> owner-only local transport -> byte-only stdio relay shape.
   Authentication, policy, consent, and lifecycle mutations stay in the human
   control plane and must not become MCP tools.
-- Keep v1 single-account, local, read-first, and portable across macOS, Linux and Windows. Do not add writes,
+- Keep v1 single-account, local, read-first, and portable across macOS, Linux and Windows.
+  Sending is limited to the human-enabled, account-wide recipient resolution,
+  single plain-text send and local operation-status contracts in `docs/sending.md`.
+  Send permission includes bounded recipient and exact reply-routing metadata
+  preflight; incidental message bodies stay adapter-private and are discarded.
+  It grants no body delivery or read acknowledgments. Preserve joined broadcast
+  support under its read and posting-rights boundaries. Do not add other writes,
   HTTP listeners, raw MTProto tools, message indexing, embeddings, multi-account
-  state, broadcast channels or Secret Chats without a new plan and
-  threat review.
+  state or Secret Chats without a new plan and threat review.
 - Test-DC authentication, production login, real-data use, publication,
   deployment, and acceptance are separate decisions. Production configuration
   requires explicit human eligibility attestation; Test DC selection is explicit.
@@ -40,6 +45,10 @@
   messages; a content grant alone does not authorize that wider side effect.
 - Cursors and resource handles are never authorization. They must be signed,
   expiring, operation/query/epoch/policy-bound, and reauthorized on every use.
+- Outgoing operation IDs are never authority. Preserve the UUIDv7 dispatch and
+  retention windows, stable random IDs and content-free retained receipts.
+  A missing operation is unavailable, and an ambiguous send is never proof that
+  no message was sent. Do not add a durable body queue or automatic retry loop.
 - Store credentials, sessions and integrity keys in private unencrypted local
   files, with owner-only Unix permissions or Windows ACLs. Reject unsafe paths
   and malformed data; never silently switch storage backends. Legacy macOS

@@ -113,6 +113,8 @@ func runContext(
 		return runMaintenanceCommand(ctx, args, stdout, stderr, control)
 	case "access":
 		return runAccessCommand(ctx, args, stdout, stderr, control)
+	case "sending":
+		return runSendingCommand(ctx, args, stdout, stderr, control)
 	case "scopes", "scope", "unscope":
 		if args[0] == "scope" && len(args) > 1 && args[1] == "setup" {
 			return runScopeSetupCommand(ctx, args, stdout, stderr, control, openTerminal)
@@ -291,6 +293,12 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  telegram-mcp access restricted")
 	fmt.Fprintln(writer, "Full read access includes supported conversations, all supported message authors and history, images, PDF/plain-text attachments, voice notes, and read acknowledgments until revoked.")
 	fmt.Fprintln(writer, "Content is disclosed to the connected agent and its model provider. Enabling access does not establish permission under Telegram terms.")
+	fmt.Fprintln(writer, "  telegram-mcp sending")
+	fmt.Fprintln(writer, "  telegram-mcp sending enable --accept-account-wide-send")
+	fmt.Fprintln(writer, "  telegram-mcp sending disable")
+	fmt.Fprintln(writer, "  telegram-mcp sending status --operation-id UUID")
+	fmt.Fprintln(writer, sendingDisclosure)
+	fmt.Fprintln(writer, "Full read access does not enable sending. Send status inspects retained local facts without enabling sending or contacting Telegram; unavailable metadata does not prove a message was not sent.")
 	fmt.Fprintln(writer, "  telegram-mcp topics --peer FORUM [--offset-date N --offset-message N --offset-topic N]")
 	fmt.Fprintln(writer, "  telegram-mcp grants")
 	fmt.Fprintln(writer, "  telegram-mcp grant --peer PEER --author AUTHOR --min-id N --max-id N --read-through N --expires-at RFC3339 --profile {self-authored|consented} --attest-eligible [--allow-images] [--allow-documents] [--allow-voice-notes]")
@@ -342,6 +350,8 @@ func writeControlError(writer io.Writer, err error) {
 		fmt.Fprintln(writer, "telegram-mcp: audit retention requires 1–3650 days and 1–1000000 records")
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		fmt.Fprintln(writer, "telegram-mcp: operation cancelled")
+	case errors.Is(err, app.ErrSendStatusUnavailable):
+		fmt.Fprintln(writer, "telegram-mcp: retained send status is unavailable; missing or pruned metadata does not prove a message was not sent")
 	case errors.Is(err, policy.ErrBusy):
 		fmt.Fprintln(writer, "telegram-mcp: text policy is busy; retry after the in-flight content request or grant operation finishes")
 	case errors.Is(err, policy.ErrInvalidGrant):

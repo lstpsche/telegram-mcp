@@ -20,6 +20,9 @@ func TestRestoreResetsAuthorityAndNeverRewindsBinding(t *testing.T) {
 	if err := l.SetFullRead(ctx, true); err != nil {
 		t.Fatal(err)
 	}
+	if err := l.SetFullSend(ctx, true); err != nil {
+		t.Fatal(err)
+	}
 	original, err := l.SaveScope(ctx, "", "work", []model.PeerID{grant.Peer})
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +37,7 @@ func TestRestoreResetsAuthorityAndNeverRewindsBinding(t *testing.T) {
 	if err := l.Audit(ctx, "req_before", "list_scopes", "", 1, false); err != nil {
 		t.Fatal(err)
 	}
+	seedRetainedSendFacts(t, db, epoch, *now)
 	scopes := []RecoverableScope{{Name: "work", Peers: original.Peers}}
 	retention := store.AuditRetention{Days: 7, MaxRecords: 10}
 	if err := l.Restore(ctx, scopes, retention); err != nil {
@@ -51,6 +55,11 @@ func TestRestoreResetsAuthorityAndNeverRewindsBinding(t *testing.T) {
 	if err != nil || full {
 		t.Fatal("authority restored", err)
 	}
+	sending, err := l.FullSend(ctx)
+	if err != nil || sending {
+		t.Fatal("send permission restored", err)
+	}
+	assertRetainedSendFacts(t, db)
 	grants, err := l.List(ctx)
 	if err != nil || len(grants) != 0 {
 		t.Fatal("grants survived", err)
@@ -87,6 +96,9 @@ func TestRestoreFailureRollsBackScopesAuthorityAndSettings(t *testing.T) {
 	if err := l.SetFullRead(ctx, true); err != nil {
 		t.Fatal(err)
 	}
+	if err := l.SetFullSend(ctx, true); err != nil {
+		t.Fatal(err)
+	}
 	_, before, _ := l.Binding(ctx)
 	if _, err := db.Exec(`CREATE TRIGGER reject_restore BEFORE INSERT ON named_scope_peers BEGIN SELECT RAISE(ABORT,'synthetic failure'); END`); err != nil {
 		t.Fatal(err)
@@ -101,6 +113,10 @@ func TestRestoreFailureRollsBackScopesAuthorityAndSettings(t *testing.T) {
 	full, err := l.FullRead(ctx)
 	if err != nil || !full {
 		t.Fatal("authority rollback failed", err)
+	}
+	sending, err := l.FullSend(ctx)
+	if err != nil || !sending {
+		t.Fatal("send authority rollback failed", err)
 	}
 	_, after, _ := l.Binding(ctx)
 	if after != before {

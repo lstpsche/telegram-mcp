@@ -86,7 +86,7 @@ func TestInspectLocalMCPWithoutOpeningMetadata(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	server := mcpserver.New(func() daemon.Snapshot { return daemon.Snapshot{State: daemon.StateReauthRequired} }, nil)
+	server := mcpserver.New(func() daemon.Snapshot { return daemon.Snapshot{State: daemon.StateReauthRequired} }, nil, nil)
 	serve(t, paths, func(ctx context.Context, conn net.Conn) { mcpserver.Serve(ctx, server, conn) })
 	before, err := os.ReadDir(paths.StateDir)
 	if err != nil {

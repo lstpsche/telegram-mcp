@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,6 +62,9 @@ func TestMaintenanceCommandsAreRoutedAndReportSuccess(t *testing.T) {
 		factory := func() (controller, error) { return f, nil }
 		if code := runContext(context.Background(), args, &out, &stderr, factory, nil); code != 0 || !f.called || stderr.Len() != 0 {
 			t.Fatal("command failed", args, code, stderr.String())
+		}
+		if f.restored && (!strings.Contains(out.String(), "Read access is restricted with no grants") || !strings.Contains(out.String(), "sending is disabled")) {
+			t.Fatal("restore omitted access reset consequences", out.String())
 		}
 	}
 }

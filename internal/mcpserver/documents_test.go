@@ -211,7 +211,7 @@ func testDocumentsOverStdioRelay(t *testing.T, forwarded, broadcast bool, textMI
 			t.Fatal("document tool misrepresents its read effects")
 		}
 	}
-	if len(schemas) != 13 || schemas["open_document"] == nil {
+	if len(schemas) != 16 || schemas["open_document"] == nil {
 		t.Fatal("missing native document tool")
 	}
 	call := func(name string, args any) (*mcp.CallToolResult, map[string]any) {

@@ -97,7 +97,7 @@ func runMaintenanceCommand(ctx context.Context, args []string, stdout, stderr io
 		} else {
 			err = maintenance.Restore(ctx, args[2])
 			if err == nil {
-				_, err = fmt.Fprintln(stdout, "Scopes restored with new IDs. Access is restricted with no grants; enable access explicitly when ready.")
+				_, err = fmt.Fprintln(stdout, "Scopes restored with new IDs. Read access is restricted with no grants, and sending is disabled; enable each explicitly when ready.")
 			}
 		}
 	case "audit":

@@ -44,7 +44,7 @@ func (l *Lease) Restore(ctx context.Context, scopes []RecoverableScope, retentio
 		return err
 	}
 	return l.transaction(ctx, func(tx *sql.Tx) error {
-		for _, query := range []string{"DELETE FROM full_read_access", "DELETE FROM text_grants", "DELETE FROM named_scopes", "UPDATE policy_revision SET revision=revision+1 WHERE singleton=1"} {
+		for _, query := range []string{"DELETE FROM full_read_access", "DELETE FROM full_send_access", "DELETE FROM text_grants", "DELETE FROM named_scopes", "UPDATE policy_revision SET revision=revision+1 WHERE singleton=1"} {
 			if _, err := tx.ExecContext(ctx, query); err != nil {
 				return internalError(err)
 			}

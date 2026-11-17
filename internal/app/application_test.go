@@ -576,10 +576,23 @@ type fakeRuntime struct {
 	observeFailure        <-chan struct{}
 	observeError          error
 	logoutError           error
+	sendingEnabled        bool
+	sendingError          error
 }
 
 func (f *fakeRuntime) EnableReads(context.Context, *sql.DB, string) error { return nil }
-func (f *fakeRuntime) Ready() bool                                        { return f.observeStatus.Authorized }
+func (f *fakeRuntime) EnableSending(*metastore.OutgoingRepository) error {
+	f.sendingEnabled = true
+	return f.sendingError
+}
+func (f *fakeRuntime) ResolveRecipient(context.Context, model.ResolveRecipientQuery) (model.ResolvedRecipient, error) {
+	return model.ResolvedRecipient{}, errors.New("fake recipient unavailable")
+}
+func (f *fakeRuntime) PrepareSend(context.Context, model.SendAttempt) (model.PreparedSend, error) {
+	return nil, errors.New("fake send preparation unavailable")
+}
+
+func (f *fakeRuntime) Ready() bool { return f.observeStatus.Authorized }
 func (f *fakeRuntime) SelfID() model.PeerID {
 	id, _ := model.NewPeerID(model.PeerKindUser, 1)
 	return id
@@ -823,7 +836,7 @@ func TestUnconfiguredDaemonServesStaticToolsWithoutReadingSecrets(t *testing.T) 
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 13 {
+	if err != nil || len(tools.Tools) != 16 {
 		t.Fatalf("tools=%v error=%v", tools, err)
 	}
 	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "status"}); err != nil {

@@ -98,7 +98,7 @@ func TestMediaSearchOverStdioRelay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(inventory.Tools) != 13 {
+			if len(inventory.Tools) != 16 {
 				t.Fatal("unexpected tool inventory")
 			}
 			var output *jsonschema.Resolved
