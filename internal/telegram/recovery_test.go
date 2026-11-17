@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -70,8 +71,8 @@ func TestRecoveryTooLongPreservesCheckpointAcrossRestart(t *testing.T) {
 	account, db := newReadTestAccount(t, invoke)
 	for range 2 {
 		ready, done, _ := observeRecovery(t, account)
-		if err := <-done; err == nil {
-			t.Fatal("unrecoverable gap succeeded")
+		if err := <-done; !errors.Is(err, ErrUpdateGap) {
+			t.Fatal("unrecoverable gap lost its diagnostic category", err)
 		}
 		select {
 		case <-ready:
@@ -277,6 +278,62 @@ func TestRecoveryPostStartupGapBlocksHistory(t *testing.T) {
 	}
 }
 
+func TestRecoveryBoundsUnrelatedUpdatesIndependentlyOfPTS(t *testing.T) {
+	for _, count := range []int{101, maximumRecoveryUpdates} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			response := &tg.UpdatesDifference{State: tg.UpdatesState{Pts: 12, Date: 101, Seq: 2}}
+			for range count {
+				response.OtherUpdates = append(response.OtherUpdates, &tg.UpdateChannelTooLong{ChannelID: 7})
+			}
+			account, _ := newReadTestAccount(t, func(_ context.Context, input bin.Encoder, out bin.Decoder) error {
+				query := input.(*tg.UpdatesGetDifferenceRequest)
+				if query.PtsLimit != 100 {
+					t.Error("recovery changed its requested PTS page size")
+				}
+				return encodeReadResponse(out, response)
+			})
+			result, err := account.reads.UpdatesGetDifference(context.Background(), &tg.UpdatesGetDifferenceRequest{Pts: 10, Date: 100})
+			if err != nil {
+				t.Fatal("bounded unrelated updates were rejected", err)
+			}
+			accepted := result.(*tg.UpdatesDifference)
+			if len(accepted.OtherUpdates) != 0 || accepted.State != response.State {
+				t.Fatal("projection lost the accepted common state")
+			}
+		})
+	}
+}
+
+func TestRecoveryUserBudgetDoesNotExpandOrdinaryReads(t *testing.T) {
+	for _, count := range []int{201, maximumRecoveryPeers} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			response := &tg.UpdatesDifference{State: tg.UpdatesState{Pts: 12, Date: 101, Seq: 1}}
+			for i := range count {
+				user := &tg.User{ID: int64(i + 2)}
+				user.SetAccessHash(int64(i + 22))
+				response.Users = append(response.Users, user)
+				response.Chats = append(response.Chats, &tg.ChatEmpty{ID: int64(i + 3)})
+			}
+			account, db := newReadTestAccount(t, func(_ context.Context, _ bin.Encoder, out bin.Decoder) error {
+				return encodeReadResponse(out, response)
+			})
+			if err := account.reads.saveUsers(context.Background(), response.Users); model.TextErrorCategory(err) != model.ErrorResultTooLarge {
+				t.Fatal("ordinary read accepted the recovery entity budget", err)
+			}
+			var hashes int
+			if err := db.QueryRow("SELECT count(*) FROM telegram_peer_hashes").Scan(&hashes); err != nil || hashes != 0 {
+				t.Fatal("rejected ordinary users wrote metadata", err)
+			}
+			if _, err := account.reads.UpdatesGetDifference(context.Background(), &tg.UpdatesGetDifferenceRequest{Pts: 10, Date: 100}); err != nil {
+				t.Fatal("bounded recovery users failed", err)
+			}
+			if err := db.QueryRow("SELECT count(*) FROM telegram_peer_hashes").Scan(&hashes); err != nil || hashes != count {
+				t.Fatal("accepted recovery users did not persist their hashes", err)
+			}
+		})
+	}
+}
+
 func TestRecoveryRejectsUnsafeDifferencesBeforeMetadata(t *testing.T) {
 	for _, failure := range []string{"pts", "qts", "seq", "empty_seq", "date", "no_progress", "messages", "updates", "users", "chats", "hash_write"} {
 		t.Run(failure, func(t *testing.T) {
@@ -302,15 +359,15 @@ func TestRecoveryRejectsUnsafeDifferencesBeforeMetadata(t *testing.T) {
 					full.NewMessages = append(full.NewMessages, testMessage(5))
 				}
 			case "updates":
-				for range 101 {
+				for range maximumRecoveryUpdates + 1 {
 					full.OtherUpdates = append(full.OtherUpdates, &tg.UpdatePtsChanged{})
 				}
 			case "users":
-				for range 200 {
+				for range maximumRecoveryPeers {
 					full.Users = append(full.Users, user)
 				}
 			case "chats":
-				for range 201 {
+				for range maximumRecoveryPeers + 1 {
 					full.Chats = append(full.Chats, &tg.ChatEmpty{ID: 3})
 				}
 			}
@@ -345,33 +402,200 @@ func TestRecoveryRejectsUnsafeDifferencesBeforeMetadata(t *testing.T) {
 	}
 }
 
-func TestRecoveryRPCBudgetBoundsSlicesAndResetsOnCompletion(t *testing.T) {
-	for _, terminal := range []bool{false, true} {
-		t.Run(map[bool]string{false: "unterminated", true: "completed_chains"}[terminal], func(t *testing.T) {
+func TestRecoveryLargeBacklogResumesAcceptedSlicesAfterCancellation(t *testing.T) {
+	const pausedPts, targetPts = 910, 1210
+	paused := make(chan struct{})
+	var calls atomic.Int32
+	var account *Account
+	var db *sql.DB
+	invoke := func(pause bool) gotdtelegram.InvokeFunc {
+		return func(ctx context.Context, input bin.Encoder, out bin.Decoder) error {
+			switch q := input.(type) {
+			case *tg.UpdatesGetDifferenceRequest:
+				calls.Add(1)
+				if _, limited := q.GetPtsTotalLimit(); limited || q.PtsTotalLimit != 0 || q.PtsLimit != 100 || q.QtsLimit != 100 {
+					t.Error("request does not paginate independently of total backlog")
+				}
+				var persisted int
+				if err := db.QueryRow("SELECT pts FROM telegram_update_state").Scan(&persisted); err != nil {
+					return err
+				}
+				if persisted != q.Pts {
+					t.Error("next page did not use the durable checkpoint")
+				}
+				if account.Ready() {
+					t.Error("partial catch-up made account ready")
+				}
+				if pause && q.Pts == pausedPts {
+					close(paused)
+					<-ctx.Done()
+					return ctx.Err()
+				}
+				if q.Pts < targetPts {
+					return encodeReadResponse(out, &tg.UpdatesDifferenceSlice{IntermediateState: tg.UpdatesState{Pts: q.Pts + 100, Date: 100, Seq: 1}})
+				}
+				return encodeReadResponse(out, &tg.UpdatesDifferenceEmpty{Date: 101, Seq: 1})
+			case *tg.UpdatesGetStateRequest:
+				return encodeReadResponse(out, &tg.UpdatesState{Pts: targetPts, Date: 101, Seq: 1})
+			}
+			return errors.New("unexpected RPC")
+		}
+	}
+	account, db = newReadTestAccount(t, invoke(true))
+	ready, done, cancel := observeRecovery(t, account)
+	select {
+	case <-paused:
+	case err := <-done:
+		t.Fatal("large catch-up stopped before accepting nine slices", err)
+	}
+	select {
+	case <-ready:
+		t.Fatal("incomplete recovery became ready")
+	default:
+	}
+	cancel()
+	<-done
+	var persisted int
+	if err := db.QueryRow("SELECT pts FROM telegram_update_state").Scan(&persisted); err != nil || persisted != pausedPts {
+		t.Fatal("cancellation lost accepted progress", err)
+	}
+	account = restartReadAccount(t, db, invoke(false))
+	ready, done, cancel = observeRecovery(t, account)
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatal("remaining catch-up failed", err)
+	}
+	if !account.Ready() || calls.Load() <= 8 {
+		t.Fatal("large catch-up did not complete")
+	}
+	cancel()
+	<-done
+	if err := db.QueryRow("SELECT pts FROM telegram_update_state").Scan(&persisted); err != nil || persisted != targetPts {
+		t.Fatal("completed catch-up did not retain its checkpoint", err)
+	}
+}
+
+func TestRecoveryDeadlineBoundsChainAndRetainsAcceptedCheckpoint(t *testing.T) {
+	for _, outcome := range []string{"expired", "inflight", "metadata", "completed"} {
+		t.Run(outcome, func(t *testing.T) {
 			var calls int
-			account, _ := newReadTestAccount(t, func(_ context.Context, input bin.Encoder, out bin.Decoder) error {
+			var db *sql.DB
+			var held *sql.Conn
+			account, database := newReadTestAccount(t, func(ctx context.Context, input bin.Encoder, out bin.Decoder) error {
 				calls++
 				q := input.(*tg.UpdatesGetDifferenceRequest)
-				if q.PtsLimit != 100 || q.PtsTotalLimit != 800 || q.QtsLimit != 100 {
-					t.Error("missing recovery request bounds")
+				if _, limited := q.GetPtsTotalLimit(); limited || q.PtsTotalLimit != 0 {
+					t.Error("inherited total PTS limit reached Telegram")
 				}
-				if terminal {
-					return encodeReadResponse(out, &tg.UpdatesDifferenceEmpty{Date: 100, Seq: 1})
+				if outcome == "inflight" {
+					<-ctx.Done()
+					return ctx.Err()
 				}
-				return encodeReadResponse(out, &tg.UpdatesDifferenceSlice{IntermediateState: tg.UpdatesState{Pts: q.Pts + 1, Date: 100, Seq: 1}})
-			})
-			for i := 0; i < 9; i++ {
-				result, err := account.reads.UpdatesGetDifference(context.Background(), &tg.UpdatesGetDifferenceRequest{Pts: 10 + i, Date: 100})
-				if !terminal && i == 8 {
-					if err == nil || result != nil || calls != 8 {
-						t.Fatal("recovery exceeded eight RPCs")
+				if outcome == "metadata" {
+					var err error
+					held, err = db.Conn(ctx)
+					if err != nil {
+						return err
 					}
-				} else if err != nil {
+				}
+				return encodeReadResponse(out, &tg.UpdatesDifferenceEmpty{Date: 100, Seq: 1})
+			})
+			db = database
+			t.Cleanup(func() {
+				if held != nil {
+					held.Close()
+				}
+			})
+			if outcome == "expired" {
+				account.reads.recoveryDeadline = time.Now().Add(-time.Second)
+			}
+			if outcome == "inflight" || outcome == "metadata" {
+				account.reads.recoveryDeadline = time.Now().Add(20 * time.Millisecond)
+			}
+			query := &tg.UpdatesGetDifferenceRequest{Pts: 10, Date: 100}
+			query.SetPtsTotalLimit(800)
+			result, err := account.reads.UpdatesGetDifference(context.Background(), query)
+			if held != nil {
+				if err := held.Close(); err != nil {
 					t.Fatal(err)
 				}
+				held = nil
 			}
-			if terminal && calls != 9 {
-				t.Fatal("completed chains shared a budget")
+			if limit, set := query.GetPtsTotalLimit(); !set || limit != 800 {
+				t.Error("recovery mutated its caller request")
+			}
+			if outcome == "completed" {
+				if err != nil || result == nil || !account.reads.recoveryDeadline.IsZero() {
+					t.Fatal("completed recovery retained its deadline", err)
+				}
+				if _, err := account.reads.UpdatesGetDifference(context.Background(), query); err != nil || calls != 2 {
+					t.Fatal("completed chains shared a deadline", err)
+				}
+			} else {
+				if result != nil || !errors.Is(err, ErrUpdateRecoveryLimit) {
+					t.Fatal("deadline did not fail closed with a fixed cause", err)
+				}
+				if outcome == "expired" && calls != 0 {
+					t.Fatal("expired chain issued an RPC")
+				}
+				if _, err := account.reads.UpdatesGetDifference(context.Background(), query); !errors.Is(err, ErrUpdateRecoveryLimit) {
+					t.Fatal("expired chain was restarted")
+				}
+			}
+			var persisted int
+			if err := db.QueryRow("SELECT pts FROM telegram_update_state").Scan(&persisted); err != nil || persisted != 10 {
+				t.Fatal("deadline handling replaced the checkpoint", err)
+			}
+		})
+	}
+}
+
+func TestRecoveryDeadlineClassificationPreservesOtherFailures(t *testing.T) {
+	corruption := errors.New("synthetic metadata corruption")
+	for _, outcome := range []struct {
+		name    string
+		cause   error
+		limited bool
+	}{
+		{"deadline", context.DeadlineExceeded, true},
+		{"joined_deadline", errors.Join(context.DeadlineExceeded), true},
+		{"corruption", errors.Join(context.DeadlineExceeded, corruption), false},
+		{"cancellation", context.Canceled, false},
+	} {
+		t.Run(outcome.name, func(t *testing.T) {
+			account, _ := newReadTestAccount(t, func(context.Context, bin.Encoder, bin.Decoder) error { return errors.New("unexpected RPC") })
+			account.reads.recoveryDeadline = time.Now().Add(-time.Second)
+			account.reads.fail(outcome.cause)
+			err := account.reads.err()
+			if errors.Is(err, ErrUpdateRecoveryLimit) != outcome.limited || !errors.Is(err, outcome.cause) {
+				t.Fatal("recovery deadline changed the failure cause", err)
+			}
+		})
+	}
+}
+
+func TestRecoverySliceProgressIncludesEverySequence(t *testing.T) {
+	for _, progress := range []string{"pts", "qts", "seq", "date", "none"} {
+		t.Run(progress, func(t *testing.T) {
+			state := tg.UpdatesState{Pts: 10, Date: 100, Seq: 1}
+			switch progress {
+			case "pts":
+				state.Pts++
+			case "qts":
+				state.Qts++
+			case "seq":
+				state.Seq++
+			case "date":
+				state.Date++
+			}
+			err := validateDifference(&tg.UpdatesGetDifferenceRequest{Pts: 10, Date: 100}, 1, &tg.UpdatesDifferenceSlice{IntermediateState: state})
+			if progress == "none" {
+				if !errors.Is(err, ErrUpdateRecoveryStalled) {
+					t.Fatal("unchanged slice was accepted", err)
+				}
+			} else if err != nil {
+				t.Fatal("advancing sequence was rejected", err)
 			}
 		})
 	}

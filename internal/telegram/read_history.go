@@ -185,6 +185,11 @@ func (r *readRuntime) saveUsers(ctx context.Context, users []tg.UserClass) error
 	if len(users) > 200 {
 		return model.TextError(model.ErrorResultTooLarge, nil)
 	}
+	return r.persistUsers(ctx, users)
+}
+
+// persistUsers receives a batch already checked against its operation's bounds.
+func (r *readRuntime) persistUsers(ctx context.Context, users []tg.UserClass) error {
 	for _, value := range users {
 		user, ok := value.(*tg.User)
 		if !ok || user.Min || user.ID <= 0 {

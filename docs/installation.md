@@ -322,6 +322,14 @@ safe stderr diagnostics. Windows Task Scheduler does not capture a log file.
 Authentication uses the OS console and remains interactive only during setup or
 explicit account reauthentication.
 
+Synchronization diagnostics distinguish a server-reported update gap, recovery
+deadline expiry, stalled recovery, invalid update state and oversized responses.
+These fixed messages contain no Telegram response text or account data.
+An update gap does not prove that login has expired. Recovery preserves the last
+accepted checkpoint and access permissions; neither restarting nor upgrading
+resets them. Successfully processed recovery slices advance that checkpoint
+normally.
+
 Automated service checks use temporary files, fake OS process runners and a local
 synthetic MCP server. Native service-manager acceptance is separate: in a
 disposable user/session with fresh unconfigured state, verify automatic startup
