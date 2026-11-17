@@ -95,9 +95,11 @@ messages are not authorized.
 Supported destinations are Saved Messages, private users or bots, basic groups,
 joined ordinary supergroups, exact forum topics and joined broadcast channels
 where the account can post. Groups/topics use the logged-in user as author;
-broadcast posts use the destination publisher. Saved alternate author settings
-are not a fallback. There is no join, custom author, attachment upload, rich-text
-composer, schedule, edit, delete, forward or reaction operation.
+broadcast posts use the destination publisher. Known posting restrictions fail
+during metadata preflight. Anonymous group admins cannot use the required
+user-author identity; no alternate identity is substituted. Saved alternate author
+settings are not a fallback. There is no join, custom author, attachment upload,
+rich-text composer, schedule, edit, delete, forward or reaction operation.
 
 To reply, supply a strict message ID in the same exact peer/topic. The adapter
 checks the live message's actual containing peer and topic before dispatch,
@@ -179,8 +181,10 @@ reauthentication. The server does not sleep through an outgoing retry loop.
 A synchronous failure sets MCP `isError: true` while preserving known operation
 facts. A later local failure can accompany `state: sent` and a valid receipt.
 Cancellation stops the invocation; local receipt bookkeeping may continue for
-at most five seconds, without more network grace. Restart reconciles metadata
-and does not resume outgoing work.
+at most five seconds, without more network grace. A canceled update enqueue
+alone does not fail the shared read runtime. Incomplete synchronization still
+fences new sends until restart; retained status and confirmed receipt replay
+remain available. Restart reconciles metadata and does not resume outgoing work.
 
 ## Human offline inspection
 

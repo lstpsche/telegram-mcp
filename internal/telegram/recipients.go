@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -45,6 +46,50 @@ func recipientUnavailable() error {
 	return &model.SendError{Category: model.ErrorRecipientUnavailable, FailureCode: model.SendFailureRecipientUnavailable}
 }
 
+func recipientWriteForbidden() error {
+	return &model.SendError{Category: model.ErrorWriteForbidden, FailureCode: model.SendFailureWriteForbidden}
+}
+
+func plainTextBanned(rights tg.ChatBannedRights, now time.Time) bool {
+	return (rights.ViewMessages || rights.SendMessages || rights.SendPlain) && (rights.UntilDate <= 0 || int64(rights.UntilDate) >= now.Unix())
+}
+
+func chatTextForbidden(chat *tg.Chat, now time.Time) bool {
+	admin, hasAdmin := chat.GetAdminRights()
+	if chat.Creator || hasAdmin && !admin.Zero() {
+		return false
+	}
+	rights, hasRights := chat.GetDefaultBannedRights()
+	return hasRights && plainTextBanned(rights, now)
+}
+
+func channelTextForbidden(channel *tg.Channel, now time.Time) bool {
+	admin, hasAdmin := channel.GetAdminRights()
+	// Group sends use the logged-in user. Anonymous admins can only post as a
+	// channel, even when they also own the group.
+	if channel.Megagroup && hasAdmin && admin.Anonymous {
+		return true
+	}
+	if channel.Creator {
+		return false
+	}
+	if channel.Broadcast {
+		return !hasAdmin || !admin.PostMessages
+	}
+	if hasAdmin && !admin.Zero() {
+		return false
+	}
+	rights, hasRights := channel.GetBannedRights()
+	// Supergroup default restrictions may be bypassed by boosts. The required
+	// per-user boost counts live in channelFull, not this channel metadata.
+	return hasRights && plainTextBanned(rights, now)
+}
+
+func closedTopicTextForbidden(channel *tg.Channel, topic *tg.ForumTopic) bool {
+	admin, hasAdmin := channel.GetAdminRights()
+	return topic.Closed && !topic.My && !channel.Creator && !(hasAdmin && admin.ManageTopics)
+}
+
 func (a *Account) ResolveRecipient(ctx context.Context, query model.ResolveRecipientQuery) (model.ResolvedRecipient, error) {
 	query, err := query.Normalize()
 	if err != nil {
@@ -60,7 +105,7 @@ func (a *Account) ResolveRecipient(ctx context.Context, query model.ResolveRecip
 	defer cancel()
 	ctx = context.WithValue(ctx, outgoingContextKey{}, &outgoingCall{peer: query.Peer})
 	if err := a.reads.storage.checkEpoch(ctx); err != nil {
-		return model.ResolvedRecipient{}, model.TextError(model.ErrorFreshnessDegraded, nil)
+		return model.ResolvedRecipient{}, a.reads.metadataError(err)
 	}
 	if query.Peer.String() != "" {
 		result, _, err := a.resolveKnownRecipient(ctx, query.Peer, false)
@@ -101,7 +146,7 @@ func (a *Account) ResolveRecipient(ctx context.Context, query model.ResolveRecip
 				return model.ResolvedRecipient{}, recipientUnavailable()
 			}
 			if err = a.reads.storage.SetUserAccessHash(ctx, a.reads.self.Load(), user.ID, hash); err != nil {
-				return model.ResolvedRecipient{}, model.TextError(model.ErrorFreshnessDegraded, nil)
+				return model.ResolvedRecipient{}, a.reads.metadataError(err)
 			}
 		}
 	case *tg.PeerChannel:
@@ -120,7 +165,7 @@ func (a *Account) ResolveRecipient(ctx context.Context, query model.ResolveRecip
 		result.Kind = model.PeerKindChannel
 		result.DisplayName = recipientDisplay(channel.Title)
 		if err = a.reads.storage.SetChannelAccessHash(ctx, a.reads.self.Load(), channel.ID, hash); err != nil {
-			return model.ResolvedRecipient{}, model.TextError(model.ErrorFreshnessDegraded, nil)
+			return model.ResolvedRecipient{}, a.reads.metadataError(err)
 		}
 	default:
 		return result, recipientUnavailable()
@@ -166,7 +211,7 @@ func (a *Account) resolveKnownRecipient(ctx context.Context, peer model.PeerID, 
 			return result, false, recipientUnavailable()
 		}
 		if err = a.reads.storage.SetUserAccessHash(ctx, a.reads.self.Load(), user.ID, hash); err != nil {
-			return result, false, model.TextError(model.ErrorFreshnessDegraded, nil)
+			return result, false, a.reads.metadataError(err)
 		}
 		result.DisplayName = recipientDisplay(strings.TrimSpace(user.FirstName + " " + user.LastName))
 	case *tg.InputPeerChat:
@@ -181,6 +226,9 @@ func (a *Account) resolveKnownRecipient(ctx context.Context, peer model.PeerID, 
 		if !ok || !sendableChat(chat) || chat.ID != peer.TelegramID() {
 			return result, false, recipientUnavailable()
 		}
+		if forSend && chatTextForbidden(chat, time.Now()) {
+			return result, false, recipientWriteForbidden()
+		}
 		result.DisplayName = recipientDisplay(chat.Title)
 	case *tg.InputPeerChannel:
 		chats, e := a.reads.api.ChannelsGetChannels(ctx, []tg.InputChannelClass{&tg.InputChannel{ChannelID: input.ChannelID, AccessHash: input.AccessHash}})
@@ -194,12 +242,15 @@ func (a *Account) resolveKnownRecipient(ctx context.Context, peer model.PeerID, 
 		if !ok || !sendableChannel(channel) || channel.ID != peer.TelegramID() || (peer.TopicID() != 0 && !channel.Forum) {
 			return result, false, recipientUnavailable()
 		}
+		if forSend && channelTextForbidden(channel, time.Now()) {
+			return result, false, recipientWriteForbidden()
+		}
 		hash, has := channel.GetAccessHash()
 		if !has || hash == 0 {
 			return result, false, recipientUnavailable()
 		}
 		if err = a.reads.storage.SetChannelAccessHash(ctx, a.reads.self.Load(), channel.ID, hash); err != nil {
-			return result, false, model.TextError(model.ErrorFreshnessDegraded, nil)
+			return result, false, a.reads.metadataError(err)
 		}
 		broadcast = channel.Broadcast
 		result.DisplayName = recipientDisplay(channel.Title)
@@ -214,6 +265,9 @@ func (a *Account) resolveKnownRecipient(ctx context.Context, peer model.PeerID, 
 			topic, ok := topics.Topics[0].(*tg.ForumTopic)
 			if !ok || topic.Short || topic.ID != int(peer.TopicID()) || !matchesPeer(peer, topic.Peer) || topic.Hidden && topic.ID != 1 {
 				return result, false, recipientUnavailable()
+			}
+			if forSend && closedTopicTextForbidden(channel, topic) {
+				return result, false, recipientWriteForbidden()
 			}
 			result.DisplayName = recipientDisplay(topic.Title)
 		} else if channel.Forum && forSend {

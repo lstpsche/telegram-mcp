@@ -206,12 +206,12 @@ func (s *Service) recordResult(ctx context.Context, requestID string, operation 
 		}
 		return prepare(requestID, operation.Public(), s.now(), model.FreshnessUnavailable, model.TextError(model.ErrorInternal, errors.Join(resultErr, err)))
 	}
-	if uncertain && recorded.State == model.SendSent {
+	if recorded.State == model.SendSent && resultErr != nil {
 		s.fenced.Store(true)
-		if code == "" || code == model.SendFailureEffectUncertain {
-			code = model.SendFailureStateSyncFailed
-		}
-		resultErr = failureError(code, retryAt, resultErr)
+		failure := confirmedFailure(code, resultErr)
+		confirmed := recorded.Public()
+		confirmed.FailureCode, confirmed.RetryAt = failure.FailureCode, ""
+		return prepare(requestID, confirmed, s.now(), model.FreshnessUnavailable, failure)
 	}
 	return prepare(requestID, recorded.Public(), s.now(), model.FreshnessUnavailable, resultErr)
 }
@@ -229,14 +229,19 @@ func (s *Service) acknowledged(ctx context.Context, requestID string, operation 
 	if sendErr != nil || outcome.FailureCode != "" {
 		s.fenced.Store(true)
 		freshness = model.FreshnessUnavailable
-		if confirmed.FailureCode != model.SendFailureReceiptNotPersisted {
-			confirmed.FailureCode = model.SendFailureStateSyncFailed
-		}
-		sendErr = failureError(confirmed.FailureCode, time.Time{}, sendErr)
+		failure := confirmedFailure(confirmed.FailureCode, sendErr)
+		confirmed.FailureCode, sendErr = failure.FailureCode, failure
 	}
 	// The adapter has already attempted receipt persistence before update hooks.
 	// A failed sink must not acquire another five-second write grace here.
 	return prepare(requestID, confirmed, s.now(), freshness, sendErr)
+}
+
+func confirmedFailure(code model.SendFailureCode, cause error) *model.SendError {
+	if code != model.SendFailureReceiptNotPersisted {
+		code = model.SendFailureStateSyncFailed
+	}
+	return failureError(code, time.Time{}, cause)
 }
 
 func failureDetails(err error) (model.SendFailureCode, time.Time) {

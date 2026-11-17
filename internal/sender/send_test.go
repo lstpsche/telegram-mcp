@@ -213,6 +213,57 @@ func TestKnownReceiptSurvivesLaterErrorAndCancellation(t *testing.T) {
 	}
 }
 
+func TestPostAcceptanceCancellationKeepsReceiptAndFencesFreshSends(t *testing.T) {
+	for _, scenario := range []struct {
+		name  string
+		cause error
+	}{
+		{name: "cancelled", cause: context.Canceled},
+		{name: "deadline", cause: context.DeadlineExceeded},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.permission(t, true, false)
+			request := f.request(t, "Synthetic message")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			f.backend.send = func(callCtx context.Context, attempt model.SendAttempt) (model.SendAttemptResult, error) {
+				outcome := f.accept(t, callCtx, attempt)
+				if scenario.cause == context.Canceled {
+					cancel()
+				}
+				outcome.FailureCode = model.SendFailureStateSyncFailed
+				return outcome, &model.SendError{Category: model.ErrorStateSyncFailed, FailureCode: model.SendFailureStateSyncFailed, Cause: scenario.cause}
+			}
+			result, err := f.service.SendMessage(ctx, "req_cancelled_sync", request)
+			operation := onlyOperation(t, result)
+			if !errors.Is(err, scenario.cause) || model.TextErrorCategory(err) != model.ErrorStateSyncFailed || !result.IsError || operation.State != model.SendSent || operation.MessageID == nil || operation.MessageID.TelegramID() != 82 || operation.SentAt != f.now.Format(time.RFC3339Nano) || operation.FailureCode != model.SendFailureStateSyncFailed {
+				t.Fatalf("post-acceptance cancellation contradicted the receipt: %v %s", err, result.JSON)
+			}
+			if !f.backend.Ready() || f.service.Ready() {
+				t.Fatal("degraded send did not retain its own effect fence")
+			}
+			for _, inspect := range []func() (Result, error){
+				func() (Result, error) {
+					return f.service.SendStatus(context.Background(), "req_local_status", request.OperationID)
+				},
+				func() (Result, error) {
+					return f.service.SendMessage(context.Background(), "req_retained_receipt", request)
+				},
+			} {
+				retained, err := inspect()
+				if err != nil || retained.IsError || onlyOperation(t, retained).State != model.SendSent {
+					t.Fatalf("post-acceptance cancellation hid retained facts: %v", err)
+				}
+			}
+			_, err = f.service.SendMessage(context.Background(), "req_fenced_effect", f.request(t, "Another synthetic message"))
+			if model.TextErrorCategory(err) != model.ErrorNotReady || f.backend.prepareCalls != 1 || f.backend.sendCalls != 1 {
+				t.Fatalf("post-acceptance cancellation permitted another effect: %v", err)
+			}
+		})
+	}
+}
+
 func TestKnownReceiptWithFailedSinkIsReturnedWithoutAnotherWrite(t *testing.T) {
 	f := newFixture(t)
 	f.permission(t, true, false)
@@ -240,16 +291,46 @@ func TestKnownReceiptWithFailedSinkIsReturnedWithoutAnotherWrite(t *testing.T) {
 }
 
 func TestLaterRejectionCannotEraseIndependentlyRecordedReceipt(t *testing.T) {
-	f := newFixture(t)
-	f.permission(t, true, false)
-	f.backend.send = func(ctx context.Context, attempt model.SendAttempt) (model.SendAttemptResult, error) {
-		f.accept(t, ctx, attempt)
-		return model.SendAttemptResult{Attempted: true, FailureCode: model.SendFailureWriteForbidden}, errors.New("later rejection")
-	}
-	result, err := f.service.SendMessage(context.Background(), "req_late_receipt", f.request(t, "Synthetic message"))
-	operation := onlyOperation(t, result)
-	if model.TextErrorCategory(err) != model.ErrorWriteForbidden || operation.State != model.SendSent || operation.MessageID == nil {
-		t.Fatalf("later error erased known receipt: %v", err)
+	for _, code := range []model.SendFailureCode{model.SendFailureWriteForbidden, model.SendFailurePaymentRequired, model.SendFailureRateLimited, model.SendFailureReceiptNotPersisted} {
+		t.Run(string(code), func(t *testing.T) {
+			f := newFixture(t)
+			f.permission(t, true, false)
+			request := f.request(t, "Synthetic message")
+			retryAt := time.Time{}
+			if code == model.SendFailureRateLimited {
+				retryAt = f.now.Add(48 * time.Hour)
+			}
+			f.backend.send = func(ctx context.Context, attempt model.SendAttempt) (model.SendAttemptResult, error) {
+				f.accept(t, ctx, attempt)
+				if _, err := f.database.ExecContext(ctx, "CREATE TRIGGER preserve_sent_fact BEFORE UPDATE ON outgoing_operations BEGIN SELECT RAISE(ABORT,'synthetic immutable receipt'); END"); err != nil {
+					t.Fatal(err)
+				}
+				return model.SendAttemptResult{Attempted: true, FailureCode: code, RetryAt: retryAt}, errors.New("sensitive later rejection")
+			}
+			result, err := f.service.SendMessage(context.Background(), "req_late_receipt", request)
+			wantCategory, wantCode := model.ErrorStateSyncFailed, model.SendFailureStateSyncFailed
+			if code == model.SendFailureReceiptNotPersisted {
+				wantCategory, wantCode = model.ErrorReceiptNotPersisted, model.SendFailureReceiptNotPersisted
+			}
+			operation := onlyOperation(t, result)
+			if model.TextErrorCategory(err) != wantCategory || !result.IsError || operation.State != model.SendSent || operation.MessageID == nil || operation.MessageID.TelegramID() != 82 || operation.FailureCode != wantCode || operation.RetryAt != "" {
+				t.Fatalf("later error contradicted known receipt: %v %s", err, result.JSON)
+			}
+			var envelope model.Envelope[model.SendOperation]
+			if err := json.Unmarshal(result.JSON, &envelope); err != nil {
+				t.Fatal(err)
+			}
+			if envelope.Error == nil || envelope.Error.Category != wantCategory || envelope.Error.RetryAt != "" || envelope.Error.RetryAfterSeconds != nil || len(envelope.Warnings) != 1 || envelope.Warnings[0] != model.WarningFreshnessDegraded {
+				t.Fatal("confirmed send advertised a provider retry or lost degradation")
+			}
+			if strings.Contains(string(result.JSON), "sensitive") || f.service.Ready() {
+				t.Fatal("later failure leaked its cause or left effects enabled")
+			}
+			retained, found, findErr := f.operations.Find(context.Background(), request.OperationID, f.now)
+			if findErr != nil || !found || retained.State != model.SendSent || retained.MessageID == nil || retained.FailureCode != "" || retained.RetryAt != nil {
+				t.Fatalf("known durable receipt was rewritten: %v", findErr)
+			}
+		})
 	}
 }
 

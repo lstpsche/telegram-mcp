@@ -68,11 +68,7 @@ func registerSendingTools(server *mcp.Server, service *sender.Service) {
 				logging.New(os.Stderr, nil).Warn(ctx, logging.EventOperationFailed, logging.ComponentField(logging.ComponentDaemon), logging.RequestIDField(id), logging.ErrorCategoryField(sendingErrorCategory(err)))
 			}
 			if len(result.JSON) == 0 {
-				category := model.TextErrorCategory(err)
-				if err == nil {
-					category = model.ErrorInternal
-				}
-				envelope, buildErr := sendingErrorEnvelope(category, id, err)
+				envelope, buildErr := sender.ErrorEnvelope(id, err)
 				if buildErr != nil {
 					return nil, errors.New("sending operation failed")
 				}
@@ -161,12 +157,4 @@ func sendingErrorCategory(err error) model.ErrorCategory {
 		return model.ErrorInternal
 	}
 	return model.TextErrorCategory(err)
-}
-
-func sendingErrorEnvelope(category model.ErrorCategory, requestID string, cause error) (model.ErrorEnvelope, error) {
-	var sendError *model.SendError
-	if category == model.ErrorRateLimited && errors.As(cause, &sendError) && !sendError.RetryAt.IsZero() {
-		return model.NewRetryAtErrorEnvelope(requestID, sendError.RetryAt)
-	}
-	return model.NewErrorEnvelope(category, requestID, nil)
 }

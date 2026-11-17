@@ -72,10 +72,13 @@ The closed failure reason and retry time remain available, but cannot authorize
 resending an uncertain operation or replace a previously confirmed receipt.
 
 Dispatch is durably recorded before sending. Positive receipts are preserved
-before update synchronization, and cancellation-independent local bookkeeping is
-capped at five seconds without further network grace. Restart reconciles facts
-but never resumes a queue. Absolute protocol waits are shared by trusted account,
-environment, method and applicable containing dialog, surviving same-account
+before update synchronization. A matching random-ID assignment proves acceptance
+without an accompanying message body; incidental entities cannot veto that fact.
+Provider timestamps require a matching outgoing message. Cancellation-independent
+local bookkeeping is capped at five seconds without further network grace.
+Restart reconciles facts but never resumes a queue. Absolute protocol waits are
+shared by trusted account, environment, method and applicable containing dialog,
+surviving same-account
 reauthentication and permission toggles. No automatic outgoing wait/retry loop is
 provided. See [sending](sending.md) for caller recovery and human commands and
 [ADR-0003](adr/0003-message-sending.md) for the persistence boundary.

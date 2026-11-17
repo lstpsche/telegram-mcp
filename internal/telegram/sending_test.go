@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -154,6 +155,46 @@ func TestSendingRecordsAcceptanceAfterCallerCancellation(t *testing.T) {
 	operation, found, err := repository.Find(context.Background(), attempt.OperationID, time.Now())
 	if err != nil || !found || operation.State != model.SendSent {
 		t.Fatalf("cancelled caller suppressed receipt persistence: found=%v state=%s err=%v", found, operation.State, err)
+	}
+}
+
+func TestSendingPostAcceptanceCancellationKeepsReadRuntimeAvailable(t *testing.T) {
+	for _, failure := range []error{context.Canceled, context.DeadlineExceeded, errors.Join(context.Canceled, errors.New("synthetic synchronization failure"))} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			account, repository, _ := newSendingTestAccount(t, func(_ context.Context, input bin.Encoder, out bin.Decoder) error {
+				switch input.(type) {
+				case *tg.MessagesSendMessageRequest:
+					return encodeReadResponse(out, &tg.UpdateShortSentMessage{Out: true, ID: 25, Pts: 10, Date: 100})
+				case *tg.UpdatesGetStateRequest:
+					return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
+				default:
+					return errors.New("unexpected method")
+				}
+			})
+			// Model the SDK enqueue boundary returning the caller's cancellation
+			// after the raw result and its receipt have already been captured.
+			account.reads.manager = updates.New(updates.Config{Handler: gotdtelegram.UpdateHandlerFunc(func(context.Context, tg.UpdatesClass) error {
+				return failure
+			})})
+			attempt := admitSendingTestAttempt(t, repository, testSelfPeer(t), nil)
+			result, err := sendTestMessage(account, context.Background(), attempt)
+			if err == nil || result.Receipt == nil || result.Receipt.MessageID.TelegramID() != 25 || result.FailureCode != model.SendFailureStateSyncFailed {
+				t.Fatalf("post-acceptance cancellation lost known facts: result=%+v err=%v", result, err)
+			}
+			pureCancellation := failure == context.Canceled || failure == context.DeadlineExceeded
+			if account.Ready() != pureCancellation {
+				t.Fatalf("incorrect shared runtime availability: ready=%v err=%v", account.Ready(), err)
+			}
+			if pureCancellation {
+				if _, err := account.reads.UpdatesGetState(context.Background()); err != nil {
+					t.Fatal("unrelated read failed after canceled enqueue", err)
+				}
+			}
+			operation, found, err := repository.Find(context.Background(), attempt.OperationID, time.Now())
+			if err != nil || !found || operation.State != model.SendSent {
+				t.Fatalf("post-acceptance cancellation lost durable receipt: found=%v state=%s err=%v", found, operation.State, err)
+			}
+		})
 	}
 }
 
@@ -435,8 +476,8 @@ func TestSendingInvocationMarkerPreservesLegacyUsernameWaiter(t *testing.T) {
 	}
 }
 
-func TestSendingFullUpdateReceiptsRejectConflictsAndWrongPeers(t *testing.T) {
-	for _, variant := range []string{"updates", "combined", "conflicting mapping", "wrong peer"} {
+func TestSendingFullUpdateReceiptsRequireCurrentMapping(t *testing.T) {
+	for _, variant := range []string{"updates", "combined", "conflicting mapping", "incidental peer", "missing mapping"} {
 		t.Run(variant, func(t *testing.T) {
 			var attempt model.SendAttempt
 			account, repository, _ := newSendingTestAccount(t, func(_ context.Context, input bin.Encoder, out bin.Decoder) error {
@@ -447,8 +488,11 @@ func TestSendingFullUpdateReceiptsRejectConflictsAndWrongPeers(t *testing.T) {
 					if variant == "conflicting mapping" {
 						items = append(items, &tg.UpdateMessageID{RandomID: attempt.RandomID, ID: 30})
 					}
-					if variant == "wrong peer" {
+					if variant == "incidental peer" {
 						message.PeerID = &tg.PeerUser{UserID: 99}
+					}
+					if variant == "missing mapping" {
+						items = items[1:]
 					}
 					if variant == "combined" {
 						return encodeReadResponse(out, &tg.UpdatesCombined{Updates: items, Date: 100, SeqStart: 1, Seq: 1})
@@ -462,10 +506,13 @@ func TestSendingFullUpdateReceiptsRejectConflictsAndWrongPeers(t *testing.T) {
 			})
 			attempt = admitSendingTestAttempt(t, repository, testSelfPeer(t), nil)
 			result, err := sendTestMessage(account, context.Background(), attempt)
-			valid := variant == "updates" || variant == "combined"
+			valid := variant == "updates" || variant == "combined" || variant == "incidental peer"
 			if valid {
 				if err != nil || result.Receipt == nil || result.Receipt.MessageID.TelegramID() != 29 {
 					t.Fatalf("matching full receipt lost: result=%+v err=%v", result, err)
+				}
+				if variant == "incidental peer" && result.Receipt.SentAt != "" {
+					t.Fatal("incidental body supplied a send timestamp")
 				}
 			} else if err == nil || result.Receipt != nil || !result.Uncertain {
 				t.Fatalf("invalid full receipt accepted: result=%+v err=%v", result, err)
@@ -877,6 +924,9 @@ func TestSendingUnrelatedAcknowledgmentFactsPreserveBudgetWithoutCurrentReceipt(
 			if errors.Is(err, model.ErrSendMetadataRecording) != rejectWrite || strings.Contains(err.Error(), "private unrelated") {
 				t.Fatalf("unrelated fact failure marker lost or private cause exposed: %v", err)
 			}
+			if result.FailureCode != model.SendFailureEffectUncertain || model.TextErrorCategory(err) != model.ErrorSendEffectUncertain {
+				t.Fatalf("unrelated fact claimed current confirmation: code=%s err=%v", result.FailureCode, err)
+			}
 			current, found, findErr := repository.Find(context.Background(), attempt.OperationID, time.Now())
 			if findErr != nil || !found || current.State != model.SendInFlight {
 				t.Fatalf("current operation gained an unrelated receipt: found=%v state=%s err=%v", found, current.State, findErr)
@@ -890,5 +940,107 @@ func TestSendingUnrelatedAcknowledgmentFactsPreserveBudgetWithoutCurrentReceipt(
 				t.Fatalf("other operation recording: found=%v state=%s want=%s err=%v", found, other.State, expected, findErr)
 			}
 		})
+	}
+}
+
+func TestSendingReceiptSelectsFullPeerAndMessageIdentity(t *testing.T) {
+	for _, service := range []bool{false, true} {
+		for _, incidentalFirst := range []bool{false, true} {
+			t.Run(fmt.Sprintf("service=%t/first=%t", service, incidentalFirst), func(t *testing.T) {
+				var attempt model.SendAttempt
+				account, repository, _ := newSendingTestAccount(t, func(_ context.Context, input bin.Encoder, out bin.Decoder) error {
+					switch input.(type) {
+					case *tg.MessagesSendMessageRequest:
+						var incidental tg.MessageClass
+						if service {
+							incidental = &tg.MessageService{ID: 81, PeerID: &tg.PeerChannel{ChannelID: 99}, Date: 200, Action: &tg.MessageActionHistoryClear{}}
+						} else {
+							message := testMessage(81)
+							message.PeerID = &tg.PeerChannel{ChannelID: 99}
+							message.Date = 200
+							message.Out = false
+							incidental = message
+						}
+						own := &tg.UpdateNewMessage{Message: testMessage(81), Pts: 10}
+						other := &tg.UpdateNewChannelMessage{Message: incidental, Pts: 20}
+						items := []tg.UpdateClass{&tg.UpdateMessageID{RandomID: attempt.RandomID, ID: 81}, own, other}
+						if incidentalFirst {
+							items[1], items[2] = items[2], items[1]
+						}
+						return encodeReadResponse(out, &tg.UpdatesCombined{Updates: items, Date: 100, SeqStart: 1, Seq: 1})
+					case *tg.UpdatesGetStateRequest:
+						return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
+					default:
+						return errors.New("unexpected method")
+					}
+				})
+				attempt = admitSendingTestAttempt(t, repository, testSelfPeer(t), nil)
+				result, err := sendTestMessage(account, context.Background(), attempt)
+				if err != nil || result.Receipt == nil || result.Receipt.MessageID.TelegramID() != 81 || result.Receipt.SentAt != time.Unix(100, 0).UTC().Format(time.RFC3339) {
+					t.Fatalf("incidental peer displaced correlated receipt: result=%+v err=%v", result, err)
+				}
+				operation, found, err := repository.Find(context.Background(), attempt.OperationID, time.Now())
+				if err != nil || !found || operation.State != model.SendSent || operation.SentAt == nil || operation.SentAt.Unix() != 100 {
+					t.Fatalf("correlated receipt not durable: %+v %v", operation, err)
+				}
+			})
+		}
+	}
+}
+
+func TestSendingReceiptSurvivesUnrelatedMappingFailure(t *testing.T) {
+	for _, conflict := range []bool{false, true} {
+		t.Run(fmt.Sprintf("conflict=%t", conflict), func(t *testing.T) {
+			var attempt model.SendAttempt
+			account, repository, _ := newSendingTestAccount(t, func(_ context.Context, input bin.Encoder, out bin.Decoder) error {
+				switch input.(type) {
+				case *tg.MessagesSendMessageRequest:
+					items := []tg.UpdateClass{&tg.UpdateMessageID{RandomID: attempt.RandomID, ID: 82}, &tg.UpdateNewMessage{Message: testMessage(82), Pts: 10}, &tg.UpdateMessageID{RandomID: attempt.RandomID + 1, ID: 0}}
+					if conflict {
+						items[2] = &tg.UpdateMessageID{RandomID: attempt.RandomID + 1, ID: 90}
+						items = append(items, &tg.UpdateMessageID{RandomID: attempt.RandomID + 1, ID: 91})
+					}
+					return encodeReadResponse(out, &tg.Updates{Updates: items, Date: 100, Seq: 1})
+				case *tg.UpdatesGetStateRequest:
+					return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
+				default:
+					return errors.New("unexpected method")
+				}
+			})
+			attempt = admitSendingTestAttempt(t, repository, testSelfPeer(t), nil)
+			result, err := sendTestMessage(account, context.Background(), attempt)
+			if err == nil || result.Receipt == nil || result.Receipt.MessageID.TelegramID() != 82 || result.FailureCode != model.SendFailureStateSyncFailed || account.Ready() {
+				t.Fatalf("unrelated invalid mapping erased acceptance: result=%+v err=%v", result, err)
+			}
+			operation, found, err := repository.Find(context.Background(), attempt.OperationID, time.Now())
+			if err != nil || !found || operation.State != model.SendSent || operation.MessageID == nil || operation.MessageID.TelegramID() != 82 {
+				t.Fatalf("known acceptance not durable: %+v %v", operation, err)
+			}
+		})
+	}
+}
+
+func TestSendingAcceptanceSurvivesInvalidCurrentBody(t *testing.T) {
+	var attempt model.SendAttempt
+	account, repository, _ := newSendingTestAccount(t, func(_ context.Context, input bin.Encoder, out bin.Decoder) error {
+		switch input.(type) {
+		case *tg.MessagesSendMessageRequest:
+			body := testMessage(83)
+			body.Out = false
+			return encodeReadResponse(out, &tg.Updates{Updates: []tg.UpdateClass{&tg.UpdateMessageID{RandomID: attempt.RandomID, ID: 83}, &tg.UpdateNewMessage{Message: body, Pts: 10}}, Date: 100, Seq: 1})
+		case *tg.UpdatesGetStateRequest:
+			return encodeReadResponse(out, &tg.UpdatesState{Pts: 10, Date: 100, Seq: 1})
+		default:
+			return errors.New("unexpected method")
+		}
+	})
+	attempt = admitSendingTestAttempt(t, repository, testSelfPeer(t), nil)
+	result, err := sendTestMessage(account, context.Background(), attempt)
+	if err == nil || result.Receipt == nil || result.Receipt.MessageID.TelegramID() != 83 || result.Receipt.SentAt != "" || result.FailureCode != model.SendFailureStateSyncFailed || account.Ready() {
+		t.Fatalf("invalid body erased assigned message ID: result=%+v err=%v", result, err)
+	}
+	operation, found, err := repository.Find(context.Background(), attempt.OperationID, time.Now())
+	if err != nil || !found || operation.State != model.SendSent || operation.SentAt != nil {
+		t.Fatalf("assigned message ID not durably recorded: %+v %v", operation, err)
 	}
 }

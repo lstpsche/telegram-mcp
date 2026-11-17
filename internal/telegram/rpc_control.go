@@ -37,6 +37,34 @@ type rpcControl struct {
 	environment string
 }
 
+func metadataCancellation(err error) bool {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		canceled := false
+		for _, cause := range joined.Unwrap() {
+			if cause == nil {
+				continue
+			}
+			if !metadataCancellation(cause) {
+				return false
+			}
+			canceled = true
+		}
+		return canceled
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return metadataCancellation(wrapped.Unwrap())
+	}
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+func (r *readRuntime) metadataError(err error) error {
+	if err == nil || metadataCancellation(err) {
+		return err
+	}
+	r.fail(err)
+	return model.TextError(model.ErrorFreshnessDegraded, err)
+}
+
 func controlledMethod(input bin.Encoder) string {
 	switch input.(type) {
 	case *tg.ContactsResolveUsernameRequest:
@@ -79,15 +107,15 @@ func (c rpcControl) Handle(next tg.Invoker) gotdtelegram.InvokeFunc {
 		now := time.Now().UTC()
 		until, err := r.sending.repository.WaitUntil(ctx, c.environment, r.self.Load(), method, peer, now)
 		if err != nil {
-			r.fail(errors.New("Telegram RPC wait metadata is unavailable"))
-			return model.TextError(model.ErrorFreshnessDegraded, nil)
+			return r.metadataError(err)
 		}
 		if until.After(now) {
 			if call != nil {
 				return sendRetryError(until)
 			}
 			if until.Sub(now) > maximumFloodWait {
-				return model.TextError(model.ErrorRateLimited, nil)
+				// Read tools retain the legacy waiter's bounded availability contract.
+				return model.TextError(model.ErrorTelegramUnavailable, nil)
 			}
 			timer := time.NewTimer(until.Sub(now))
 			defer timer.Stop()
@@ -100,8 +128,7 @@ func (c rpcControl) Handle(next tg.Invoker) gotdtelegram.InvokeFunc {
 		if method == "contacts.resolvePhone" {
 			until, acquired, err := r.sending.repository.ReservePhoneLookup(ctx, c.environment, r.self.Load(), time.Now().UTC())
 			if err != nil {
-				r.fail(errors.New("Telegram phone lookup pacing metadata is unavailable"))
-				return model.TextError(model.ErrorFreshnessDegraded, nil)
+				return r.metadataError(err)
 			}
 			if !acquired {
 				return sendRetryError(until)

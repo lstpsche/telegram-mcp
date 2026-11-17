@@ -24,13 +24,20 @@ func (s *readStorage) capture(err error) error {
 	return err
 }
 
+func (s *readStorage) captureMetadata(err error) error {
+	if metadataCancellation(err) {
+		return err
+	}
+	return s.capture(err)
+}
+
 func (s *readStorage) checkEpoch(ctx context.Context) error {
 	if err := s.runtime.err(); err != nil {
 		return err
 	}
 	var epoch string
 	if err := s.db.QueryRowContext(ctx, `SELECT epoch FROM authorization_state WHERE singleton = 1`).Scan(&epoch); err != nil {
-		return s.capture(err)
+		return s.captureMetadata(err)
 	}
 	if epoch != s.epoch {
 		return s.capture(errors.New("Telegram metadata authorization changed"))
@@ -40,7 +47,7 @@ func (s *readStorage) checkEpoch(ctx context.Context) error {
 
 func (s *readStorage) exec(ctx context.Context, query string, args ...any) error {
 	if err := s.checkEpoch(ctx); err != nil {
-		return err
+		return s.capture(err)
 	}
 	result, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -65,7 +72,7 @@ func (s *readStorage) GetState(ctx context.Context, user int64) (updates.State, 
 	if err == nil && state.Date <= 0 {
 		err = errors.New("Telegram checkpoint date is invalid")
 	}
-	return state, err == nil, s.capture(err)
+	return state, err == nil, s.captureMetadata(err)
 }
 func (s *readStorage) SetState(ctx context.Context, user int64, state updates.State) error {
 	if state.Date <= 0 {
@@ -111,7 +118,7 @@ func (s *readStorage) GetChannelPts(ctx context.Context, user, channel int64) (i
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
-	return pts, err == nil, s.capture(err)
+	return pts, err == nil, s.captureMetadata(err)
 }
 func (s *readStorage) SetChannelPts(ctx context.Context, user, channel int64, pts int) error {
 	return s.exec(ctx, `INSERT INTO telegram_channel_state(epoch,user_id,channel_id,pts) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM authorization_state WHERE epoch=?) ON CONFLICT(epoch,user_id,channel_id) DO UPDATE SET pts=excluded.pts`, s.epoch, user, channel, pts, s.epoch)
@@ -122,7 +129,7 @@ func (s *readStorage) ForEachChannels(ctx context.Context, user int64, f func(co
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT channel_id,pts FROM telegram_channel_state WHERE epoch=? AND user_id=?`, s.epoch, user)
 	if err != nil {
-		return s.capture(err)
+		return s.captureMetadata(err)
 	}
 	// Close rows before callbacks: the metadata database may use one connection.
 	type channelState struct {
@@ -134,17 +141,17 @@ func (s *readStorage) ForEachChannels(ctx context.Context, user int64, f func(co
 		var state channelState
 		if err := rows.Scan(&state.id, &state.pts); err != nil {
 			rows.Close()
-			return s.capture(err)
+			return s.captureMetadata(err)
 		}
 		states = append(states, state)
 	}
 	err = errors.Join(rows.Err(), rows.Close())
 	if err != nil {
-		return s.capture(err)
+		return s.captureMetadata(err)
 	}
 	for _, state := range states {
 		if err := f(ctx, state.id, state.pts); err != nil {
-			return s.capture(err)
+			return s.captureMetadata(err)
 		}
 	}
 	return nil
@@ -153,7 +160,18 @@ func (s *readStorage) setHash(ctx context.Context, user, peer, hash int64, kind 
 	if hash == 0 {
 		return s.capture(errors.New("Telegram access hash is invalid"))
 	}
-	return s.exec(ctx, `INSERT INTO telegram_peer_hashes(epoch,user_id,kind,peer_id,access_hash) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM authorization_state WHERE epoch=?) ON CONFLICT(epoch,user_id,kind,peer_id) DO UPDATE SET access_hash=excluded.access_hash`, s.epoch, user, kind, peer, hash, s.epoch)
+	if err := s.checkEpoch(ctx); err != nil {
+		return err
+	}
+	result, err := s.db.ExecContext(ctx, `INSERT INTO telegram_peer_hashes(epoch,user_id,kind,peer_id,access_hash) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM authorization_state WHERE epoch=?) ON CONFLICT(epoch,user_id,kind,peer_id) DO UPDATE SET access_hash=excluded.access_hash`, s.epoch, user, kind, peer, hash, s.epoch)
+	if err != nil {
+		return s.captureMetadata(err)
+	}
+	n, err := result.RowsAffected()
+	if err == nil && n != 1 {
+		err = errors.New("Telegram metadata write was not accepted")
+	}
+	return s.captureMetadata(err)
 }
 func (s *readStorage) getHash(ctx context.Context, user, peer int64, kind string) (int64, bool, error) {
 	if err := s.checkEpoch(ctx); err != nil {
@@ -167,7 +185,7 @@ func (s *readStorage) getHash(ctx context.Context, user, peer int64, kind string
 	if err == nil && hash == 0 {
 		err = errors.New("Telegram access hash is invalid")
 	}
-	return hash, err == nil, s.capture(err)
+	return hash, err == nil, s.captureMetadata(err)
 }
 func (s *readStorage) SetUserAccessHash(ctx context.Context, user, peer, hash int64) error {
 	return s.setHash(ctx, user, peer, hash, "user")

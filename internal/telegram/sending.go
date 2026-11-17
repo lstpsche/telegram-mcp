@@ -72,8 +72,7 @@ func (a *Account) prepareSend(ctx context.Context, attempt model.SendAttempt) (*
 	now := time.Now().UTC()
 	until, err := a.reads.sending.repository.WaitUntil(ctx, a.environment, a.reads.self.Load(), "messages.sendMessage", attempt.Peer.Parent(), now)
 	if err != nil {
-		a.reads.fail(errors.New("Telegram send pacing metadata is unavailable"))
-		return nil, model.TextError(model.ErrorFreshnessDegraded, nil)
+		return nil, a.reads.metadataError(err)
 	}
 	if until.After(now) {
 		return nil, sendRetryError(until)
@@ -123,7 +122,7 @@ func (a *Account) sendPrepared(ctx context.Context, attempt model.SendAttempt, r
 		return model.SendAttemptResult{}, model.TextError(model.ErrorFreshnessDegraded, nil)
 	}
 	if err := a.reads.storage.checkEpoch(ctx); err != nil {
-		return model.SendAttemptResult{}, model.TextError(model.ErrorFreshnessDegraded, nil)
+		return model.SendAttemptResult{}, a.reads.metadataError(err)
 	}
 	bounded, cancel := context.WithTimeout(ctx, readDeadline)
 	defer cancel()
@@ -137,12 +136,20 @@ func (a *Account) sendPrepared(ctx context.Context, attempt model.SendAttempt, r
 	}
 	if err != nil {
 		if result.Receipt != nil {
-			a.reads.fail(errors.New("Telegram send update synchronization failed"))
+			if !metadataCancellation(err) {
+				a.reads.fail(errors.New("Telegram send update synchronization failed"))
+			}
 			result.FailureCode = model.SendFailureStateSyncFailed
-			return result, &model.SendError{Category: model.ErrorStateSyncFailed, FailureCode: result.FailureCode}
+			return result, &model.SendError{Category: model.ErrorStateSyncFailed, FailureCode: result.FailureCode, Cause: err}
 		}
 		err = outgoingError(err)
 		applySendError(&result, err)
+		if result.FailureCode == model.SendFailureReceiptNotPersisted || result.FailureCode == model.SendFailureStateSyncFailed {
+			// Synchronization may have failed while recording another operation.
+			// Without this operation's receipt, no confirmation can be reported.
+			result.FailureCode = model.SendFailureEffectUncertain
+			err = &model.SendError{Category: model.ErrorSendEffectUncertain, FailureCode: result.FailureCode, Cause: err, MetadataDeadline: capture.recordingDeadline}
+		}
 		// The SDK may replay an unacknowledged request on a new connection.
 		// A later rejection cannot disprove an earlier send with this random ID.
 		result.Uncertain = result.Attempted
@@ -348,9 +355,28 @@ func (r *readRuntime) captureMappings(ctx context.Context, items []tg.UpdateClas
 	}
 	return nil
 }
+
+// acknowledgedMessageID isolates the current operation from incidental updates.
+// The complete batch remains subject to validation before checkpoint advancement.
+func acknowledgedMessageID(items []tg.UpdateClass, randomID int64) (int32, error) {
+	var id int32
+	for _, item := range items {
+		mapping, ok := item.(*tg.UpdateMessageID)
+		if !ok || mapping.RandomID != randomID {
+			continue
+		}
+		if mapping.ID <= 0 || mapping.ID > math.MaxInt32 || id != 0 && id != int32(mapping.ID) {
+			return 0, model.TextError(model.ErrorInvalidReference, nil)
+		}
+		id = int32(mapping.ID)
+	}
+	return id, nil
+}
+
 func (r *readRuntime) captureAcknowledgment(ctx context.Context, capture *sendCapture, updates tg.UpdatesClass) error {
 	var id int32
 	var date int
+	var acknowledgmentError error
 	if short, ok := updates.(*tg.UpdateShortSentMessage); ok {
 		if !short.Out || short.ID <= 0 || short.ID > math.MaxInt32 || short.Date <= 0 {
 			return model.TextError(model.ErrorInvalidReference, nil)
@@ -358,11 +384,11 @@ func (r *readRuntime) captureAcknowledgment(ctx context.Context, capture *sendCa
 		id, date = int32(short.ID), short.Date
 	} else {
 		items := updateItems(updates)
-		mappings, err := validMappings(items)
+		var err error
+		id, err = acknowledgedMessageID(items, capture.attempt.RandomID)
 		if err != nil {
-			return model.TextError(model.ErrorInvalidReference, nil)
+			return err
 		}
-		id = mappings[capture.attempt.RandomID]
 		if id == 0 {
 			return nil
 		}
@@ -377,11 +403,25 @@ func (r *readRuntime) captureAcknowledgment(ctx context.Context, capture *sendCa
 			if message == nil || message.GetID() != int(id) {
 				continue
 			}
+			var peer tg.PeerClass
+			switch value := message.(type) {
+			case *tg.Message:
+				peer = value.PeerID
+			case *tg.MessageService:
+				peer = value.PeerID
+			}
+			if !matchesPeer(capture.attempt.Peer, peer) {
+				continue
+			}
 			m, ok := message.(*tg.Message)
-			if !ok || !m.Out || !matchesPeer(capture.attempt.Peer, m.PeerID) {
-				return model.TextError(model.ErrorInvalidReference, nil)
+			if !ok || !m.Out {
+				acknowledgmentError = model.TextError(model.ErrorInvalidReference, nil)
+				continue
 			}
 			date = m.Date
+		}
+		if acknowledgmentError != nil {
+			date = 0
 		}
 	}
 	messageID, err := model.NewMessageID(capture.attempt.Peer, id)
@@ -414,5 +454,5 @@ func (r *readRuntime) captureAcknowledgment(ctx context.Context, capture *sendCa
 		r.fail(capture.persistError)
 		return &model.SendError{Category: model.ErrorReceiptNotPersisted, FailureCode: model.SendFailureReceiptNotPersisted}
 	}
-	return nil
+	return acknowledgmentError
 }

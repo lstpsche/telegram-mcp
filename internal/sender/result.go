@@ -22,7 +22,7 @@ func prepare[T interface{ Validate() error }](requestID string, item T, now time
 		return Result{}, model.TextError(model.ErrorInternal, err)
 	}
 	if resultErr != nil {
-		failure, err := sendingErrorEnvelope(requestID, resultErr)
+		failure, err := ErrorEnvelope(requestID, resultErr)
 		if err != nil {
 			return Result{}, model.TextError(model.ErrorInternal, errors.Join(resultErr, err))
 		}
@@ -38,8 +38,13 @@ func prepare[T interface{ Validate() error }](requestID string, item T, now time
 	return Result{JSON: encoded, IsError: resultErr != nil}, resultErr
 }
 
-func sendingErrorEnvelope(requestID string, err error) (model.ErrorEnvelope, error) {
+// ErrorEnvelope builds the fixed error representation shared by the sending
+// service and MCP boundary. Missing error or retry evidence is an internal error.
+func ErrorEnvelope(requestID string, err error) (model.ErrorEnvelope, error) {
 	category := model.TextErrorCategory(err)
+	if err == nil {
+		category = model.ErrorInternal
+	}
 	if category == model.ErrorRateLimited {
 		var failure *model.SendError
 		if !errors.As(err, &failure) || failure.RetryAt.IsZero() {
@@ -51,7 +56,7 @@ func sendingErrorEnvelope(requestID string, err error) (model.ErrorEnvelope, err
 }
 
 func prepareError(requestID string, resultErr error) (Result, error) {
-	envelope, err := sendingErrorEnvelope(requestID, resultErr)
+	envelope, err := ErrorEnvelope(requestID, resultErr)
 	if err != nil {
 		return Result{}, model.TextError(model.ErrorInternal, errors.Join(resultErr, err))
 	}
@@ -73,7 +78,7 @@ func addResultError(result Result, resultErr error) (Result, error) {
 	if err := json.Unmarshal(fields["request_id"], &requestID); err != nil {
 		return result, err
 	}
-	envelope, err := sendingErrorEnvelope(requestID, resultErr)
+	envelope, err := ErrorEnvelope(requestID, resultErr)
 	if err != nil {
 		return result, err
 	}
