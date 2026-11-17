@@ -84,7 +84,7 @@ func TestInstallVerifiesAndResumesWithoutReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	executable := filepath.Join(directory, Binary("telegram-mcp"))
-	before, err := os.Stat(executable)
+	before, err := privatefs.InspectExecutable(executable)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestInstallVerifiesAndResumesWithoutReplacement(t *testing.T) {
 	if err != nil || again != directory {
 		t.Fatal(err)
 	}
-	after, err := os.Stat(executable)
+	after, err := privatefs.InspectExecutable(executable)
 	if err != nil || !os.SameFile(before, after) {
 		t.Fatal("replaced existing executable")
 	}

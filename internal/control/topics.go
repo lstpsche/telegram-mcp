@@ -48,7 +48,12 @@ func runTopicsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		fmt.Fprintln(stderr, "telegram-mcp: topic discovery is unavailable")
 		return 1
 	}
-	page, err := c.Topics(ctx, peer, position)
+	var page model.TopicPage
+	err = withOfflineLease(ctx, func(ctx context.Context) error {
+		var discoveryError error
+		page, discoveryError = c.Topics(ctx, peer, position)
+		return discoveryError
+	})
 	if err == nil {
 		err = writeTextJSON(stdout, struct {
 			Items []model.Topic        `json:"items"`

@@ -4,11 +4,13 @@ package daemon
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,6 +55,10 @@ func BindSocket(path string) (*Socket, error) {
 }
 
 func bindSocket(path string, dial socketDialer) (*Socket, error) {
+	return bindSocketWithPublisher(path, dial, os.Link)
+}
+
+func bindSocketWithPublisher(path string, dial socketDialer, publish func(string, string) error) (*Socket, error) {
 	if err := ensurePrivateDirectory(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
@@ -61,6 +67,7 @@ func bindSocket(path string, dial socketDialer) (*Socket, error) {
 		return nil, errors.New("runtime socket path exceeds the platform limit")
 	}
 
+	var stale *fileIdentity
 	if identity, err := inspectSocket(path); err == nil {
 		connection, dialError := dial("unix", path, socketProbeTimeout)
 		if dialError == nil {
@@ -70,68 +77,169 @@ func bindSocket(path string, dial socketDialer) (*Socket, error) {
 		if networkError, ok := dialError.(net.Error); ok && networkError.Timeout() {
 			return nil, ErrSocketInUse
 		}
-		if !errors.Is(dialError, unix.ECONNREFUSED) {
+		if !definiteDialFailure(dialError, unix.ECONNREFUSED) {
 			return nil, ErrSocketInUse
 		}
 		currentIdentity, inspectError := inspectSocket(path)
 		if inspectError != nil || currentIdentity != identity {
 			return nil, ErrUnsafeSocket
 		}
-		if err := os.Remove(path); err != nil {
-			return nil, fmt.Errorf("remove verified stale runtime socket: %w", err)
-		}
+		stale = &identity
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 
-	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	listener, temporary, identity, err := prepareSocket(path, len(rawAddress.Path))
 	if err != nil {
-		return nil, fmt.Errorf("bind runtime socket: %w", err)
+		return nil, err
 	}
-	listener.SetUnlinkOnClose(false)
+	published := false
 	closeOnError := func(openError error) (*Socket, error) {
-		closeError := listener.Close()
-		removeError := os.Remove(path)
-		if errors.Is(removeError, os.ErrNotExist) {
-			removeError = nil
+		cleanupError := errors.Join(listener.Close(), removeSocketAlias(temporary, identity))
+		if published {
+			cleanupError = errors.Join(cleanupError, removeSocketAlias(path, identity))
 		}
-		return nil, errors.Join(openError, closeError, removeError)
+		return nil, errors.Join(openError, cleanupError)
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		return closeOnError(fmt.Errorf("secure runtime socket: %w", err))
+	if err := inspectPrivateDirectory(filepath.Dir(path)); err != nil {
+		return closeOnError(err)
 	}
-	identity, err := inspectSocket(path)
-	if err != nil {
+	if stale != nil {
+		current, err := inspectSocket(path)
+		if err != nil || current != *stale {
+			return closeOnError(errors.Join(ErrUnsafeSocket, err))
+		}
+		if err := os.Remove(path); err != nil {
+			return closeOnError(fmt.Errorf("remove verified stale runtime socket: %w", err))
+		}
+	}
+	// Link publishes the already secured inode atomically and never replaces an
+	// existing destination. Both names stay in the same private directory.
+	if err := publish(temporary, path); err != nil {
+		return closeOnError(fmt.Errorf("publish runtime socket: %w", err))
+	}
+	published = true
+	current, err := inspectSocket(path)
+	if err != nil || current != identity {
+		return closeOnError(errors.Join(ErrUnsafeSocket, err))
+	}
+	if err := removeSocketAlias(temporary, identity); err != nil {
 		return closeOnError(err)
 	}
 	return &Socket{listener: listener, path: path, identity: identity}, nil
 }
 
+func prepareSocket(path string, addressSize int) (*net.UnixListener, string, fileIdentity, error) {
+	directory := filepath.Dir(path)
+	// Preserve the final path's address-length support, even when only one
+	// basename byte fits. The private directory, not nonce length, is authority.
+	nameSize := min(16, addressSize-len(directory)-2)
+	if nameSize <= 0 {
+		return nil, "", fileIdentity{}, errors.New("runtime socket path exceeds the platform limit")
+	}
+	for range 100 {
+		temporary := filepath.Join(directory, rand.Text()[:nameSize])
+		if strings.EqualFold(temporary, path) {
+			continue
+		}
+		listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: temporary, Net: "unix"})
+		if errors.Is(err, unix.EADDRINUSE) {
+			continue
+		}
+		if err != nil {
+			return nil, "", fileIdentity{}, fmt.Errorf("bind temporary runtime socket: %w", err)
+		}
+		listener.SetUnlinkOnClose(false)
+		status, err := inspectSocketNode(temporary)
+		if err != nil {
+			return nil, "", fileIdentity{}, errors.Join(err, listener.Close())
+		}
+		identity := fileIdentity{device: uint64(status.Dev), inode: uint64(status.Ino)}
+		if err := os.Chmod(temporary, 0o600); err != nil {
+			return nil, "", fileIdentity{}, errors.Join(err, listener.Close(), removeSocketAlias(temporary, identity))
+		}
+		current, err := inspectSocket(temporary)
+		if err != nil || current != identity {
+			return nil, "", fileIdentity{}, errors.Join(ErrUnsafeSocket, err, listener.Close(), removeSocketAlias(temporary, identity))
+		}
+		return listener, temporary, identity, nil
+	}
+	return nil, "", fileIdentity{}, errors.New("cannot allocate temporary runtime socket")
+}
+
+func removeSocketAlias(path string, identity fileIdentity) error {
+	status, err := inspectSocketNode(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if (fileIdentity{device: uint64(status.Dev), inode: uint64(status.Ino)}) != identity {
+		return ErrUnsafeSocket
+	}
+	return os.Remove(path)
+}
+
 // DialSocket validates the directory, socket node, and server UID. It never
 // creates state or starts a daemon on behalf of a client.
 func DialSocket(ctx context.Context, path string) (net.Conn, error) {
-	if err := inspectPrivateDirectory(filepath.Dir(path)); err != nil {
+	return dialSocket(ctx, path, (&net.Dialer{Timeout: socketProbeTimeout}).DialContext)
+}
+
+func dialSocket(ctx context.Context, path string, dial func(context.Context, string, string) (net.Conn, error)) (net.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := inspectDialDirectory(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	identity, err := inspectSocket(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, absentEndpoint(path, err)
+		}
 		return nil, err
 	}
-	connection, err := (&net.Dialer{Timeout: socketProbeTimeout}).DialContext(ctx, "unix", path)
+	connection, err := dial(ctx, "unix", path)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if definiteDialFailure(err, unix.ECONNREFUSED) {
+			current, inspectError := inspectSocket(path)
+			if definiteDialFailure(inspectError, os.ErrNotExist) {
+				return nil, confirmSocketAbsence(path, err)
+			}
+			if inspectError != nil || current != identity {
+				return nil, errors.Join(ErrUnsafeSocket, inspectError)
+			}
+			return nil, absentEndpoint(path, err)
+		}
+		if definiteDialFailure(err, os.ErrNotExist) {
+			return nil, confirmSocketAbsence(path, err)
+		}
 		return nil, err
 	}
-	socket := connection.(*net.UnixConn)
 	current, err := inspectSocket(path)
 	if err != nil || current != identity {
-		_ = socket.Close()
-		return nil, ErrUnsafeSocket
+		return nil, errors.Join(ErrUnsafeSocket, err, connection.Close())
 	}
-	if err := VerifyPeer(socket); err != nil {
-		_ = socket.Close()
-		return nil, err
+	if err := VerifyPeer(connection); err != nil {
+		return nil, errors.Join(ErrUnsafeSocket, err, connection.Close())
 	}
-	return socket, nil
+	return connection, nil
+}
+
+func confirmSocketAbsence(path string, cause error) error {
+	if err := inspectDialDirectory(filepath.Dir(path)); err != nil {
+		return err
+	}
+	_, err := inspectSocket(path)
+	if definiteDialFailure(err, os.ErrNotExist) {
+		return errors.Join(ErrDaemonUnavailable, cause)
+	}
+	return errors.Join(ErrUnsafeSocket, err)
 }
 
 // Close closes the listener and removes only the socket node originally bound.
@@ -163,15 +271,19 @@ func ProbeSocket(path string) (SocketState, error) {
 }
 
 func probeSocket(path string, dial socketDialer) (SocketState, error) {
-	if err := inspectPrivateDirectory(filepath.Dir(path)); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+	if err := inspectDialDirectory(filepath.Dir(path)); err != nil {
+		if errors.Is(err, ErrDaemonUnavailable) {
 			return SocketAbsent, nil
 		}
 		return "", err
 	}
-	if _, err := inspectSocket(path); err != nil {
+	identity, err := inspectSocket(path)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return SocketAbsent, nil
+			err = absentEndpoint(path, err)
+			if errors.Is(err, ErrDaemonUnavailable) {
+				return SocketAbsent, nil
+			}
 		}
 		return "", err
 	}
@@ -183,25 +295,54 @@ func probeSocket(path string, dial socketDialer) (SocketState, error) {
 	if networkError, ok := err.(net.Error); ok && networkError.Timeout() {
 		return SocketLive, nil
 	}
-	if errors.Is(err, unix.ECONNREFUSED) {
+	if definiteDialFailure(err, unix.ECONNREFUSED) {
+		current, inspectError := inspectSocket(path)
+		if definiteDialFailure(inspectError, os.ErrNotExist) {
+			err = confirmSocketAbsence(path, err)
+			if errors.Is(err, ErrDaemonUnavailable) {
+				return SocketAbsent, nil
+			}
+			return "", err
+		}
+		if inspectError != nil || current != identity {
+			return "", errors.Join(ErrUnsafeSocket, inspectError)
+		}
+		if err := inspectDialDirectory(filepath.Dir(path)); err != nil {
+			return "", err
+		}
 		return SocketStale, nil
+	}
+	if definiteDialFailure(err, os.ErrNotExist) {
+		err = confirmSocketAbsence(path, err)
+		if errors.Is(err, ErrDaemonUnavailable) {
+			return SocketAbsent, nil
+		}
+		return "", err
 	}
 	return "", ErrSocketInUse
 }
 
 func inspectSocket(path string) (fileIdentity, error) {
-	var status unix.Stat_t
-	if err := unix.Lstat(path, &status); err != nil {
+	status, err := inspectSocketNode(path)
+	if err != nil {
 		return fileIdentity{}, err
-	}
-	if status.Mode&unix.S_IFMT != unix.S_IFSOCK {
-		return fileIdentity{}, ErrUnsafeSocket
-	}
-	if status.Uid != uint32(os.Geteuid()) {
-		return fileIdentity{}, ErrUnsafeSocket
 	}
 	if os.FileMode(status.Mode).Perm() != 0o600 {
 		return fileIdentity{}, ErrUnsafeSocket
 	}
 	return fileIdentity{device: uint64(status.Dev), inode: uint64(status.Ino)}, nil
+}
+
+func inspectSocketNode(path string) (unix.Stat_t, error) {
+	var status unix.Stat_t
+	if err := unix.Lstat(path, &status); err != nil {
+		return status, err
+	}
+	if status.Mode&unix.S_IFMT != unix.S_IFSOCK {
+		return status, ErrUnsafeSocket
+	}
+	if status.Uid != uint32(os.Geteuid()) {
+		return status, ErrUnsafeSocket
+	}
+	return status, nil
 }

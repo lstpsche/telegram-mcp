@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 )
 
 // Relay forwards bytes only. It owns the passed streams for this invocation
@@ -14,13 +15,22 @@ func Relay(ctx context.Context, path string, input io.ReadCloser, output io.Writ
 	if err != nil {
 		return fmt.Errorf("daemon unavailable: %w", err)
 	}
+	return RelayConnection(ctx, connection, input, output)
+}
+
+// RelayConnection bridges an already verified daemon connection without dialing
+// again. It owns the connection and streams until the invocation finishes.
+func RelayConnection(ctx context.Context, connection net.Conn, input io.ReadCloser, output io.WriteCloser) error {
+	if connection == nil {
+		return errors.New("daemon connection is missing")
+	}
 	defer connection.Close()
+	defer input.Close()
+	defer output.Close()
 	writer, ok := connection.(interface{ CloseWrite() error })
 	if !ok {
 		return errors.New("daemon connection does not support half-close")
 	}
-	defer input.Close()
-	defer output.Close()
 	stop := context.AfterFunc(ctx, func() {
 		_ = connection.Close()
 		_ = input.Close()
@@ -29,6 +39,7 @@ func Relay(ctx context.Context, path string, input io.ReadCloser, output io.Writ
 	defer stop()
 	incoming := make(chan error, 1)
 	outgoing := make(chan error, 1)
+	var err error
 	go func() {
 		_, err := io.Copy(connection, input)
 		incoming <- err

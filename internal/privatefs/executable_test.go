@@ -1,11 +1,58 @@
 package privatefs
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 )
+
+func TestExecutableReplacementRequiresTheInspectedPrivateFile(t *testing.T) {
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(parent, "private")
+	if err := EnsureDirectory(root); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "entry")
+	if err := WriteExecutable(path, []byte("old")); err != nil {
+		t.Fatal(err)
+	}
+	before, err := InspectExecutable(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementTarget, err := InspectExecutable(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceExecutable(path, []byte("new"), replacementTarget); err != nil {
+		t.Fatal(err)
+	}
+	after, err := InspectExecutable(path)
+	if err != nil || os.SameFile(before, after) {
+		t.Fatal("replacement did not publish a new file", err)
+	}
+	if err := CheckExecutable(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceExecutable(path, []byte("stale"), before); err == nil {
+		t.Fatal("accepted a stale inspected file")
+	}
+	if err := WriteExecutable(path, []byte("overwrite")); !errors.Is(err, os.ErrExist) {
+		t.Fatal("ordinary executable publication replaced the entry", err)
+	}
+	data, err := ReadExecutable(path, 64)
+	if err != nil || string(data) != "new" {
+		t.Fatal("failed replacement changed the entry", err)
+	}
+	if err := ReplaceExecutable(path, []byte("missing identity"), nil); err == nil {
+		t.Fatal("accepted replacement without inspected identity")
+	}
+}
 
 func TestExecutableReadDoesNotRelaxPrivateDataMode(t *testing.T) {
 	parent, err := filepath.EvalSymlinks(t.TempDir())

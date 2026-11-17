@@ -61,12 +61,10 @@ func TestFreshSetupConnectsGrantedPeerToScope(t *testing.T) {
 		"yes", "project", "1", "yes", "json",
 	}}
 	manager := &setupService{}
-	calls := 0
 	ready := true
 	var output bytes.Buffer
 	s := setupSession{control: control, prompt: prompt, output: &output, binDir: "/private/bin", local: support{service: manager, inspect: func(context.Context) (diagnostics.Report, error) {
-		calls++
-		if calls == 1 {
+		if !manager.active {
 			return diagnostics.Report{}, nil
 		}
 		if control.scopeWrites != 1 {

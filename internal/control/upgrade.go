@@ -70,41 +70,102 @@ func upgradeDefault(ctx context.Context, version string, output io.Writer) (resu
 	if err := verifyReleasePrograms(ctx, directory, version, runClientCommand); err != nil {
 		return err
 	}
-	if err := activateRelease(ctx, local, installed, directory); err != nil {
+	if err := distribution.EnsureEntry(ctx, directory); err != nil {
 		return err
 	}
-	relay, err := distribution.Relay(directory, "")
+	enabled, err := activateUpgrade(ctx, local, directory)
+	if err != nil {
+		return err
+	}
+	relay, err := distribution.VerifiedRelay(ctx, directory, "")
 	if err != nil {
 		return err
 	}
 	if err := writeTextJSON(output, struct{ Version, Relay, Control string }{version, relay, filepath.Join(installer.Root, distribution.Binary("telegram-mcp"))}); err != nil {
 		return err
 	}
+	if !enabled {
+		_, err = fmt.Fprintln(output, "Upgrade complete: the new version is installed and the service remains stopped. Run service start to resume it.")
+		return err
+	}
 	_, err = fmt.Fprintln(output, "Upgrade complete: the service responds. Reconnect your MCP client; the managed relay path is unchanged. Account readiness and content permission are separate checks.")
 	return err
 }
 
-func activateRelease(ctx context.Context, local support, installed *service.Config, directory string) error {
-	// A known absent service is a valid starting state, not an ignored failure.
-	if installed != nil && installed.BinDir != directory {
-		if err := local.service.Stop(ctx); err != nil && !errors.Is(err, service.ErrServiceAbsent) {
+// Missing registration cannot retain the previous human startup choice. An
+// explicit upgrade can rebuild it disabled; only a later human start resumes it.
+func activateUpgrade(ctx context.Context, local support, directory string) (enabled bool, result error) {
+	result = local.withSession(ctx, func(manager lifecycleService) error {
+		current, err := manager.Inspect(ctx)
+		if err != nil {
 			return err
 		}
-		if err := local.service.Uninstall(ctx); err != nil {
+		if err := checkManagedSwitch(current, directory); err != nil {
+			return err
+		}
+		if current != nil {
+			enabled, err = manager.Enabled(ctx)
+			absent := errors.Is(err, service.ErrServiceAbsent)
+			if err != nil && !absent {
+				return err
+			}
+			if absent {
+				enabled = false
+			}
+			if current.BinDir != directory && !absent {
+				if err := manager.Quiesce(ctx); err != nil {
+					return err
+				}
+			}
+		}
+		return activateStoppedRelease(ctx, local, manager, current, directory, enabled)
+	})
+	return enabled, result
+}
+
+// The caller owns the lifecycle session and has quiesced a replaced service.
+func activateStoppedRelease(ctx context.Context, local support, manager lifecycleService, installed *service.Config, directory string, enabled bool) error {
+	if installed != nil && installed.BinDir != directory {
+		if err := manager.Uninstall(ctx); err != nil {
 			return err
 		}
 		installed = nil
 	}
-	if _, err := local.service.Install(ctx, directory); err != nil {
+	if _, err := manager.InstallWithState(ctx, directory, enabled); err != nil {
 		if installed == nil || !errors.Is(err, service.ErrAlreadyInstalled) {
 			return err
 		}
 	}
-	if err := local.service.Start(ctx); err != nil && !errors.Is(err, service.ErrServiceLoaded) {
+	if !enabled {
+		return nil
+	}
+	if err := manager.Start(ctx); err != nil && !errors.Is(err, service.ErrServiceLoaded) {
 		return err
 	}
 	_, err := waitForRuntime(ctx, local.inspect, false)
 	return err
+}
+
+func checkManagedSwitch(installed *service.Config, directory string) error {
+	if installed == nil {
+		return nil
+	}
+	root, err := distribution.DefaultRoot()
+	if err != nil {
+		return err
+	}
+	previous, next := distribution.ManagedVersion(root, installed.BinDir), distribution.ManagedVersion(root, directory)
+	if previous == "" || next == "" {
+		return nil
+	}
+	order, err := distribution.CompareVersions(next, previous)
+	if err != nil {
+		return err
+	}
+	if order < 0 {
+		return humanHint("managed downgrades are not supported")
+	}
+	return nil
 }
 
 func verifyReleasePrograms(ctx context.Context, directory, version string, run func(context.Context, string, ...string) ([]byte, error)) error {

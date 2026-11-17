@@ -44,6 +44,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if handled, code := dispatchControl(ctx, args, stdout, stderr); handled {
 		return code
 	}
+	ctx = context.WithValue(ctx, offlineLeaseKey{}, offlineLease(defaultOfflineLease))
 	return runContext(ctx, args, stdout, stderr, defaultController, defaultTerminal)
 }
 
@@ -103,7 +104,7 @@ func runContext(
 			fmt.Fprintln(stderr, "telegram-mcp: legacy migration is unavailable")
 			return 1
 		}
-		if err := migration.MigrateKeychain(ctx); err != nil {
+		if err := withOfflineLease(ctx, migration.MigrateKeychain); err != nil {
 			writeControlError(stderr, err)
 			return 1
 		}
@@ -143,7 +144,7 @@ func runContext(
 			fmt.Fprintln(stderr, "telegram-mcp: logout accepts no arguments")
 			return 2
 		}
-		if err := control.Logout(ctx); err != nil {
+		if err := withOfflineLease(ctx, control.Logout); err != nil {
 			writeControlError(stderr, err)
 			return 1
 		}
@@ -155,7 +156,9 @@ func runContext(
 			fmt.Fprintln(stderr, "telegram-mcp: configure requires --test-dc {1|2|3} or --production --attest-eligible")
 			return 2
 		}
-		if err := control.Configure(ctx, environment, testDC, configurationReader(openTerminal)); err != nil {
+		if err := withOfflineLease(ctx, func(ctx context.Context) error {
+			return control.Configure(ctx, environment, testDC, configurationReader(openTerminal))
+		}); err != nil {
 			writeControlError(stderr, err)
 			return 1
 		}
@@ -176,7 +179,12 @@ func runContext(
 		if args[1] == "qr" {
 			method = tgaccount.AuthMethodQR
 		}
-		outcome, err := authenticate(ctx, control, method, prompt)
+		var outcome app.AuthOutcome
+		err = withOfflineLease(ctx, func(ctx context.Context) error {
+			var authError error
+			outcome, authError = authenticate(ctx, control, method, prompt)
+			return authError
+		})
 		if err != nil {
 			writeControlError(stderr, err)
 			return 1
@@ -262,7 +270,7 @@ func parseConfiguration(args []string) (string, int, bool) {
 
 func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "usage: telegram-mcp [COMMAND]")
-	fmt.Fprintln(writer, "Without arguments, connect MCP stdio to the running daemon. Human subcommands follow.")
+	fmt.Fprintln(writer, "Without arguments, connect MCP stdio and start the enabled service when needed. Human subcommands follow.")
 	fmt.Fprintln(writer, "  telegram-mcp setup")
 	fmt.Fprintln(writer, "  telegram-mcp install --version X.Y.Z [--setup]")
 	fmt.Fprintln(writer, "  telegram-mcp upgrade --version X.Y.Z")
@@ -328,7 +336,7 @@ func writeStatus(writer io.Writer, status app.Status) {
 }
 
 func writeControlError(writer io.Writer, err error) {
-	if writeHumanHint(writer, err) {
+	if writeHumanHint(writer, err) || writeEntryError(writer, err) || writeServiceMaskError(writer, err) {
 		return
 	}
 	switch {

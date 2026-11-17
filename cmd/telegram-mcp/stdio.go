@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"runtime"
 	"time"
@@ -16,7 +17,7 @@ import (
 
 // relayStdio makes inherited files interruptible before starting either copy.
 // In-memory streams already supply their own Close behavior.
-func relayStdio(ctx context.Context, path string, input io.ReadCloser, output io.WriteCloser) (resultError error) {
+func relayStdio(ctx context.Context, connection net.Conn, input io.ReadCloser, output io.WriteCloser) (resultError error) {
 	if file, ok := input.(*os.File); ok {
 		prepared, restore, err := pollableStdio(file)
 		if err != nil {
@@ -33,7 +34,7 @@ func relayStdio(ctx context.Context, path string, input io.ReadCloser, output io
 		defer func() { resultError = errors.Join(resultError, restore()) }()
 		output = prepared
 	}
-	return daemon.Relay(ctx, path, input, output)
+	return daemon.RelayConnection(ctx, connection, input, output)
 }
 
 func pollableStdio(file *os.File) (*os.File, func() error, error) {

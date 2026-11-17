@@ -12,8 +12,6 @@ import (
 	"runtime"
 	"strconv"
 	"time"
-
-	"github.com/lstpsche/telegram-mcp/internal/daemon"
 )
 
 type Manager struct {
@@ -54,25 +52,7 @@ func (m *Manager) plistPath() string {
 	return filepath.Join(m.home, "Library", "LaunchAgents", Label+".plist")
 }
 
-func (m *Manager) lock() (*daemon.AccountLock, error) {
-	dir := filepath.Join(m.home, "Library", "Application Support", "Telegram MCP")
-	if err := ensureDirectory(dir, m.uid, true); err != nil {
-		return nil, err
-	}
-	return daemon.AcquireAccountLock(filepath.Join(dir, "service.lock"))
-}
-
-func (m *Manager) Install(ctx context.Context, binDir string) (config Config, err error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := ctx.Err(); err != nil {
-		return Config{}, err
-	}
-	lock, err := m.lock()
-	if err != nil {
-		return Config{}, err
-	}
-	defer func() { err = errors.Join(err, lock.Release()) }()
+func (m *Manager) install(ctx context.Context, binDir string, enabled bool) (config Config, err error) {
 	if _, err := os.Lstat(m.plistPath()); err == nil {
 		return Config{}, ErrAlreadyInstalled
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -99,8 +79,18 @@ func (m *Manager) Install(ctx context.Context, binDir string) (config Config, er
 	if err := ctx.Err(); err != nil {
 		return Config{}, err
 	}
+	if !enabled {
+		if err := m.setEnabled(ctx, false); err != nil {
+			return Config{}, err
+		}
+	}
 	if err := writeExclusive(m.plistPath(), plist); err != nil {
 		return Config{}, err
+	}
+	if enabled {
+		if err := m.setEnabled(ctx, true); err != nil {
+			return Config{}, err
+		}
 	}
 	return config, nil
 }
@@ -120,21 +110,7 @@ func (m *Manager) Inspect(ctx context.Context) (*Config, error) {
 	return &verified, nil
 }
 
-func (m *Manager) mutate(ctx context.Context, action func(context.Context) error) (err error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	lock, err := m.lock()
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, lock.Release()) }()
-	return action(ctx)
-}
-
-func (m *Manager) requireInstallation(ctx context.Context) error {
+func (m *Manager) requireRecord(ctx context.Context) error {
 	config, _, err := m.readInstallation(ctx)
 	if err != nil {
 		return err
@@ -145,29 +121,8 @@ func (m *Manager) requireInstallation(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) start(ctx context.Context) error {
-	config, err := m.Inspect(ctx)
-	if err != nil {
-		return err
-	}
-	if config == nil {
-		return ErrNotInstalled
-	}
-	loaded, err := m.loaded(ctx)
-	if err != nil {
-		return err
-	}
-	if loaded {
-		return ErrServiceLoaded
-	}
-	if err := m.runner.Run(ctx, "/bin/launchctl", "bootstrap", m.domain(), m.plistPath()); err != nil {
-		return fmt.Errorf("register service: %w", err)
-	}
-	return nil
-}
-
 func (m *Manager) stop(ctx context.Context) error {
-	if err := m.requireInstallation(ctx); err != nil {
+	if err := m.requireRecord(ctx); err != nil {
 		return err
 	}
 	loaded, err := m.loaded(ctx)
@@ -198,45 +153,38 @@ func (m *Manager) stop(ctx context.Context) error {
 	}
 }
 
-func (m *Manager) Start(ctx context.Context) error { return m.mutate(ctx, m.start) }
-
-func (m *Manager) Stop(ctx context.Context) error { return m.mutate(ctx, m.stop) }
-
-func (m *Manager) Restart(ctx context.Context) error {
-	return m.mutate(ctx, func(ctx context.Context) error {
-		if err := m.stop(ctx); err != nil {
-			return err
-		}
-		return m.start(ctx)
-	})
+func (m *Manager) uninstall(ctx context.Context) error {
+	config, identity, err := m.readInstallation(ctx)
+	if err != nil {
+		return err
+	}
+	if config == nil {
+		return ErrNotInstalled
+	}
+	loaded, err := m.loaded(ctx)
+	if err != nil {
+		return err
+	}
+	if loaded {
+		return ErrServiceLoaded
+	}
+	if err := m.waitAccountRelease(ctx); err != nil {
+		return err
+	}
+	current, err := os.Lstat(m.plistPath())
+	if err != nil {
+		return fmt.Errorf("inspect installation before removal: %w", err)
+	}
+	if !os.SameFile(identity, current) {
+		return errors.New("installation changed before removal")
+	}
+	if err := os.Remove(m.plistPath()); err != nil {
+		return fmt.Errorf("remove service installation: %w", err)
+	}
+	return nil
 }
 
-func (m *Manager) Uninstall(ctx context.Context) error {
-	return m.mutate(ctx, func(ctx context.Context) error {
-		config, identity, err := m.readInstallation(ctx)
-		if err != nil {
-			return err
-		}
-		if config == nil {
-			return ErrNotInstalled
-		}
-		loaded, err := m.loaded(ctx)
-		if err != nil {
-			return err
-		}
-		if loaded {
-			return ErrServiceLoaded
-		}
-		current, err := os.Lstat(m.plistPath())
-		if err != nil {
-			return fmt.Errorf("inspect installation before removal: %w", err)
-		}
-		if !os.SameFile(identity, current) {
-			return errors.New("installation changed before removal")
-		}
-		if err := os.Remove(m.plistPath()); err != nil {
-			return fmt.Errorf("remove service installation: %w", err)
-		}
-		return nil
-	})
+func (m *Manager) stateDir() string {
+	return filepath.Join(m.home, "Library", "Application Support", "Telegram MCP")
 }
+func (m *Manager) accountPath() string { return filepath.Join(m.stateDir(), "account.lock") }

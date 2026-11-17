@@ -34,6 +34,7 @@ func (p *setupAnswers) Ask(ctx context.Context, _ string) (string, error) {
 type setupService struct {
 	fakeService
 	actions []string
+	active  bool
 }
 
 func (f *setupService) Install(_ context.Context, dir string) (service.Config, error) {
@@ -43,10 +44,13 @@ func (f *setupService) Install(_ context.Context, dir string) (service.Config, e
 }
 func (f *setupService) Start(context.Context) error {
 	f.actions = append(f.actions, "start")
+	f.active = true
+	f.disabled = false
 	return f.err
 }
 func (f *setupService) Stop(context.Context) error {
 	f.actions = append(f.actions, "stop")
+	f.active = false
 	return f.err
 }
 
@@ -62,12 +66,10 @@ func TestSetupFreshAndResumePreserveAuthority(t *testing.T) {
 			}
 			prompt := &setupAnswers{fakeTerminal: fakeTerminal{apiID: 12, apiHash: []byte("secret")}, answers: answers}
 			manager := &setupService{}
-			calls := 0
 			ready := true
 			var output bytes.Buffer
 			s := setupSession{control: control, prompt: prompt, output: &output, binDir: "/private/bin", local: support{service: manager, inspect: func(context.Context) (diagnostics.Report, error) {
-				calls++
-				if calls == 1 {
+				if !manager.active {
 					return diagnostics.Report{}, nil
 				}
 				return diagnostics.Report{MCP: true, MessageReads: &ready}, nil
@@ -113,11 +115,10 @@ func TestSetupDoesNotConnectBeforeReadiness(t *testing.T) {
 	control := &fakeAccessController{}
 	control.status = app.Status{Configured: true, Authorized: true}
 	prompt := &setupAnswers{answers: []string{"", "", "codex"}}
-	count := 0
+	manager := &setupService{}
 	failure := errors.New("probe failure")
-	s := setupSession{control: control, prompt: prompt, output: io.Discard, local: support{service: &setupService{}, inspect: func(context.Context) (diagnostics.Report, error) {
-		count++
-		if count > 1 {
+	s := setupSession{control: control, prompt: prompt, output: io.Discard, local: support{service: manager, inspect: func(context.Context) (diagnostics.Report, error) {
+		if manager.active {
 			return diagnostics.Report{}, failure
 		}
 		return diagnostics.Report{}, nil
@@ -177,4 +178,13 @@ func TestHumanHintsNeverExposeExternalCause(t *testing.T) {
 	if strings.Contains(output.String(), "secret") || !strings.Contains(output.String(), err.hint) {
 		t.Fatal(output.String())
 	}
+}
+
+func (f *setupService) withControlSession(_ context.Context, run func(lifecycleService) error) error {
+	return run(f)
+}
+func (f *setupService) Quiesce(ctx context.Context) error { f.disabled = true; return f.Stop(ctx) }
+func (f *setupService) InstallWithState(ctx context.Context, dir string, enabled bool) (service.Config, error) {
+	f.disabled = !enabled
+	return f.Install(ctx, dir)
 }

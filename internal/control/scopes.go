@@ -70,7 +70,11 @@ func runScopeCommand(ctx context.Context, args []string, stdout, stderr io.Write
 				fmt.Fprintln(stderr, "telegram-mcp: folder import is unavailable")
 				return 1
 			}
-			scope, err = importer.ScopeFromFolder(ctx, id, name, folder)
+			err = withOfflineLease(ctx, func(ctx context.Context) error {
+				var importError error
+				scope, importError = importer.ScopeFromFolder(ctx, id, name, folder)
+				return importError
+			})
 		}
 		if err == nil {
 			err = writeTextJSON(stdout, scope)

@@ -8,8 +8,11 @@
   support that product. Agent workflows define the acceptance
   criteria; infrastructure alone does not establish MCP usability.
 - Preserve the daemon -> owner-only local transport -> byte-only stdio relay shape.
-  Authentication, policy, consent, and lifecycle mutations stay in the human
-  control plane and must not become MCP tools.
+  Before forwarding bytes, the relay may request startup of the existing,
+  verified, enabled per-user OS service. It must not enable, install, repair,
+  replace or directly spawn a daemon, reconnect a broken session, or replay a
+  request. Authentication, policy, consent, and other lifecycle mutations stay
+  in the human control plane and must not become MCP tools.
 - Keep v1 single-account, local, read-first, and portable across macOS, Linux and Windows.
   Sending is limited to the human-enabled, account-wide recipient resolution,
   single plain-text send and local operation-status contracts in `docs/sending.md`.
@@ -57,6 +60,11 @@
 - Without arguments, `telegram-mcp` stdout is reserved for MCP frames. Explicit
   human subcommands use the control-plane output format. Send diagnostics to
   stderr through the safe structured logging boundary.
+- Explicit service stop persists through agent reconnects, login, reboot and
+  upgrades until human start or restart. Reuse the lifecycle lock for startup
+  and offline human operations; never hold the account lock while waiting for
+  a daemon to start. Startup coordination metadata contains only its schema
+  version and launch-attempt time, never account or message data.
 
 ## Engineering rules
 

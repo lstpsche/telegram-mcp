@@ -81,32 +81,35 @@ func runMaintenanceCommand(ctx context.Context, args []string, stdout, stderr io
 		return 1
 	}
 	var err error
-	switch args[0] {
-	case "backup":
-		err = maintenance.Backup(ctx, args[2])
-		if err == nil {
-			_, err = fmt.Fprintln(stdout, "Metadata backup created; credentials, permissions, synchronization state and audit history are excluded.")
-		}
-	case "restore":
-		if args[1] == "--dry-run" {
-			var preview app.RestorePreview
-			preview, err = maintenance.PreviewRestore(ctx, args[3])
+	err = withOfflineLease(ctx, func(ctx context.Context) error {
+		switch args[0] {
+		case "backup":
+			err = maintenance.Backup(ctx, args[2])
 			if err == nil {
-				err = writeTextJSON(stdout, preview)
+				_, err = fmt.Fprintln(stdout, "Metadata backup created; credentials, permissions, synchronization state and audit history are excluded.")
 			}
-		} else {
-			err = maintenance.Restore(ctx, args[2])
+		case "restore":
+			if args[1] == "--dry-run" {
+				var preview app.RestorePreview
+				preview, err = maintenance.PreviewRestore(ctx, args[3])
+				if err == nil {
+					err = writeTextJSON(stdout, preview)
+				}
+			} else {
+				err = maintenance.Restore(ctx, args[2])
+				if err == nil {
+					_, err = fmt.Fprintln(stdout, "Scopes restored with new IDs. Read access is restricted with no grants, and sending is disabled; enable each explicitly when ready.")
+				}
+			}
+		case "audit":
+			var status store.AuditStatus
+			status, err = maintenance.AuditMaintenance(ctx, retention, apply, purge)
 			if err == nil {
-				_, err = fmt.Fprintln(stdout, "Scopes restored with new IDs. Read access is restricted with no grants, and sending is disabled; enable each explicitly when ready.")
+				err = writeTextJSON(stdout, status)
 			}
 		}
-	case "audit":
-		var status store.AuditStatus
-		status, err = maintenance.AuditMaintenance(ctx, retention, apply, purge)
-		if err == nil {
-			err = writeTextJSON(stdout, status)
-		}
-	}
+		return err
+	})
 	if err != nil {
 		writeControlError(stderr, err)
 		return 1
