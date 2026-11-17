@@ -45,7 +45,7 @@ On macOS or Linux, install through our [Homebrew tap](https://github.com/lstpsch
 
 ```sh
 brew install lstpsche/tap/telegram-mcp
-telegram-mcp install --version 1.3.0 --setup
+telegram-mcp install --version 1.4.0 --setup
 ```
 
 The second command creates a private per-user installation and starts setup.
@@ -59,14 +59,14 @@ Download and inspect the script before running it if desired.
 
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
-  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v1.3.0/install.sh
+  -o install.sh https://github.com/lstpsche/telegram-mcp/releases/download/v1.4.0/install.sh
 sh install.sh
 ```
 
 **Windows PowerShell, without elevation**
 
 ```powershell
-Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v1.3.0/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://github.com/lstpsche/telegram-mcp/releases/download/v1.4.0/install.ps1 -OutFile install.ps1
 .\install.ps1
 ```
 
@@ -75,7 +75,7 @@ checksums. Downloads and checksums come from GitHub Releases; they establish
 integrity, not independent publisher identity. Credentials stay in your local
 interactive console.
 
-For manual installation, download an archive from [v1.3.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v1.3.0).
+For manual installation, download an archive from [v1.4.0](https://github.com/lstpsche/telegram-mcp/releases/tag/v1.4.0).
 Archives support macOS, Linux and Windows on amd64 and arm64, and contain
 `telegram-mcp`, `telegram-mcpd`, documentation and checksums. Extract into a new
 private directory and follow the [platform instructions](docs/installation.md).
@@ -187,6 +187,9 @@ managed relay path stays the same. Downgrades are not supported. See
 adopting an existing manual installation.
 
 ## Tools
+
+Version 1.4.0 adds [human-enabled message sending](docs/sending.md): recipient
+resolution, single plain-text sends and retained local operation status.
 
 Version 1.3.0 adds [Telegram voice transcription](docs/voice-access.md#telegram-transcription).
 Use `transcribe_voice_note` with a discovered `transcription_handle` to obtain
